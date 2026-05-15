@@ -88,10 +88,24 @@ export interface HeartbeatRecord {
   timestamp: string;
 }
 
+// ─── Epoch types ─────────────────────────────────────────────────────────────
+export interface Epoch {
+  id: number;
+  epochNumber: number;
+  blockHeight: number;
+  blockHash: string;
+  eligibleCount: number;
+  signatureCount: number;
+  quorumReached: boolean;
+  signingWindowClosesAt: string;
+  createdAt: string;
+}
+
 export interface HeartbeatResponse {
   ok: boolean;
   blockHeight?: number;
   timestamp?: string;
+  openEpoch?: Epoch | null;
 }
 
 export interface ValidatorRestartResponse {
@@ -235,6 +249,7 @@ export const api = {
     batteryLevel: number;
     isCharging: boolean;
     activeMinutes: number;
+    epochSignature?: { epochNumber: number; signature: string };
   }) =>
     request<HeartbeatResponse>("/validators/heartbeat", {
       method: "POST",
@@ -286,4 +301,20 @@ export const api = {
     ),
 
   ping: () => request<unknown>("/ping"),
+
+  // ── Epoch endpoints ─────────────────────────────────────────────────────────
+  getOpenEpoch: () =>
+    request<{ openEpoch: Epoch | null }>("/epochs/open"),
+
+  getEpoch: (epochNumber: number) =>
+    request<{ epoch: Epoch }>(`/epochs/${epochNumber}`),
+
+  getEpochs: () =>
+    request<{ epochs: Epoch[] }>("/epochs"),
+
+  signEpoch: (epochNumber: number, validatorAddress: string, signature: string) =>
+    request<{ ok: boolean; nowFinalized: boolean }>(`/epochs/${epochNumber}/sign`, {
+      method: "POST",
+      body: JSON.stringify({ validatorAddress, signature }),
+    }),
 };

@@ -1,5 +1,6 @@
 import { secp256k1 } from "@noble/curves/secp256k1";
 import { keccak_256 } from "@noble/hashes/sha3";
+import { sha256 } from "@noble/hashes/sha256";
 import { bech32 } from "bech32";
 
 function bytesToHex(bytes: Uint8Array): string {
@@ -48,6 +49,20 @@ export function deriveAddressFromPublicKey(publicKeyHex: string): string {
   const addressBytes = pubKeyHash.slice(-20);
   const words = bech32.toWords(addressBytes);
   return bech32.encode("mxc", words);
+}
+
+/**
+ * Sign an epoch block hash as per the Phase 3 spec:
+ *   message = SHA-256(hex_decode(blockHash.replace("0x", "")))
+ *   signature = secp256k1_sign(message, privateKey) — compact 64-byte, hex encoded
+ */
+export function signEpochBlockHash(blockHash: string, privateKeyHex: string): string {
+  const cleanHex = blockHash.replace(/^0x/i, "");
+  const blockHashBytes = hexToBytes(cleanHex);
+  const message = sha256(blockHashBytes);
+  const privKeyBytes = hexToBytes(privateKeyHex);
+  const sig = secp256k1.sign(message, privKeyBytes);
+  return bytesToHex(sig.toCompactRawBytes());
 }
 
 export function signTransaction(

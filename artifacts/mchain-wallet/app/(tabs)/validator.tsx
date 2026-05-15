@@ -32,7 +32,7 @@ import {
   unregisterHeartbeatTask,
 } from "@/services/backgroundTasks";
 import { PulsingDot } from "@/components/PulsingDot";
-
+import { useHeartbeat } from "@/hooks/useHeartbeat";
 import { Toast } from "@/components/Toast";
 import { useColors } from "@/hooks/useColors";
 
@@ -84,6 +84,8 @@ export default function ValidatorScreen() {
     sessionExpired,
     setSessionExpired,
   } = useWallet();
+
+  const { openEpoch } = useHeartbeat();
 
   const mxcAddress = validatorWallet?.mxcAddress ?? null;
   const ethAddress = validatorWallet?.ethAddress ?? null;
@@ -569,6 +571,32 @@ export default function ValidatorScreen() {
     splitChipText: { fontSize: 9, fontFamily: "Inter_700Bold" },
     gasTime: { fontSize: 11, fontFamily: "Inter_400Regular", color: colors.mutedForeground, marginTop: 3 },
 
+    // Epoch checkpoint card
+    epochCard: {
+      marginHorizontal: 20, borderRadius: 16, overflow: "hidden",
+      marginBottom: 14, borderWidth: 1, borderColor: "#0EA5E922",
+    },
+    epochGrad: { padding: 16 },
+    epochHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 },
+    epochTitle: { fontSize: 9, fontFamily: "Inter_700Bold", color: "rgba(255,255,255,0.45)", letterSpacing: 1.8 },
+    epochBadge: {
+      paddingHorizontal: 9, paddingVertical: 3, borderRadius: 20,
+      backgroundColor: "#0EA5E920", borderWidth: 1, borderColor: "#0EA5E950",
+    },
+    epochBadgeText: { fontSize: 10, fontFamily: "Inter_600SemiBold", color: "#0EA5E9" },
+    epochRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 14 },
+    epochNumber: { fontSize: 26, fontFamily: "Inter_700Bold", color: "#FFFFFF", lineHeight: 30 },
+    epochSub: { fontSize: 10, fontFamily: "Inter_400Regular", color: "rgba(255,255,255,0.4)", marginTop: 2 },
+    epochWindow: { fontSize: 13, fontFamily: "Inter_600SemiBold", color: "#0EA5E9", textAlign: "right" },
+    epochProgressWrap: {
+      height: 5, borderRadius: 3,
+      backgroundColor: "rgba(255,255,255,0.08)",
+      overflow: "hidden", marginBottom: 7,
+    },
+    epochProgressBar: { height: 5, borderRadius: 3 },
+    epochProgressLabels: { flexDirection: "row", justifyContent: "space-between" },
+    epochProgressText: { fontSize: 10, fontFamily: "Inter_400Regular", color: "rgba(255,255,255,0.4)" },
+
     blockRow: { flexDirection: "row", alignItems: "center", paddingHorizontal: 20, paddingVertical: 11, borderBottomWidth: 1, borderBottomColor: colors.border },
     blockRowHighlight: { borderLeftWidth: 3, borderLeftColor: "#10B98155", paddingLeft: 17 },
     blockHeight: { width: 84, fontSize: 13, fontFamily: "Inter_600SemiBold", color: colors.foreground },
@@ -779,6 +807,66 @@ export default function ValidatorScreen() {
     </Animated.View>
   ) : null;
 
+  // ── Epoch checkpoint card ────────────────────────────────────────────────────
+  const EpochCard = openEpoch ? (() => {
+    const windowClose = new Date(openEpoch.signingWindowClosesAt);
+    const now = new Date();
+    const secsLeft = Math.max(0, Math.floor((windowClose.getTime() - now.getTime()) / 1000));
+    const minsLeft = Math.floor(secsLeft / 60);
+    const secsRem = secsLeft % 60;
+    const windowOpen = secsLeft > 0;
+    const quorumPct = openEpoch.eligibleCount > 0
+      ? openEpoch.signatureCount / openEpoch.eligibleCount
+      : 0;
+    const quorumColor = openEpoch.quorumReached ? "#10B981" : windowOpen ? "#0EA5E9" : "#F59E0B";
+
+    return (
+      <View style={s.epochCard}>
+        <LinearGradient colors={["#071A2E", "#040F1C"]} style={s.epochGrad}>
+          {/* Header */}
+          <View style={s.epochHeader}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 7 }}>
+              <Icon name="checkmark-circle-outline" size={13} color="#0EA5E9" />
+              <Text style={s.epochTitle}>EPOCH CHECKPOINT</Text>
+            </View>
+            <View style={[s.epochBadge, openEpoch.quorumReached && { backgroundColor: "#10B98120", borderColor: "#10B98150" }]}>
+              <Text style={[s.epochBadgeText, openEpoch.quorumReached && { color: "#10B981" }]}>
+                {openEpoch.quorumReached ? "Finalized" : windowOpen ? "Open" : "Expired"}
+              </Text>
+            </View>
+          </View>
+
+          {/* Epoch number + window */}
+          <View style={s.epochRow}>
+            <View>
+              <Text style={s.epochNumber}>#{openEpoch.epochNumber}</Text>
+              <Text style={s.epochSub}>Block {openEpoch.blockHeight.toLocaleString()}</Text>
+            </View>
+            <View style={{ alignItems: "flex-end" }}>
+              <Text style={[s.epochWindow, !windowOpen && { color: "#F59E0B" }]}>
+                {windowOpen
+                  ? `${minsLeft}m ${secsRem.toString().padStart(2, "0")}s left`
+                  : "Window closed"}
+              </Text>
+              <Text style={s.epochSub}>signing window</Text>
+            </View>
+          </View>
+
+          {/* Quorum progress bar */}
+          <View style={s.epochProgressWrap}>
+            <View style={[s.epochProgressBar, { width: `${Math.round(quorumPct * 100)}%` as `${number}%`, backgroundColor: quorumColor }]} />
+          </View>
+          <View style={s.epochProgressLabels}>
+            <Text style={[s.epochProgressText, { color: quorumColor }]}>
+              {openEpoch.signatureCount}/{openEpoch.eligibleCount} validators signed
+            </Text>
+            <Text style={s.epochProgressText}>51% quorum required</Text>
+          </View>
+        </LinearGradient>
+      </View>
+    );
+  })() : null;
+
   // ── Earnings overview card ──────────────────────────────────────────────────
   const EarningsCard = earnings ? (
     <View style={s.earningsCard}>
@@ -887,6 +975,7 @@ export default function ValidatorScreen() {
       {isRegistered && (
         <>
           {HeroCard}
+          {EpochCard}
           {EarningsCard}
 
           {/* Sub-tabs */}
