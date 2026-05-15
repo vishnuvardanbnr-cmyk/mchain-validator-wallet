@@ -278,4 +278,6 @@ export const api = {
     request<ValidatorBlocksPage>(
       `/validators/${encodeURIComponent(address)}/blocks?limit=${limit}&offset=${offset}`
     ),
+
+  ping: () => request<unknown>("/ping"),
 };

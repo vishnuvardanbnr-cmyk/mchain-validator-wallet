@@ -54,29 +54,53 @@ export default function DashboardScreen() {
   const [showAddToken, setShowAddToken] = React.useState(false);
   const [rpcMs, setRpcMs] = React.useState<number | null>(null);
   const [rpcPinging, setRpcPinging] = React.useState(false);
+  const [showRpcBadge, setShowRpcBadge] = React.useState(false);
   const rpcBadgeOpacity = useRef(new Animated.Value(0)).current;
   const rpcHideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Silent background ping — updates dot colour only, no badge
+  async function silentPing() {
+    try {
+      const start = Date.now();
+      await api.ping();
+      setRpcMs(Date.now() - start);
+    } catch {
+      setRpcMs(-1);
+    }
+  }
+
+  // On-tap ping — updates dot colour AND shows ms badge
   async function handlePingRpc() {
     if (rpcPinging) return;
     if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setRpcPinging(true);
     if (rpcHideTimer.current) clearTimeout(rpcHideTimer.current);
+    // Hide badge while pinging
     Animated.timing(rpcBadgeOpacity, { toValue: 0, duration: 100, useNativeDriver: true }).start();
     try {
       const start = Date.now();
-      await api.getChainInfo();
+      await api.ping();
       setRpcMs(Date.now() - start);
     } catch {
       setRpcMs(-1);
     } finally {
       setRpcPinging(false);
+      // Show badge after tap
+      setShowRpcBadge(true);
       Animated.timing(rpcBadgeOpacity, { toValue: 1, duration: 200, useNativeDriver: true }).start();
       rpcHideTimer.current = setTimeout(() => {
         Animated.timing(rpcBadgeOpacity, { toValue: 0, duration: 400, useNativeDriver: true }).start();
+        setTimeout(() => setShowRpcBadge(false), 400);
       }, 4000);
     }
   }
+
+  // Auto-poll: ping once on mount, then every 30 s
+  React.useEffect(() => {
+    silentPing();
+    const id = setInterval(silentPing, 30_000);
+    return () => clearInterval(id);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleRestartSession() {
     setIsRestarting(true);
@@ -561,14 +585,14 @@ export default function DashboardScreen() {
               ) : (
                 <View style={[s.statusDot, {
                   backgroundColor:
-                    vStatus === "active" ? "#10B981" :
-                    vStatus === "pending" ? "#F59E0B" :
-                    vStatus === "banned" ? "#EF4444" :
-                    colors.mutedForeground,
+                    rpcMs === null ? colors.mutedForeground :
+                    rpcMs < 0 ? "#EF4444" :
+                    rpcMs < 300 ? "#10B981" :
+                    rpcMs < 700 ? "#F59E0B" : "#EF4444",
                 }]} />
               )}
             </TouchableOpacity>
-            {rpcMs !== null && (
+            {showRpcBadge && rpcMs !== null && (
               <Animated.View style={[s.rpcBadge, { opacity: rpcBadgeOpacity }]} pointerEvents="none">
                 <View style={[s.rpcBadgeDot, {
                   backgroundColor:
