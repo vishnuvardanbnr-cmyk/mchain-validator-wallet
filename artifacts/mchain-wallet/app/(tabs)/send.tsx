@@ -22,6 +22,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useWallet } from "@/context/WalletContext";
 import { api } from "@/services/api";
 import { mcToWei, shortenAddress, signTransaction, weiToMc } from "@/services/crypto";
+import { QRScannerModal } from "@/components/QRScannerModal";
 import { Toast } from "@/components/Toast";
 import { useColors } from "@/hooks/useColors";
 
@@ -44,6 +45,7 @@ export default function SendScreen() {
   const [toast, setToast] = useState("");
   const [recentAddresses, setRecentAddresses] = useState<string[]>([]);
   const [showRecent, setShowRecent] = useState(false);
+  const [showScanner, setShowScanner] = useState(false);
   const [recipientFocused, setRecipientFocused] = useState(false);
   const [amountFocused, setAmountFocused] = useState(false);
 
@@ -489,6 +491,11 @@ export default function SendScreen() {
           </ScrollView>
         </Animated.View>
         <Toast message={toast} visible={!!toast} onHide={() => setToast("")} />
+        <QRScannerModal
+          visible={showScanner}
+          onClose={() => setShowScanner(false)}
+          onScan={(address) => { setRecipient(address); setError(""); }}
+        />
       </View>
     );
   }
@@ -532,6 +539,13 @@ export default function SendScreen() {
                 autoCapitalize="none"
                 autoCorrect={false}
               />
+              <TouchableOpacity
+                style={s.inputAction}
+                onPress={() => { setShowRecent(false); setShowScanner(true); }}
+              >
+                <Icon name="scan" size={16} color={colors.primary} />
+              </TouchableOpacity>
+              <View style={{ width: 1, height: 20, backgroundColor: colors.border }} />
               <TouchableOpacity style={s.inputAction} onPress={handlePasteAddress}>
                 <Icon name="clipboard-outline" size={14} color={colors.primary} />
                 <Text style={s.inputActionText}>Paste</Text>
@@ -619,6 +633,11 @@ export default function SendScreen() {
         </ScrollView>
       </Animated.View>
       <Toast message={toast} visible={!!toast} onHide={() => setToast("")} />
+      <QRScannerModal
+        visible={showScanner}
+        onClose={() => setShowScanner(false)}
+        onScan={(address) => { setRecipient(address); setError(""); }}
+      />
     </View>
   );
 }
