@@ -66,15 +66,7 @@ export default function TabLayout() {
           ),
         }}
       />
-      <Tabs.Screen
-        name="earnings"
-        options={{
-          title: "Earnings",
-          tabBarIcon: ({ color, focused }) => (
-            <Icon name={focused ? "bar-chart" : "bar-chart-outline"} size={22} color={color} />
-          ),
-        }}
-      />
+      <Tabs.Screen name="earnings" options={{ href: null }} />
       <Tabs.Screen
         name="settings"
         options={{
