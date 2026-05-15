@@ -303,7 +303,7 @@ export default function DashboardScreen() {
         <View style={s.header}>
           <Text style={s.headerMoniker}>{moniker || "Validator"}</Text>
           {chainInfo && (
-            <Text style={s.headerBlock}>Block #{chainInfo.blockHeight.toLocaleString()}</Text>
+            <Text style={s.headerBlock}>Block #{chainInfo.blockHeight?.toLocaleString() ?? "—"}</Text>
           )}
         </View>
 

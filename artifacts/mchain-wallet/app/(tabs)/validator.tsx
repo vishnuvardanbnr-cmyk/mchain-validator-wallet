@@ -418,7 +418,7 @@ export default function ValidatorScreen() {
             <View style={s.statusBadge}>
               <PulsingDot status={validator.status} size={7} />
               <Text style={[s.statusBadgeText, { color: statusColor(validator.status) }]}>
-                {validator.status.charAt(0).toUpperCase() + validator.status.slice(1)}
+                {validator.status ? validator.status.charAt(0).toUpperCase() + validator.status.slice(1) : "Unknown"}
               </Text>
             </View>
           </View>
