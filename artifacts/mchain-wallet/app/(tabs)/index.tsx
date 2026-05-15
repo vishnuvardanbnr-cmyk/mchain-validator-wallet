@@ -373,7 +373,7 @@ export default function DashboardScreen() {
             ) : (
               <Text style={s.balanceAmount}>{balance}</Text>
             )}
-            <Text style={s.balanceSub}>MC • Fixed Supply 180M</Text>
+
             <TouchableOpacity style={s.addressRow} onPress={copyAddress}>
               <Text style={s.addressText} numberOfLines={1}>
                 {mxcAddress ? shortenAddress(mxcAddress, 8) : "—"}
