@@ -352,13 +352,6 @@ export default function DashboardScreen() {
           </LinearGradient>
         </View>
 
-        {(pendingHeartbeat || vStatus === "pending") && (
-          <View style={s.pendingBanner}>
-            <Icon name="time-outline" size={16} color="#F59E0B" />
-            <Text style={s.pendingText}>Waiting for admin approval to start validating</Text>
-          </View>
-        )}
-
         {vStatus === "banned" && (
           <View style={[s.pendingBanner, { borderColor: "#EF444440", backgroundColor: "#1A0000" }]}>
             <Icon name="alert-circle-outline" size={16} color="#EF4444" />
