@@ -1,9 +1,11 @@
 import { Feather } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Animated,
+  Easing,
   FlatList,
   Platform,
   RefreshControl,
@@ -20,22 +22,46 @@ import { api } from "@/services/api";
 import { formatDate, formatUptime, weiToMc } from "@/services/crypto";
 import { PulsingDot } from "@/components/PulsingDot";
 import { SessionTimer } from "@/components/SessionTimer";
+import { Toast } from "@/components/Toast";
 import { useColors } from "@/hooks/useColors";
 
 export default function ValidatorScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const qc = useQueryClient();
-  const { mxcAddress, ethAddress, publicKey, deviceId, moniker, sessionExpired, sessionExpiresAt, isStaked, setSessionExpired } = useWallet();
+  const {
+    mxcAddress,
+    ethAddress,
+    publicKey,
+    deviceId,
+    moniker,
+    sessionExpired,
+    sessionExpiresAt,
+    isStaked,
+    setSessionExpired,
+    setSessionExpiresAt,
+    setIsStaked,
+  } = useWallet();
 
   const [regMoniker, setRegMoniker] = useState(moniker || "");
   const [commissionRate, setCommissionRate] = useState("5");
   const [regError, setRegError] = useState("");
+  const [toast, setToast] = useState("");
+  const [restartLoading, setRestartLoading] = useState(false);
+  const [monikerFocused, setMonikerFocused] = useState(false);
+  const [commissionFocused, setCommissionFocused] = useState(false);
+
+  // Animations
+  const pulseScale = useRef(new Animated.Value(1)).current;
+  const pulseOpacity = useRef(new Animated.Value(0.6)).current;
+  const ring2Scale = useRef(new Animated.Value(1)).current;
+  const ring2Opacity = useRef(new Animated.Value(0.3)).current;
+  const expiredShake = useRef(new Animated.Value(0)).current;
+  const cardFade = useRef(new Animated.Value(0)).current;
 
   const {
     data: validatorData,
     isLoading: validatorLoading,
-    isError: validatorError,
     refetch: refetchValidator,
   } = useQuery({
     queryKey: ["validatorDetail", mxcAddress],
@@ -54,16 +80,12 @@ export default function ValidatorScreen() {
 
   const registerMutation = useMutation({
     mutationFn: () => {
-      if (!mxcAddress || !ethAddress || !publicKey) {
+      if (!mxcAddress || !ethAddress || !publicKey)
         throw new Error("Wallet not initialized");
-      }
       const rate = parseFloat(commissionRate);
-      if (isNaN(rate) || rate < 0 || rate > 100) {
+      if (isNaN(rate) || rate < 0 || rate > 100)
         throw new Error("Commission rate must be between 0 and 100");
-      }
-      if (!regMoniker.trim()) {
-        throw new Error("Moniker cannot be empty");
-      }
+      if (!regMoniker.trim()) throw new Error("Moniker cannot be empty");
       return api.registerValidator({
         address: mxcAddress,
         ethAddress,
@@ -90,13 +112,90 @@ export default function ValidatorScreen() {
     try { return acc + BigInt(r.amount); } catch { return acc; }
   }, BigInt(0));
 
+  // Start/stop pulse animation based on validator status
+  useEffect(() => {
+    let anim: Animated.CompositeAnimation | null = null;
+    if (validator?.status === "active" && !sessionExpired) {
+      anim = Animated.loop(
+        Animated.parallel([
+          Animated.sequence([
+            Animated.timing(pulseScale, { toValue: 1.4, duration: 1800, useNativeDriver: true, easing: Easing.inOut(Easing.ease) }),
+            Animated.timing(pulseScale, { toValue: 1, duration: 1800, useNativeDriver: true, easing: Easing.inOut(Easing.ease) }),
+          ]),
+          Animated.sequence([
+            Animated.timing(pulseOpacity, { toValue: 0, duration: 1800, useNativeDriver: true }),
+            Animated.timing(pulseOpacity, { toValue: 0.6, duration: 1800, useNativeDriver: true }),
+          ]),
+          Animated.sequence([
+            Animated.timing(ring2Scale, { toValue: 1.8, duration: 2400, useNativeDriver: true, easing: Easing.inOut(Easing.ease) }),
+            Animated.timing(ring2Scale, { toValue: 1, duration: 0, useNativeDriver: true }),
+          ]),
+          Animated.sequence([
+            Animated.timing(ring2Opacity, { toValue: 0, duration: 2400, useNativeDriver: true }),
+            Animated.timing(ring2Opacity, { toValue: 0, duration: 0, useNativeDriver: true }),
+          ]),
+        ])
+      );
+      anim.start();
+    } else {
+      pulseScale.setValue(1);
+      pulseOpacity.setValue(0);
+      ring2Scale.setValue(1);
+      ring2Opacity.setValue(0);
+    }
+    return () => anim?.stop();
+  }, [validator?.status, sessionExpired, pulseScale, pulseOpacity, ring2Scale, ring2Opacity]);
+
+  // Shake animation when session is expired
+  useEffect(() => {
+    if (sessionExpired) {
+      Animated.sequence([
+        Animated.timing(expiredShake, { toValue: 8, duration: 60, useNativeDriver: true }),
+        Animated.timing(expiredShake, { toValue: -8, duration: 60, useNativeDriver: true }),
+        Animated.timing(expiredShake, { toValue: 6, duration: 60, useNativeDriver: true }),
+        Animated.timing(expiredShake, { toValue: -6, duration: 60, useNativeDriver: true }),
+        Animated.timing(expiredShake, { toValue: 0, duration: 60, useNativeDriver: true }),
+      ]).start();
+    }
+  }, [sessionExpired, expiredShake]);
+
+  // Fade in card when data loads
+  useEffect(() => {
+    if (validator) {
+      Animated.timing(cardFade, { toValue: 1, duration: 400, useNativeDriver: true }).start();
+    }
+  }, [!!validator, cardFade]);
+
+  async function handleRestartSession() {
+    if (!mxcAddress) return;
+    setRestartLoading(true);
+    try {
+      const result = await api.restartSession(mxcAddress);
+      await setSessionExpiresAt(result.sessionExpiresAt);
+      setSessionExpired(false);
+      setIsStaked(false);
+      setToast("Session restarted — earning rewards again");
+    } catch (err) {
+      setToast(err instanceof Error ? err.message : "Failed to restart session");
+    } finally {
+      setRestartLoading(false);
+    }
+  }
+
   function statusColor(status: string | undefined) {
+    if (sessionExpired) return "#F59E0B";
     switch (status) {
       case "active": return colors.success;
       case "pending": return colors.warning;
       case "banned": return colors.destructive;
       default: return colors.mutedForeground;
     }
+  }
+
+  function statusLabel(status: string | undefined) {
+    if (sessionExpired) return "Paused";
+    if (!status) return "Unknown";
+    return status.charAt(0).toUpperCase() + status.slice(1);
   }
 
   const s = StyleSheet.create({
@@ -106,17 +205,9 @@ export default function ValidatorScreen() {
       paddingHorizontal: 20,
       paddingBottom: 16,
     },
-    headerTitle: {
-      fontSize: 24,
-      fontFamily: "Inter_700Bold",
-      color: colors.foreground,
-    },
-    headerSubtitle: {
-      fontSize: 14,
-      fontFamily: "Inter_400Regular",
-      color: colors.mutedForeground,
-      marginTop: 4,
-    },
+    headerTitle: { fontSize: 24, fontFamily: "Inter_700Bold", color: colors.foreground },
+    headerSubtitle: { fontSize: 14, fontFamily: "Inter_400Regular", color: colors.mutedForeground, marginTop: 4 },
+    // Register card
     registerCard: {
       marginHorizontal: 20,
       backgroundColor: colors.card,
@@ -127,49 +218,45 @@ export default function ValidatorScreen() {
       marginBottom: 16,
     },
     registerIcon: {
-      width: 56,
-      height: 56,
-      borderRadius: 28,
-      backgroundColor: colors.primary + "20",
+      width: 64,
+      height: 64,
+      borderRadius: 32,
+      backgroundColor: colors.primary + "15",
       alignItems: "center",
       justifyContent: "center",
       marginBottom: 16,
+      borderWidth: 1,
+      borderColor: colors.primary + "30",
     },
-    registerTitle: {
-      fontSize: 20,
-      fontFamily: "Inter_700Bold",
-      color: colors.foreground,
-      marginBottom: 8,
+    registerTitle: { fontSize: 20, fontFamily: "Inter_700Bold", color: colors.foreground, marginBottom: 8 },
+    registerDesc: { fontSize: 14, fontFamily: "Inter_400Regular", color: colors.mutedForeground, lineHeight: 22, marginBottom: 24 },
+    featureRow: { flexDirection: "row", gap: 8, marginBottom: 24 },
+    featureChip: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+      backgroundColor: colors.primary + "15",
+      borderRadius: 20,
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+      borderWidth: 1,
+      borderColor: colors.primary + "25",
     },
-    registerDesc: {
-      fontSize: 14,
-      fontFamily: "Inter_400Regular",
-      color: colors.mutedForeground,
-      lineHeight: 20,
-      marginBottom: 20,
-    },
-    label: {
-      fontSize: 11,
-      fontFamily: "Inter_600SemiBold",
-      color: colors.mutedForeground,
-      letterSpacing: 1.5,
-      marginBottom: 8,
-    },
+    featureChipText: { fontSize: 11, fontFamily: "Inter_500Medium", color: colors.primary },
+    fieldLabel: { fontSize: 11, fontFamily: "Inter_600SemiBold", color: colors.mutedForeground, letterSpacing: 1.5, marginBottom: 8 },
     input: {
       backgroundColor: colors.background,
       borderWidth: 1,
       borderColor: colors.border,
       borderRadius: colors.radius,
       paddingHorizontal: 14,
-      paddingVertical: 12,
+      paddingVertical: 13,
       fontSize: 15,
       fontFamily: "Inter_400Regular",
       color: colors.foreground,
       marginBottom: 16,
     },
-    inputFocused: {
-      borderColor: colors.primary,
-    },
+    inputFocused: { borderColor: colors.primary },
     commissionRow: {
       flexDirection: "row",
       alignItems: "center",
@@ -179,55 +266,19 @@ export default function ValidatorScreen() {
       borderRadius: colors.radius,
       marginBottom: 20,
     },
-    commissionInput: {
-      flex: 1,
-      paddingHorizontal: 14,
-      paddingVertical: 12,
-      fontSize: 15,
-      fontFamily: "Inter_400Regular",
-      color: colors.foreground,
-    },
-    commissionUnit: {
-      paddingRight: 14,
-      fontSize: 15,
-      fontFamily: "Inter_500Medium",
-      color: colors.mutedForeground,
-    },
-    registerBtn: {
-      borderRadius: colors.radius,
-      overflow: "hidden",
-    },
-    registerBtnGrad: {
-      paddingVertical: 14,
-      alignItems: "center",
-      flexDirection: "row",
-      justifyContent: "center",
-      gap: 8,
-    },
-    registerBtnText: {
-      fontSize: 16,
-      fontFamily: "Inter_600SemiBold",
-      color: "#FFFFFF",
-    },
-    errorText: {
-      fontSize: 13,
-      fontFamily: "Inter_400Regular",
-      color: colors.destructive,
-      marginBottom: 12,
-    },
-    statusCard: {
-      marginHorizontal: 20,
-      borderRadius: colors.radius + 4,
-      overflow: "hidden",
-      marginBottom: 16,
-    },
+    commissionInput: { flex: 1, paddingHorizontal: 14, paddingVertical: 13, fontSize: 15, fontFamily: "Inter_400Regular", color: colors.foreground },
+    commissionUnit: { paddingRight: 14, fontSize: 15, fontFamily: "Inter_500Medium", color: colors.mutedForeground },
+    registerBtn: { borderRadius: colors.radius, overflow: "hidden" },
+    registerBtnGrad: { paddingVertical: 15, alignItems: "center", flexDirection: "row", justifyContent: "center", gap: 8 },
+    registerBtnText: { fontSize: 16, fontFamily: "Inter_600SemiBold", color: "#FFFFFF" },
+    errorText: { fontSize: 13, fontFamily: "Inter_400Regular", color: colors.destructive, marginBottom: 12 },
+    // Status card
+    statusCardWrap: { marginHorizontal: 20, borderRadius: colors.radius + 4, overflow: "hidden", marginBottom: 16 },
     statusGrad: { padding: 20 },
-    statusTop: {
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "space-between",
-      marginBottom: 16,
-    },
+    statusTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 20 },
+    statusLeft: { flex: 1 },
+    statusMoniker: { fontSize: 18, fontFamily: "Inter_700Bold", color: "#FFFFFF", marginBottom: 4 },
+    statusAddressText: { fontSize: 11, fontFamily: "Inter_400Regular", color: "rgba(255,255,255,0.45)" },
     statusBadge: {
       flexDirection: "row",
       alignItems: "center",
@@ -235,31 +286,52 @@ export default function ValidatorScreen() {
       paddingHorizontal: 12,
       paddingVertical: 6,
       borderRadius: 20,
+      backgroundColor: "rgba(0,0,0,0.35)",
+    },
+    statusBadgeText: { fontSize: 13, fontFamily: "Inter_600SemiBold" },
+    // Pulse animation center
+    pulseCenter: { alignItems: "center", marginBottom: 20 },
+    pulseRing: {
+      position: "absolute",
+      width: 72,
+      height: 72,
+      borderRadius: 36,
+      borderWidth: 2,
+    },
+    pulseRing2: {
+      position: "absolute",
+      width: 72,
+      height: 72,
+      borderRadius: 36,
+      borderWidth: 1,
+    },
+    pulseInner: {
+      width: 72,
+      height: 72,
+      borderRadius: 36,
       backgroundColor: "rgba(0,0,0,0.3)",
+      alignItems: "center",
+      justifyContent: "center",
     },
-    statusBadgeText: {
-      fontSize: 13,
-      fontFamily: "Inter_600SemiBold",
+    statsGrid: { flexDirection: "row", gap: 10 },
+    statBox: { flex: 1, backgroundColor: "rgba(0,0,0,0.22)", borderRadius: 10, padding: 11 },
+    statLabel: { fontSize: 9, fontFamily: "Inter_500Medium", color: "rgba(255,255,255,0.5)", letterSpacing: 1, marginBottom: 5 },
+    statValue: { fontSize: 16, fontFamily: "Inter_700Bold", color: "#FFFFFF" },
+    // Session expired banner
+    expiredBanner: {
+      marginTop: 16,
+      backgroundColor: "rgba(245,158,11,0.12)",
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: "rgba(245,158,11,0.4)",
+      padding: 14,
     },
-    statsGrid: { flexDirection: "row", gap: 12 },
-    statBox: {
-      flex: 1,
-      backgroundColor: "rgba(0,0,0,0.2)",
-      borderRadius: 10,
-      padding: 12,
-    },
-    statLabel: {
-      fontSize: 11,
-      fontFamily: "Inter_500Medium",
-      color: "rgba(255,255,255,0.5)",
-      letterSpacing: 1,
-      marginBottom: 4,
-    },
-    statValue: {
-      fontSize: 18,
-      fontFamily: "Inter_700Bold",
-      color: "#FFFFFF",
-    },
+    expiredBannerTitle: { fontSize: 13, fontFamily: "Inter_600SemiBold", color: "#F59E0B", marginBottom: 4 },
+    expiredBannerDesc: { fontSize: 12, fontFamily: "Inter_400Regular", color: "rgba(255,255,255,0.6)", lineHeight: 18, marginBottom: 12 },
+    restartBtn: { borderRadius: 10, overflow: "hidden" },
+    restartGrad: { paddingVertical: 11, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7 },
+    restartBtnText: { fontSize: 14, fontFamily: "Inter_600SemiBold", color: "#FFFFFF" },
+    // Total earned card
     totalCard: {
       marginHorizontal: 20,
       flexDirection: "row",
@@ -272,66 +344,18 @@ export default function ValidatorScreen() {
       marginBottom: 16,
       gap: 14,
     },
-    totalIcon: {
-      width: 44,
-      height: 44,
-      borderRadius: 22,
-      backgroundColor: "#10B98120",
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    totalLabel: {
-      fontSize: 12,
-      fontFamily: "Inter_500Medium",
-      color: colors.mutedForeground,
-      marginBottom: 2,
-    },
-    totalValue: {
-      fontSize: 20,
-      fontFamily: "Inter_700Bold",
-      color: colors.success,
-    },
-    sectionTitle: {
-      fontSize: 12,
-      fontFamily: "Inter_600SemiBold",
-      color: colors.mutedForeground,
-      letterSpacing: 1.5,
-      marginHorizontal: 20,
-      marginBottom: 8,
-    },
-    rewardRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      paddingHorizontal: 20,
-      paddingVertical: 12,
-      borderBottomWidth: 1,
-      borderBottomColor: colors.border,
-      gap: 12,
-    },
-    rewardDate: {
-      fontSize: 12,
-      fontFamily: "Inter_500Medium",
-      color: colors.mutedForeground,
-      width: 90,
-    },
-    rewardAmount: {
-      flex: 1,
-      fontSize: 14,
-      fontFamily: "Inter_600SemiBold",
-      color: colors.success,
-    },
-    rewardShare: {
-      fontSize: 12,
-      fontFamily: "Inter_400Regular",
-      color: colors.mutedForeground,
-    },
-    emptyState: { padding: 32, alignItems: "center" },
-    emptyText: {
-      fontSize: 14,
-      fontFamily: "Inter_400Regular",
-      color: colors.mutedForeground,
-      marginTop: 8,
-    },
+    totalIcon: { width: 44, height: 44, borderRadius: 22, backgroundColor: "#10B98115", alignItems: "center", justifyContent: "center" },
+    totalLabel: { fontSize: 11, fontFamily: "Inter_500Medium", color: colors.mutedForeground, marginBottom: 3, letterSpacing: 0.5 },
+    totalValue: { fontSize: 22, fontFamily: "Inter_700Bold", color: colors.success },
+    // Rewards list
+    sectionTitle: { fontSize: 11, fontFamily: "Inter_600SemiBold", color: colors.mutedForeground, letterSpacing: 1.5, marginHorizontal: 20, marginBottom: 8 },
+    rewardRow: { flexDirection: "row", alignItems: "center", paddingHorizontal: 20, paddingVertical: 13, borderBottomWidth: 1, borderBottomColor: colors.border, gap: 12 },
+    rewardIconWrap: { width: 34, height: 34, borderRadius: 17, backgroundColor: "#10B98115", alignItems: "center", justifyContent: "center" },
+    rewardDate: { fontSize: 12, fontFamily: "Inter_500Medium", color: colors.mutedForeground, flex: 1 },
+    rewardAmount: { fontSize: 14, fontFamily: "Inter_600SemiBold", color: colors.success },
+    rewardShare: { fontSize: 11, fontFamily: "Inter_400Regular", color: colors.mutedForeground, marginTop: 1 },
+    emptyState: { padding: 40, alignItems: "center", gap: 8 },
+    emptyText: { fontSize: 14, fontFamily: "Inter_400Regular", color: colors.mutedForeground },
   });
 
   if (validatorLoading) {
@@ -343,23 +367,40 @@ export default function ValidatorScreen() {
   }
 
   const showRegisterForm = !isRegistered;
+  const activeColor = sessionExpired ? "#F59E0B" : statusColor(validator?.status);
 
   const RegisterForm = (
     <View style={s.registerCard}>
       <View style={s.registerIcon}>
-        <Feather name="shield" size={26} color={colors.primary} />
+        <Feather name="shield" size={28} color={colors.primary} />
       </View>
       <Text style={s.registerTitle}>Become a Validator</Text>
       <Text style={s.registerDesc}>
-        Register your node on the MChain network to earn MC rewards by keeping
-        your device online and sending regular heartbeats.
+        Register your device on the MChain network. Keep it online to earn MC rewards through uptime-based treasury payouts and gas fee sharing.
       </Text>
 
-      <Text style={s.label}>NODE MONIKER</Text>
+      <View style={s.featureRow}>
+        <View style={s.featureChip}>
+          <Feather name="clock" size={11} color={colors.primary} />
+          <Text style={s.featureChipText}>Uptime Rewards</Text>
+        </View>
+        <View style={s.featureChip}>
+          <Feather name="zap" size={11} color={colors.primary} />
+          <Text style={s.featureChipText}>Gas Fees</Text>
+        </View>
+        <View style={s.featureChip}>
+          <Feather name="cpu" size={11} color={colors.primary} />
+          <Text style={s.featureChipText}>Chain ID 1888</Text>
+        </View>
+      </View>
+
+      <Text style={s.fieldLabel}>NODE MONIKER</Text>
       <TextInput
-        style={s.input}
+        style={[s.input, monikerFocused && s.inputFocused]}
         value={regMoniker}
         onChangeText={setRegMoniker}
+        onFocus={() => setMonikerFocused(true)}
+        onBlur={() => setMonikerFocused(false)}
         placeholder="e.g. my-mchain-node"
         placeholderTextColor={colors.mutedForeground}
         autoCapitalize="none"
@@ -368,12 +409,14 @@ export default function ValidatorScreen() {
         editable={!registerMutation.isPending}
       />
 
-      <Text style={s.label}>COMMISSION RATE</Text>
-      <View style={s.commissionRow}>
+      <Text style={s.fieldLabel}>COMMISSION RATE</Text>
+      <View style={[s.commissionRow, commissionFocused && { borderColor: colors.primary }]}>
         <TextInput
           style={s.commissionInput}
           value={commissionRate}
           onChangeText={setCommissionRate}
+          onFocus={() => setCommissionFocused(true)}
+          onBlur={() => setCommissionFocused(false)}
           placeholder="5"
           placeholderTextColor={colors.mutedForeground}
           keyboardType="decimal-pad"
@@ -389,12 +432,9 @@ export default function ValidatorScreen() {
         style={s.registerBtn}
         onPress={() => registerMutation.mutate()}
         disabled={registerMutation.isPending}
-        activeOpacity={0.8}
+        activeOpacity={0.85}
       >
-        <LinearGradient
-          colors={["#0EA5E9", "#0284C7"]}
-          style={s.registerBtnGrad}
-        >
+        <LinearGradient colors={["#0EA5E9", "#0284C7"]} style={s.registerBtnGrad}>
           {registerMutation.isPending ? (
             <ActivityIndicator color="#FFFFFF" size="small" />
           ) : (
@@ -409,20 +449,61 @@ export default function ValidatorScreen() {
   );
 
   const ValidatorStats = validator ? (
-    <>
-      <View style={s.statusCard}>
-        <LinearGradient colors={["#0D2B4E", "#091929"]} style={s.statusGrad}>
+    <Animated.View style={{ opacity: cardFade }}>
+      <Animated.View style={[s.statusCardWrap, sessionExpired && { transform: [{ translateX: expiredShake }] }]}>
+        <LinearGradient
+          colors={sessionExpired ? ["#2A1A00", "#1A1000"] : ["#0D2B4E", "#091929"]}
+          style={s.statusGrad}
+        >
           <View style={s.statusTop}>
-            <Text style={{ fontSize: 16, fontFamily: "Inter_700Bold", color: "#FFFFFF" }}>
-              {validator.moniker}
-            </Text>
-            <View style={s.statusBadge}>
-              <PulsingDot status={validator.status} size={7} />
-              <Text style={[s.statusBadgeText, { color: statusColor(validator.status) }]}>
-                {validator.status ? validator.status.charAt(0).toUpperCase() + validator.status.slice(1) : "Unknown"}
+            <View style={s.statusLeft}>
+              <Text style={s.statusMoniker}>{validator.moniker}</Text>
+              <Text style={s.statusAddressText} numberOfLines={1}>
+                {mxcAddress?.substring(0, 20)}…
+              </Text>
+            </View>
+            <View style={[s.statusBadge, sessionExpired && { backgroundColor: "rgba(245,158,11,0.15)" }]}>
+              <PulsingDot status={sessionExpired ? "pending" : validator.status} size={7} />
+              <Text style={[s.statusBadgeText, { color: activeColor }]}>
+                {statusLabel(validator.status)}
               </Text>
             </View>
           </View>
+
+          {/* Animated pulse indicator */}
+          <View style={s.pulseCenter}>
+            {/* Outer ring 2 */}
+            <Animated.View
+              style={[
+                s.pulseRing2,
+                {
+                  borderColor: activeColor,
+                  transform: [{ scale: ring2Scale }],
+                  opacity: ring2Opacity,
+                },
+              ]}
+            />
+            {/* Outer ring 1 */}
+            <Animated.View
+              style={[
+                s.pulseRing,
+                {
+                  borderColor: activeColor,
+                  transform: [{ scale: pulseScale }],
+                  opacity: pulseOpacity,
+                },
+              ]}
+            />
+            {/* Center dot */}
+            <View style={[s.pulseInner, { borderWidth: 1.5, borderColor: activeColor + "40" }]}>
+              <Feather
+                name={sessionExpired ? "pause-circle" : validator.status === "active" ? "activity" : validator.status === "pending" ? "clock" : "shield-off"}
+                size={28}
+                color={activeColor}
+              />
+            </View>
+          </View>
+
           <View style={s.statsGrid}>
             <View style={s.statBox}>
               <Text style={s.statLabel}>UPTIME</Text>
@@ -435,23 +516,50 @@ export default function ValidatorScreen() {
             <View style={s.statBox}>
               <Text style={s.statLabel}>SESSION</Text>
               {isStaked ? (
-                <Text style={[s.statValue, { color: "#10B981", fontSize: 13 }]}>Unlimited</Text>
+                <Text style={[s.statValue, { color: "#10B981", fontSize: 12 }]}>Unlimited</Text>
               ) : sessionExpired ? (
-                <Text style={[s.statValue, { color: "#EF4444", fontSize: 11 }]}>Expired</Text>
+                <Text style={[s.statValue, { color: "#F59E0B", fontSize: 12 }]}>Expired</Text>
               ) : sessionExpiresAt ? (
                 <SessionTimer
                   expiresAt={sessionExpiresAt}
                   compact
                   onExpired={() => setSessionExpired(true)}
-                  style={{ fontSize: 15, fontFamily: "Inter_700Bold" }}
+                  style={{ fontSize: 13, fontFamily: "Inter_700Bold" }}
                 />
               ) : (
                 <Text style={s.statValue}>—</Text>
               )}
             </View>
           </View>
+
+          {/* Session expired banner inside card */}
+          {sessionExpired && (
+            <View style={s.expiredBanner}>
+              <Text style={s.expiredBannerTitle}>⚠ Session Paused</Text>
+              <Text style={s.expiredBannerDesc}>
+                Your 2-hour validator session has ended. Restart to resume earning rewards.
+              </Text>
+              <TouchableOpacity
+                style={s.restartBtn}
+                onPress={handleRestartSession}
+                disabled={restartLoading}
+                activeOpacity={0.85}
+              >
+                <LinearGradient colors={["#F59E0B", "#D97706"]} style={s.restartGrad}>
+                  {restartLoading ? (
+                    <ActivityIndicator color="#FFFFFF" size="small" />
+                  ) : (
+                    <>
+                      <Feather name="refresh-cw" size={14} color="#FFFFFF" />
+                      <Text style={s.restartBtnText}>Restart Session</Text>
+                    </>
+                  )}
+                </LinearGradient>
+              </TouchableOpacity>
+            </View>
+          )}
         </LinearGradient>
-      </View>
+      </Animated.View>
 
       <View style={s.totalCard}>
         <View style={s.totalIcon}>
@@ -463,51 +571,62 @@ export default function ValidatorScreen() {
         </View>
       </View>
 
-      <Text style={s.sectionTitle}>REWARDS HISTORY</Text>
-    </>
+      <Text style={s.sectionTitle}>RECENT REWARDS</Text>
+    </Animated.View>
   ) : null;
 
   return (
-    <FlatList
-      style={s.container}
-      contentContainerStyle={{ paddingBottom: 100 }}
-      refreshControl={
-        <RefreshControl
-          refreshing={false}
-          onRefresh={() => { refetchValidator(); refetchRewards(); }}
-          tintColor={colors.primary}
-        />
-      }
-      ListHeaderComponent={
-        <>
-          <View style={s.header}>
-            <Text style={s.headerTitle}>Validator</Text>
-            {showRegisterForm && (
-              <Text style={s.headerSubtitle}>
-                Your address is not yet registered on MChain
+    <View style={{ flex: 1 }}>
+      <FlatList
+        style={s.container}
+        contentContainerStyle={{ paddingBottom: 110 }}
+        refreshControl={
+          <RefreshControl
+            refreshing={false}
+            onRefresh={() => { refetchValidator(); refetchRewards(); }}
+            tintColor={colors.primary}
+          />
+        }
+        ListHeaderComponent={
+          <>
+            <View style={s.header}>
+              <Text style={s.headerTitle}>Validator</Text>
+              {showRegisterForm && (
+                <Text style={s.headerSubtitle}>Not yet registered on MChain</Text>
+              )}
+            </View>
+            {showRegisterForm ? RegisterForm : ValidatorStats}
+          </>
+        }
+        data={showRegisterForm ? [] : rewards}
+        keyExtractor={(item) => item.id}
+        renderItem={({ item: reward }) => (
+          <View style={s.rewardRow}>
+            <View style={s.rewardIconWrap}>
+              <Feather name="trending-up" size={14} color={colors.success} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={s.rewardDate}>{formatDate(reward.timestamp ?? reward.date)}</Text>
+              <Text style={{ fontSize: 11, fontFamily: "Inter_400Regular", color: colors.mutedForeground }}>
+                Pool share: {reward.poolShare}%
               </Text>
-            )}
+            </View>
+            <Text style={s.rewardAmount}>+{weiToMc(reward.amount)} MC</Text>
           </View>
-          {showRegisterForm ? RegisterForm : ValidatorStats}
-        </>
-      }
-      data={showRegisterForm ? [] : rewards}
-      keyExtractor={(item) => item.id}
-      renderItem={({ item: reward }) => (
-        <View style={s.rewardRow}>
-          <Text style={s.rewardDate}>{formatDate(reward.timestamp ?? reward.date)}</Text>
-          <Text style={s.rewardAmount}>+{weiToMc(reward.amount)} MC</Text>
-          <Text style={s.rewardShare}>{reward.poolShare}%</Text>
-        </View>
-      )}
-      ListEmptyComponent={
-        !showRegisterForm ? (
-          <View style={s.emptyState}>
-            <Feather name="award" size={32} color={colors.mutedForeground} />
-            <Text style={s.emptyText}>No rewards yet</Text>
-          </View>
-        ) : null
-      }
-    />
+        )}
+        ListEmptyComponent={
+          !showRegisterForm ? (
+            <View style={s.emptyState}>
+              <Feather name="award" size={32} color={colors.mutedForeground} />
+              <Text style={s.emptyText}>No rewards yet</Text>
+              <Text style={{ fontSize: 12, fontFamily: "Inter_400Regular", color: colors.mutedForeground, textAlign: "center", marginTop: 4 }}>
+                Stay online to start earning
+              </Text>
+            </View>
+          ) : null
+        }
+      />
+      <Toast message={toast} visible={!!toast} onHide={() => setToast("")} />
+    </View>
   );
 }

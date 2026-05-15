@@ -11,6 +11,7 @@ export function useHeartbeat() {
     mxcAddress,
     setValidatorStatus,
     setPendingHeartbeat,
+    sessionExpired,
     setSessionExpired,
     setSessionExpiresAt,
     setIsStaked,
@@ -20,6 +21,7 @@ export function useHeartbeat() {
   const activeMinutesRef = useRef(0);
   const mxcAddressRef = useRef(mxcAddress);
   const stoppedRef = useRef(false);
+  const prevSessionExpiredRef = useRef(sessionExpired);
 
   useEffect(() => {
     mxcAddressRef.current = mxcAddress;
@@ -84,14 +86,12 @@ export function useHeartbeat() {
 
       if (apiErr?.status === 403) {
         if (apiErr?.data?.error === "session_expired") {
-          // Session expired — stop heartbeats and show restart UI
           stopInterval();
           setSessionExpired(true);
           const expiredAt = apiErr.data.expiredAt as string | undefined;
           if (expiredAt) await setSessionExpiresAt(expiredAt);
           router.push("/(tabs)");
         } else {
-          // Validator pending approval
           setPendingHeartbeat(true);
           setValidatorStatus("pending");
         }
@@ -105,6 +105,16 @@ export function useHeartbeat() {
     setIsStaked,
     stopInterval,
   ]);
+
+  // Resume interval when session is restarted from any screen
+  useEffect(() => {
+    if (prevSessionExpiredRef.current && !sessionExpired && mxcAddress) {
+      stoppedRef.current = false;
+      sendHeartbeat();
+      startInterval(sendHeartbeat);
+    }
+    prevSessionExpiredRef.current = sessionExpired;
+  }, [sessionExpired, mxcAddress, sendHeartbeat, startInterval]);
 
   useEffect(() => {
     if (!mxcAddress) return;
@@ -127,7 +137,6 @@ export function useHeartbeat() {
     setIsStaked(false);
     activeMinutesRef.current = 0;
 
-    // Resume heartbeats
     sendHeartbeat();
     startInterval(sendHeartbeat);
 
