@@ -1,7 +1,22 @@
-const BASE_URL = "https://chain.mvault.pro/api";
+import { Platform } from "react-native";
+
+const CHAIN_BASE = "https://chain.mvault.pro/api";
+
+function getBaseUrl(): string {
+  if (Platform.OS === "web") {
+    const domain =
+      typeof process !== "undefined" ? process.env.EXPO_PUBLIC_DOMAIN : undefined;
+    if (domain) {
+      return `https://${domain}/api/chain-proxy`;
+    }
+    return "/api/chain-proxy";
+  }
+  return CHAIN_BASE;
+}
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  const response = await fetch(`${BASE_URL}${path}`, {
+  const base = getBaseUrl();
+  const response = await fetch(`${base}${path}`, {
     headers: {
       "Content-Type": "application/json",
       ...(options?.headers ?? {}),
@@ -11,7 +26,14 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 
   if (!response.ok) {
     const text = await response.text().catch(() => "Request failed");
-    const err = new Error(text) as Error & { status: number };
+    let message = text;
+    try {
+      const json = JSON.parse(text);
+      message = json.message ?? json.error ?? text;
+    } catch {
+      // use raw text
+    }
+    const err = new Error(message) as Error & { status: number };
     err.status = response.status;
     throw err;
   }
