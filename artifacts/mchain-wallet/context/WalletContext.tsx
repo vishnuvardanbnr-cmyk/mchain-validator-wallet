@@ -7,7 +7,7 @@ import React, {
   useEffect,
   useState,
 } from "react";
-import { generateKeyPair, type KeyPair } from "@/services/crypto";
+import { deriveAddressFromPublicKey, generateKeyPair, type KeyPair } from "@/services/crypto";
 
 const KEYS = {
   IS_ONBOARDED: "mchain_is_onboarded",
@@ -76,7 +76,20 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       ]);
 
       setIsOnboarded(onboarded === "true");
-      if (addr) setMxcAddress(addr);
+
+      // Migration: fix addresses generated with wrong bech32 HRP "mxc1" (produces "mxc11…")
+      // Correct HRP is "mxc", which produces the proper "mxc1…" bech32 separator format.
+      let correctedAddr = addr;
+      if (addr && addr.startsWith("mxc11") && pubKey) {
+        try {
+          correctedAddr = deriveAddressFromPublicKey(pubKey);
+          await AsyncStorage.setItem(KEYS.MXC_ADDRESS, correctedAddr);
+        } catch {
+          correctedAddr = addr;
+        }
+      }
+
+      if (correctedAddr) setMxcAddress(correctedAddr);
       if (eth) setEthAddress(eth);
       if (pubKey) setPublicKey(pubKey);
       setMoniker(mon ?? "");

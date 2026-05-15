@@ -32,7 +32,7 @@ export function generateKeyPair(): KeyPair {
 
   const ethAddress = "0x" + bytesToHex(addressBytes);
   const words = bech32.toWords(addressBytes);
-  const mxcAddress = bech32.encode("mxc1", words);
+  const mxcAddress = bech32.encode("mxc", words);
 
   return {
     privateKey: bytesToHex(privKeyBytes),
@@ -40,6 +40,14 @@ export function generateKeyPair(): KeyPair {
     ethAddress,
     mxcAddress,
   };
+}
+
+export function deriveAddressFromPublicKey(publicKeyHex: string): string {
+  const pubKeyBytes = hexToBytes(publicKeyHex);
+  const pubKeyHash = keccak_256(pubKeyBytes);
+  const addressBytes = pubKeyHash.slice(-20);
+  const words = bech32.toWords(addressBytes);
+  return bech32.encode("mxc", words);
 }
 
 export function signTransaction(
