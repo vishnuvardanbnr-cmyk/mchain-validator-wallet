@@ -418,27 +418,21 @@ export default function DashboardScreen() {
     addTokenRow: {
       flexDirection: "row",
       alignItems: "center",
-      paddingVertical: 14,
-      paddingHorizontal: 2,
-      gap: 10,
-      borderTopWidth: 1,
-      borderTopColor: colors.border + "60",
-      marginTop: 2,
-    },
-    addTokenIcon: {
-      width: 40,
-      height: 40,
-      borderRadius: 20,
-      backgroundColor: colors.primary + "12",
-      borderWidth: 1,
-      borderColor: colors.primary + "30",
-      alignItems: "center",
       justifyContent: "center",
+      gap: 8,
+      marginTop: 10,
+      marginBottom: 2,
+      paddingVertical: 13,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: colors.primary + "38",
+      backgroundColor: colors.primary + "0A",
     },
     addTokenLabel: {
-      fontSize: 14,
+      fontSize: 13,
       fontFamily: "Inter_600SemiBold",
       color: colors.primary,
+      letterSpacing: 0.25,
     },
     emptyPanel: {
       alignItems: "center",
@@ -717,15 +711,13 @@ export default function DashboardScreen() {
                 </View>
               ))}
 
-              {/* Add token row */}
+              {/* Add token button */}
               <TouchableOpacity
                 style={s.addTokenRow}
                 onPress={() => setShowAddToken(true)}
-                activeOpacity={0.7}
+                activeOpacity={0.75}
               >
-                <View style={s.addTokenIcon}>
-                  <Icon name="plus-circle" size={16} color={colors.primary} />
-                </View>
+                <Icon name="plus-circle" size={15} color={colors.primary} />
                 <Text style={s.addTokenLabel}>Add Token</Text>
               </TouchableOpacity>
             </View>
