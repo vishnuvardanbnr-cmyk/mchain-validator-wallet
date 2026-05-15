@@ -47,6 +47,7 @@ export default function DashboardScreen() {
   const [isRestarting, setIsRestarting] = React.useState(false);
   const [showNewWallet, setShowNewWallet] = React.useState(false);
   const [showSwitcher, setShowSwitcher] = React.useState(false);
+  const [activeTab, setActiveTab] = React.useState<"assets" | "nft" | "approvals">("assets");
   const [rpcMs, setRpcMs] = React.useState<number | null>(null);
   const [rpcPinging, setRpcPinging] = React.useState(false);
   const rpcBadgeOpacity = useRef(new Animated.Value(0)).current;
@@ -290,7 +291,116 @@ export default function DashboardScreen() {
       flexDirection: "row",
       paddingHorizontal: 20,
       gap: 12,
+      marginBottom: 16,
+    },
+    tabsContainer: {
+      marginHorizontal: 20,
       marginBottom: 20,
+      backgroundColor: colors.card,
+      borderRadius: colors.radius,
+      borderWidth: 1,
+      borderColor: colors.border,
+      overflow: "hidden",
+    },
+    tabBar: {
+      flexDirection: "row",
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border,
+    },
+    tabItem: {
+      flex: 1,
+      alignItems: "center",
+      paddingVertical: 14,
+      position: "relative",
+    },
+    tabLabel: {
+      fontSize: 13,
+      fontFamily: "Inter_500Medium",
+      color: colors.mutedForeground,
+    },
+    tabLabelActive: {
+      fontFamily: "Inter_700Bold",
+      color: colors.foreground,
+    },
+    tabUnderline: {
+      position: "absolute",
+      bottom: 0,
+      left: "20%",
+      right: "20%",
+      height: 2,
+      borderRadius: 1,
+      backgroundColor: colors.primary,
+    },
+    tabPanel: {
+      paddingVertical: 4,
+    },
+    tokenRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingHorizontal: 16,
+      paddingVertical: 14,
+      gap: 12,
+    },
+    tokenIconWrap: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      backgroundColor: colors.primary + "20",
+      borderWidth: 1,
+      borderColor: colors.primary + "40",
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    tokenIconText: {
+      fontSize: 11,
+      fontFamily: "Inter_700Bold",
+      color: colors.primary,
+    },
+    tokenInfo: {
+      flex: 1,
+      gap: 2,
+    },
+    tokenName: {
+      fontSize: 14,
+      fontFamily: "Inter_600SemiBold",
+      color: colors.foreground,
+    },
+    tokenSymbol: {
+      fontSize: 11,
+      fontFamily: "Inter_400Regular",
+      color: colors.mutedForeground,
+    },
+    tokenAmountCol: {
+      alignItems: "flex-end",
+      gap: 2,
+    },
+    tokenAmount: {
+      fontSize: 14,
+      fontFamily: "Inter_600SemiBold",
+      color: colors.foreground,
+    },
+    tokenSub: {
+      fontSize: 11,
+      fontFamily: "Inter_400Regular",
+      color: colors.mutedForeground,
+    },
+    emptyPanel: {
+      alignItems: "center",
+      paddingVertical: 32,
+      paddingHorizontal: 24,
+      gap: 10,
+    },
+    emptyTitle: {
+      fontSize: 14,
+      fontFamily: "Inter_600SemiBold",
+      color: colors.foreground,
+    },
+    emptyDesc: {
+      fontSize: 12,
+      fontFamily: "Inter_400Regular",
+      color: colors.mutedForeground,
+      textAlign: "center",
+      lineHeight: 18,
     },
     actionBtn: {
       flex: 1,
@@ -476,6 +586,66 @@ export default function DashboardScreen() {
               <Text style={[s.actionText, { color: colors.primary }]}>Receive</Text>
             </LinearGradient>
           </TouchableOpacity>
+        </View>
+
+        {/* ── Portfolio tabs ─────────────────────────────────── */}
+        <View style={s.tabsContainer}>
+          {/* Tab bar */}
+          <View style={s.tabBar}>
+            {(["assets", "nft", "approvals"] as const).map((tab) => (
+              <TouchableOpacity
+                key={tab}
+                style={s.tabItem}
+                onPress={() => setActiveTab(tab)}
+                activeOpacity={0.7}
+              >
+                <Text style={[s.tabLabel, activeTab === tab && s.tabLabelActive]}>
+                  {tab === "assets" ? "Assets" : tab === "nft" ? "NFT" : "Approvals"}
+                </Text>
+                {activeTab === tab && <View style={s.tabUnderline} />}
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          {/* Assets */}
+          {activeTab === "assets" && (
+            <View style={s.tabPanel}>
+              <View style={s.tokenRow}>
+                <View style={s.tokenIconWrap}>
+                  <Text style={s.tokenIconText}>MC</Text>
+                </View>
+                <View style={s.tokenInfo}>
+                  <Text style={s.tokenName}>MChain</Text>
+                  <Text style={s.tokenSymbol}>MC · Native</Text>
+                </View>
+                <View style={s.tokenAmountCol}>
+                  <Text style={s.tokenAmount}>{balance}</Text>
+                  <Text style={s.tokenSub}>MC</Text>
+                </View>
+              </View>
+            </View>
+          )}
+
+          {/* NFT */}
+          {activeTab === "nft" && (
+            <View style={s.emptyPanel}>
+              <Icon name="cube-outline" size={36} color={colors.border} />
+              <Text style={s.emptyTitle}>No NFTs found</Text>
+              <Text style={s.emptyDesc}>NFTs held by this wallet will appear here.</Text>
+            </View>
+          )}
+
+          {/* Approvals */}
+          {activeTab === "approvals" && (
+            <View style={s.emptyPanel}>
+              <Icon name="shield-outline" size={36} color={colors.border} />
+              <Text style={s.emptyTitle}>No active approvals</Text>
+              <Text style={s.emptyDesc}>
+                Contract approvals grant a smart contract permission to spend your tokens.
+                {"\n"}None have been detected for this wallet.
+              </Text>
+            </View>
+          )}
         </View>
 
       </ScrollView>
