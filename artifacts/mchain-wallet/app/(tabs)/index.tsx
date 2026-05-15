@@ -58,24 +58,12 @@ export default function DashboardScreen() {
   const rpcBadgeOpacity = useRef(new Animated.Value(0)).current;
   const rpcHideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Silent background ping — updates dot colour only, no badge
-  async function silentPing() {
-    try {
-      const start = Date.now();
-      await api.ping();
-      setRpcMs(Date.now() - start);
-    } catch {
-      setRpcMs(-1);
-    }
-  }
-
   // On-tap ping — updates dot colour AND shows ms badge
   async function handlePingRpc() {
     if (rpcPinging) return;
     if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setRpcPinging(true);
     if (rpcHideTimer.current) clearTimeout(rpcHideTimer.current);
-    // Hide badge while pinging
     Animated.timing(rpcBadgeOpacity, { toValue: 0, duration: 100, useNativeDriver: true }).start();
     try {
       const start = Date.now();
@@ -85,7 +73,6 @@ export default function DashboardScreen() {
       setRpcMs(-1);
     } finally {
       setRpcPinging(false);
-      // Show badge after tap
       setShowRpcBadge(true);
       Animated.timing(rpcBadgeOpacity, { toValue: 1, duration: 200, useNativeDriver: true }).start();
       rpcHideTimer.current = setTimeout(() => {
@@ -95,12 +82,30 @@ export default function DashboardScreen() {
     }
   }
 
-  // Auto-poll: ping once on mount, then every 30 s
+  // Auto-poll: ping immediately, then every 30 s.
+  // The `cancelled` flag ensures results from a stale effect invocation
+  // (Expo Router remounts) never overwrite state from the live one.
   React.useEffect(() => {
-    silentPing();
-    const id = setInterval(silentPing, 30_000);
-    return () => clearInterval(id);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    let cancelled = false;
+
+    async function ping() {
+      if (cancelled) return;
+      try {
+        const start = Date.now();
+        await api.ping();
+        if (!cancelled) setRpcMs(Date.now() - start);
+      } catch {
+        if (!cancelled) setRpcMs(-1);
+      }
+    }
+
+    ping();
+    const id = setInterval(ping, 30_000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, []);
 
   async function handleRestartSession() {
     setIsRestarting(true);
