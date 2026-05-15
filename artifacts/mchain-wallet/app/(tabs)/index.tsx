@@ -113,15 +113,30 @@ export default function DashboardScreen() {
       justifyContent: "space-between",
       alignItems: "center",
     },
-    headerMoniker: {
-      fontSize: 13,
-      fontFamily: "Inter_500Medium",
-      color: colors.mutedForeground,
+    headerLeft: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 10,
     },
-    headerBlock: {
-      fontSize: 12,
-      fontFamily: "Inter_500Medium",
-      color: colors.primary,
+    headerRight: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
+    },
+    headerIconBtn: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      backgroundColor: colors.card,
+      borderWidth: 1,
+      borderColor: colors.border,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    statusDot: {
+      width: 10,
+      height: 10,
+      borderRadius: 5,
     },
     balanceCard: {
       marginHorizontal: 20,
@@ -323,10 +338,24 @@ export default function DashboardScreen() {
         }
       >
         <View style={s.header}>
-          <Text style={s.headerMoniker}>{moniker || "Validator"}</Text>
-          {chainInfo && (
-            <Text style={s.headerBlock}>Block #{chainInfo.blockHeight?.toLocaleString() ?? "—"}</Text>
-          )}
+          <View style={s.headerLeft}>
+            <Icon name="menu" size={22} color={colors.foreground} />
+            <View style={[s.statusDot, {
+              backgroundColor:
+                vStatus === "active" ? "#10B981" :
+                vStatus === "pending" ? "#F59E0B" :
+                vStatus === "banned" ? "#EF4444" :
+                colors.mutedForeground,
+            }]} />
+          </View>
+          <View style={s.headerRight}>
+            <TouchableOpacity style={s.headerIconBtn} onPress={() => router.push("/(tabs)/receive")}>
+              <Icon name="wallet" size={18} color={colors.foreground} />
+            </TouchableOpacity>
+            <TouchableOpacity style={s.headerIconBtn} onPress={() => router.push("/(tabs)/send")}>
+              <Icon name="scan" size={18} color={colors.foreground} />
+            </TouchableOpacity>
+          </View>
         </View>
 
         <View style={s.balanceCard}>
