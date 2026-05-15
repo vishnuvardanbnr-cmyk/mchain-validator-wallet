@@ -173,14 +173,11 @@ export default function DashboardScreen() {
       alignItems: "center",
       gap: 5,
       paddingHorizontal: 10,
-      paddingVertical: 5,
+      paddingVertical: 4,
       borderRadius: 20,
       backgroundColor: colors.card,
       borderWidth: 1,
       borderColor: colors.border,
-      position: "absolute",
-      left: 20,
-      top: insets.top + (Platform.OS === "web" ? 67 : 8) + 38,
     },
     rpcBadgeDot: {
       width: 7,
@@ -411,19 +408,20 @@ export default function DashboardScreen() {
                 }]} />
               )}
             </TouchableOpacity>
+            {rpcMs !== null && (
+              <Animated.View style={[s.rpcBadge, { opacity: rpcBadgeOpacity }]} pointerEvents="none">
+                <View style={[s.rpcBadgeDot, {
+                  backgroundColor:
+                    rpcMs < 0 ? "#EF4444" :
+                    rpcMs < 300 ? "#10B981" :
+                    rpcMs < 700 ? "#F59E0B" : "#EF4444",
+                }]} />
+                <Text style={s.rpcBadgeText}>
+                  {rpcMs < 0 ? "error" : `${rpcMs} ms`}
+                </Text>
+              </Animated.View>
+            )}
           </TouchableOpacity>
-          <Animated.View style={[s.rpcBadge, { opacity: rpcBadgeOpacity }]} pointerEvents="none">
-            <View style={[s.rpcBadgeDot, {
-              backgroundColor:
-                rpcMs === null ? colors.mutedForeground :
-                rpcMs < 0 ? "#EF4444" :
-                rpcMs < 300 ? "#10B981" :
-                rpcMs < 700 ? "#F59E0B" : "#EF4444",
-            }]} />
-            <Text style={s.rpcBadgeText}>
-              {rpcMs === null ? "" : rpcMs < 0 ? "RPC error" : `${rpcMs} ms`}
-            </Text>
-          </Animated.View>
           <View style={s.headerRight}>
             <TouchableOpacity style={s.headerIconBtn} onPress={() => setShowNewWallet(true)}>
               <Icon name="wallet" size={18} color={colors.foreground} />
