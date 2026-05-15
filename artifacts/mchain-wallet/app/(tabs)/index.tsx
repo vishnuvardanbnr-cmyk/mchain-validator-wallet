@@ -1,4 +1,5 @@
 import { Icon } from "@/components/Icon";
+import { NewWalletModal } from "@/components/NewWalletModal";
 import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
@@ -42,6 +43,7 @@ export default function DashboardScreen() {
   const { restartSession } = useHeartbeat();
   const [toastMessage, setToastMessage] = React.useState("");
   const [isRestarting, setIsRestarting] = React.useState(false);
+  const [showNewWallet, setShowNewWallet] = React.useState(false);
 
   async function handleRestartSession() {
     setIsRestarting(true);
@@ -349,7 +351,7 @@ export default function DashboardScreen() {
             }]} />
           </View>
           <View style={s.headerRight}>
-            <TouchableOpacity style={s.headerIconBtn} onPress={() => router.push("/(tabs)/receive")}>
+            <TouchableOpacity style={s.headerIconBtn} onPress={() => setShowNewWallet(true)}>
               <Icon name="wallet" size={18} color={colors.foreground} />
             </TouchableOpacity>
             <TouchableOpacity style={s.headerIconBtn} onPress={() => router.push("/(tabs)/send")}>
@@ -409,6 +411,10 @@ export default function DashboardScreen() {
         message={toastMessage}
         visible={!!toastMessage}
         onHide={() => setToastMessage("")}
+      />
+      <NewWalletModal
+        visible={showNewWallet}
+        onClose={() => setShowNewWallet(false)}
       />
     </View>
   );
