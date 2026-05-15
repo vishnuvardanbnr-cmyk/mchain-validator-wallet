@@ -1,5 +1,4 @@
 import * as BackgroundFetch from "expo-background-fetch";
-import * as Notifications from "expo-notifications";
 import * as TaskManager from "expo-task-manager";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Platform } from "react-native";
@@ -51,13 +50,19 @@ TaskManager.defineTask(HEARTBEAT_TASK, async () => {
 
       if (errorMsg === "validator_paused") {
         await AsyncStorage.setItem(VALIDATOR_STATUS_KEY, "paused");
-        await Notifications.scheduleNotificationAsync({
-          content: {
-            title: "Validator Paused",
-            body: "Your phone was offline too long. Open the app to restart and keep earning.",
-          },
-          trigger: null,
-        });
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-var-requires
+          const Notifs = require("expo-notifications");
+          await Notifs.scheduleNotificationAsync({
+            content: {
+              title: "Validator Paused",
+              body: "Your phone was offline too long. Open the app to restart and keep earning.",
+            },
+            trigger: null,
+          });
+        } catch {
+          // Notifications unavailable in this environment (Expo Go)
+        }
       } else if (errorMsg.includes("pending")) {
         // awaiting approval — no action needed, just wait
       } else if (errorMsg.includes("inactive")) {
