@@ -1,3 +1,4 @@
+import { AddTokenModal } from "@/components/AddTokenModal";
 import { Icon } from "@/components/Icon";
 import { NewWalletModal } from "@/components/NewWalletModal";
 import { WalletSwitcherModal } from "@/components/WalletSwitcherModal";
@@ -9,6 +10,7 @@ import React, { useEffect, useRef } from "react";
 import {
   ActivityIndicator,
   Animated,
+  Image,
   Platform,
   RefreshControl,
   ScrollView,
@@ -23,6 +25,7 @@ import { useWallet } from "@/context/WalletContext";
 import { useHeartbeat } from "@/hooks/useHeartbeat";
 import { api } from "@/services/api";
 import { formatDate, formatUptime, shortenAddress, weiToMc } from "@/services/crypto";
+import { getCustomTokens, removeCustomToken, type CustomToken } from "@/services/tokens";
 import { PulsingDot } from "@/components/PulsingDot";
 import { SessionTimer } from "@/components/SessionTimer";
 import { Toast } from "@/components/Toast";
@@ -48,6 +51,7 @@ export default function DashboardScreen() {
   const [showNewWallet, setShowNewWallet] = React.useState(false);
   const [showSwitcher, setShowSwitcher] = React.useState(false);
   const [activeTab, setActiveTab] = React.useState<"assets" | "nft" | "approvals">("assets");
+  const [showAddToken, setShowAddToken] = React.useState(false);
   const [rpcMs, setRpcMs] = React.useState<number | null>(null);
   const [rpcPinging, setRpcPinging] = React.useState(false);
   const rpcBadgeOpacity = useRef(new Animated.Value(0)).current;
@@ -105,6 +109,15 @@ export default function DashboardScreen() {
     queryFn: () => api.getValidatorStatus(mxcAddress!),
     enabled: !!mxcAddress,
     refetchInterval: 30_000,
+  });
+
+  const {
+    data: customTokens = [],
+    refetch: refetchTokens,
+  } = useQuery<CustomToken[]>({
+    queryKey: ["customTokens"],
+    queryFn: getCustomTokens,
+    staleTime: 0,
   });
 
   useEffect(() => {
@@ -384,6 +397,49 @@ export default function DashboardScreen() {
       fontFamily: "Inter_400Regular",
       color: colors.mutedForeground,
     },
+    tokenLogoImg: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+    },
+    verifiedBadge: {
+      paddingHorizontal: 5,
+      paddingVertical: 1,
+      borderRadius: 5,
+      backgroundColor: "#10B98115",
+      borderWidth: 1,
+      borderColor: "#10B98140",
+    },
+    verifiedText: {
+      fontSize: 9,
+      fontFamily: "Inter_700Bold",
+      color: "#10B981",
+    },
+    addTokenRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingVertical: 14,
+      paddingHorizontal: 2,
+      gap: 10,
+      borderTopWidth: 1,
+      borderTopColor: colors.border + "60",
+      marginTop: 2,
+    },
+    addTokenIcon: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      backgroundColor: colors.primary + "12",
+      borderWidth: 1,
+      borderColor: colors.primary + "30",
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    addTokenLabel: {
+      fontSize: 14,
+      fontFamily: "Inter_600SemiBold",
+      color: colors.primary,
+    },
     emptyPanel: {
       alignItems: "center",
       paddingVertical: 32,
@@ -610,6 +666,7 @@ export default function DashboardScreen() {
           {/* Assets */}
           {activeTab === "assets" && (
             <View style={s.tabPanel}>
+              {/* Native MC row */}
               <View style={s.tokenRow}>
                 <View style={s.tokenIconWrap}>
                   <Text style={s.tokenIconText}>MC</Text>
@@ -623,6 +680,54 @@ export default function DashboardScreen() {
                   <Text style={s.tokenSub}>MC</Text>
                 </View>
               </View>
+
+              {/* Custom tokens */}
+              {customTokens.map((token) => (
+                <View key={token.id} style={s.tokenRow}>
+                  {token.logoUrl ? (
+                    <Image source={{ uri: token.logoUrl }} style={s.tokenLogoImg} />
+                  ) : (
+                    <View style={s.tokenIconWrap}>
+                      <Text style={s.tokenIconText}>{token.symbol.slice(0, 3)}</Text>
+                    </View>
+                  )}
+                  <View style={s.tokenInfo}>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                      <Text style={s.tokenName}>{token.symbol}</Text>
+                      {token.verified && (
+                        <View style={s.verifiedBadge}>
+                          <Text style={s.verifiedText}>✓</Text>
+                        </View>
+                      )}
+                    </View>
+                    <Text style={s.tokenSymbol} numberOfLines={1}>{token.name}</Text>
+                  </View>
+                  <View style={s.tokenAmountCol}>
+                    <Text style={[s.tokenAmount, { color: colors.mutedForeground }]}>—</Text>
+                    <TouchableOpacity
+                      onPress={async () => {
+                        await removeCustomToken(token.contractAddress);
+                        refetchTokens();
+                      }}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <Icon name="trash-outline" size={14} color={colors.mutedForeground} />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ))}
+
+              {/* Add token row */}
+              <TouchableOpacity
+                style={s.addTokenRow}
+                onPress={() => setShowAddToken(true)}
+                activeOpacity={0.7}
+              >
+                <View style={s.addTokenIcon}>
+                  <Icon name="plus-circle" size={16} color={colors.primary} />
+                </View>
+                <Text style={s.addTokenLabel}>Add Token</Text>
+              </TouchableOpacity>
             </View>
           )}
 
@@ -662,6 +767,11 @@ export default function DashboardScreen() {
       <NewWalletModal
         visible={showNewWallet}
         onClose={() => setShowNewWallet(false)}
+      />
+      <AddTokenModal
+        visible={showAddToken}
+        onClose={() => setShowAddToken(false)}
+        onAdded={() => { refetchTokens(); }}
       />
     </View>
   );
