@@ -16,14 +16,6 @@ function NativeTabLayout() {
         <Icon sf={{ default: "house", selected: "house.fill" }} />
         <Label>Home</Label>
       </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="send">
-        <Icon sf={{ default: "paperplane", selected: "paperplane.fill" }} />
-        <Label>Send</Label>
-      </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="receive">
-        <Icon sf={{ default: "qrcode", selected: "qrcode" }} />
-        <Label>Receive</Label>
-      </NativeTabs.Trigger>
       <NativeTabs.Trigger name="validator">
         <Icon sf={{ default: "cpu", selected: "cpu.fill" }} />
         <Label>Validator</Label>
@@ -89,30 +81,8 @@ function ClassicTabLayout() {
             ),
         }}
       />
-      <Tabs.Screen
-        name="send"
-        options={{
-          title: "Send",
-          tabBarIcon: ({ color }) =>
-            isIOS ? (
-              <SymbolView name="paperplane.fill" tintColor={color} size={22} />
-            ) : (
-              <Feather name="send" size={20} color={color} />
-            ),
-        }}
-      />
-      <Tabs.Screen
-        name="receive"
-        options={{
-          title: "Receive",
-          tabBarIcon: ({ color }) =>
-            isIOS ? (
-              <SymbolView name="qrcode" tintColor={color} size={22} />
-            ) : (
-              <Feather name="download" size={22} color={color} />
-            ),
-        }}
-      />
+      <Tabs.Screen name="send" options={{ href: null }} />
+      <Tabs.Screen name="receive" options={{ href: null }} />
       <Tabs.Screen
         name="validator"
         options={{
