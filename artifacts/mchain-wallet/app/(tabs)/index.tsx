@@ -1,4 +1,4 @@
-import { Feather } from "@expo/vector-icons";
+import { Ionicons } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
@@ -347,21 +347,21 @@ export default function DashboardScreen() {
               <Text style={s.addressText} numberOfLines={1}>
                 {mxcAddress ? shortenAddress(mxcAddress, 8) : "—"}
               </Text>
-              <Feather name="copy" size={14} color="rgba(255,255,255,0.6)" />
+              <Ionicons name="copy-outline" size={14} color="rgba(255,255,255,0.6)" />
             </TouchableOpacity>
           </LinearGradient>
         </View>
 
         {(pendingHeartbeat || vStatus === "pending") && (
           <View style={s.pendingBanner}>
-            <Feather name="clock" size={16} color="#F59E0B" />
+            <Ionicons name="time-outline" size={16} color="#F59E0B" />
             <Text style={s.pendingText}>Waiting for admin approval to start validating</Text>
           </View>
         )}
 
         {vStatus === "banned" && (
           <View style={[s.pendingBanner, { borderColor: "#EF444440", backgroundColor: "#1A0000" }]}>
-            <Feather name="alert-circle" size={16} color="#EF4444" />
+            <Ionicons name="alert-circle-outline" size={16} color="#EF4444" />
             <Text style={[s.pendingText, { color: "#F87171" }]}>Validator has been banned</Text>
           </View>
         )}
@@ -390,13 +390,13 @@ export default function DashboardScreen() {
           <View style={s.sessionCard}>
             {isStaked ? (
               <View style={s.stakedBadge}>
-                <Feather name="check-circle" size={16} color={colors.success} />
+                <Ionicons name="checkmark-circle-outline" size={16} color={colors.success} />
                 <Text style={s.stakedText}>Unlimited session — staked validator</Text>
               </View>
             ) : sessionExpired ? (
               <>
                 <View style={s.sessionExpiredHeader}>
-                  <Feather name="alert-triangle" size={18} color="#F59E0B" />
+                  <Ionicons name="warning-outline" size={18} color="#F59E0B" />
                   <Text style={s.sessionExpiredTitle}>Session Expired</Text>
                 </View>
                 <Text style={s.sessionExpiredDesc}>
@@ -413,7 +413,7 @@ export default function DashboardScreen() {
                       <ActivityIndicator color="#FFFFFF" size="small" />
                     ) : (
                       <>
-                        <Feather name="refresh-cw" size={16} color="#FFFFFF" />
+                        <Ionicons name="refresh-outline" size={16} color="#FFFFFF" />
                         <Text style={s.restartBtnText}>Restart Session</Text>
                       </>
                     )}
@@ -422,7 +422,7 @@ export default function DashboardScreen() {
               </>
             ) : sessionExpiresAt ? (
               <View style={s.sessionRow}>
-                <Feather name="clock" size={14} color={colors.mutedForeground} />
+                <Ionicons name="time-outline" size={14} color={colors.mutedForeground} />
                 <SessionTimer
                   expiresAt={sessionExpiresAt}
                   onExpired={() => setSessionExpired(true)}
@@ -436,13 +436,13 @@ export default function DashboardScreen() {
         <View style={s.quickActions}>
           <TouchableOpacity style={s.actionBtn} onPress={() => router.push("/(tabs)/send")}>
             <LinearGradient colors={["#0EA5E9", "#0284C7"]} style={s.actionGrad}>
-              <Feather name="send" size={16} color="#FFFFFF" />
+              <Ionicons name="paper-plane-outline" size={16} color="#FFFFFF" />
               <Text style={s.actionText}>Send</Text>
             </LinearGradient>
           </TouchableOpacity>
           <TouchableOpacity style={s.actionBtn} onPress={() => router.push("/(tabs)/receive")}>
             <LinearGradient colors={["#152238", "#1E3A5F"]} style={s.actionGrad}>
-              <Feather name="download" size={16} color={colors.primary} />
+              <Ionicons name="download-outline" size={16} color={colors.primary} />
               <Text style={[s.actionText, { color: colors.primary }]}>Receive</Text>
             </LinearGradient>
           </TouchableOpacity>

@@ -1,4 +1,4 @@
-import { Feather } from "@expo/vector-icons";
+import { Ionicons } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
 import { Tabs } from "expo-router";
 import React from "react";
@@ -50,8 +50,8 @@ export default function TabLayout() {
         name="index"
         options={{
           title: "Home",
-          tabBarIcon: ({ color }) => (
-            <Feather name="home" size={22} color={color} />
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons name={focused ? "home" : "home-outline"} size={22} color={color} />
           ),
         }}
       />
@@ -61,8 +61,8 @@ export default function TabLayout() {
         name="validator"
         options={{
           title: "Validator",
-          tabBarIcon: ({ color }) => (
-            <Feather name="shield" size={22} color={color} />
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons name={focused ? "shield" : "shield-outline"} size={22} color={color} />
           ),
         }}
       />
@@ -70,8 +70,8 @@ export default function TabLayout() {
         name="earnings"
         options={{
           title: "Earnings",
-          tabBarIcon: ({ color }) => (
-            <Feather name="bar-chart-2" size={22} color={color} />
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons name={focused ? "bar-chart" : "bar-chart-outline"} size={22} color={color} />
           ),
         }}
       />
@@ -79,8 +79,8 @@ export default function TabLayout() {
         name="settings"
         options={{
           title: "Settings",
-          tabBarIcon: ({ color }) => (
-            <Feather name="settings" size={22} color={color} />
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons name={focused ? "settings" : "settings-outline"} size={22} color={color} />
           ),
         }}
       />

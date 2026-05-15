@@ -1,4 +1,4 @@
-import { Feather } from "@expo/vector-icons";
+import { Ionicons } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
@@ -84,7 +84,6 @@ export default function EarningsScreen() {
   const [activeTab, setActiveTab] = useState<SubTab>("treasury");
   const [toast, setToast] = useState("");
 
-  // Treasury state
   const [treasuryItems, setTreasuryItems] = useState<TreasuryReward[]>([]);
   const [treasuryTotal, setTreasuryTotal] = useState(0);
   const [treasuryOffset, setTreasuryOffset] = useState(0);
@@ -92,7 +91,6 @@ export default function EarningsScreen() {
   const [treasuryLoadingMore, setTreasuryLoadingMore] = useState(false);
   const [treasuryError, setTreasuryError] = useState<string | null>(null);
 
-  // Gas state
   const [gasItems, setGasItems] = useState<GasReward[]>([]);
   const [gasTotal, setGasTotal] = useState(0);
   const [gasOffset, setGasOffset] = useState(0);
@@ -100,7 +98,6 @@ export default function EarningsScreen() {
   const [gasLoadingMore, setGasLoadingMore] = useState(false);
   const [gasError, setGasError] = useState<string | null>(null);
 
-  // Blocks state
   const [blocksItems, setBlocksItems] = useState<ValidatorBlock[]>([]);
   const [blocksTotal, setBlocksTotal] = useState(0);
   const [blocksOffset, setBlocksOffset] = useState(0);
@@ -128,15 +125,11 @@ export default function EarningsScreen() {
       setTreasuryError(null);
       try {
         const res = await api.getTreasuryRewards(mxcAddress, 50, offset);
-        setTreasuryItems((prev) =>
-          append ? [...prev, ...res.rewards] : res.rewards
-        );
+        setTreasuryItems((prev) => append ? [...prev, ...res.rewards] : res.rewards);
         setTreasuryTotal(res.total);
         setTreasuryOffset(offset + res.rewards.length);
       } catch (err) {
-        setTreasuryError(
-          err instanceof Error ? err.message : "Failed to load"
-        );
+        setTreasuryError(err instanceof Error ? err.message : "Failed to load");
       } finally {
         setTreasuryInitLoading(false);
         setTreasuryLoadingMore(false);
@@ -153,9 +146,7 @@ export default function EarningsScreen() {
       setGasError(null);
       try {
         const res = await api.getGasRewards(mxcAddress, 50, offset);
-        setGasItems((prev) =>
-          append ? [...prev, ...res.gasRewards] : res.gasRewards
-        );
+        setGasItems((prev) => append ? [...prev, ...res.gasRewards] : res.gasRewards);
         setGasTotal(res.total);
         setGasOffset(offset + res.gasRewards.length);
       } catch (err) {
@@ -176,9 +167,7 @@ export default function EarningsScreen() {
       setBlocksError(null);
       try {
         const res = await api.getValidatorBlocks(mxcAddress, 50, offset);
-        setBlocksItems((prev) =>
-          append ? [...prev, ...res.blocks] : res.blocks
-        );
+        setBlocksItems((prev) => append ? [...prev, ...res.blocks] : res.blocks);
         setBlocksTotal(res.total);
         setBlocksOffset(offset + res.blocks.length);
       } catch (err) {
@@ -196,13 +185,11 @@ export default function EarningsScreen() {
   }, [mxcAddress, loadTreasury]);
 
   useEffect(() => {
-    if (mxcAddress && activeTab === "gas" && gasItems.length === 0)
-      loadGas(0, false);
+    if (mxcAddress && activeTab === "gas" && gasItems.length === 0) loadGas(0, false);
   }, [activeTab, mxcAddress, gasItems.length, loadGas]);
 
   useEffect(() => {
-    if (mxcAddress && activeTab === "blocks" && blocksItems.length === 0)
-      loadBlocks(0, false);
+    if (mxcAddress && activeTab === "blocks" && blocksItems.length === 0) loadBlocks(0, false);
   }, [activeTab, mxcAddress, blocksItems.length, loadBlocks]);
 
   async function copyText(text: string, label: string) {
@@ -218,11 +205,7 @@ export default function EarningsScreen() {
       paddingHorizontal: 20,
       paddingBottom: 12,
     },
-    headerTitle: {
-      fontSize: 24,
-      fontFamily: "Inter_700Bold",
-      color: colors.foreground,
-    },
+    headerTitle: { fontSize: 24, fontFamily: "Inter_700Bold", color: colors.foreground },
     notRegistered: {
       marginHorizontal: 20,
       marginTop: 12,
@@ -234,60 +217,16 @@ export default function EarningsScreen() {
       alignItems: "center",
       gap: 8,
     },
-    notRegText: {
-      fontSize: 14,
-      fontFamily: "Inter_500Medium",
-      color: colors.mutedForeground,
-      textAlign: "center",
-    },
-    summaryGrad: {
-      marginHorizontal: 20,
-      borderRadius: colors.radius + 4,
-      overflow: "hidden",
-      marginBottom: 12,
-    },
+    notRegText: { fontSize: 14, fontFamily: "Inter_500Medium", color: colors.mutedForeground, textAlign: "center" },
+    summaryGrad: { marginHorizontal: 20, borderRadius: colors.radius + 4, overflow: "hidden", marginBottom: 12 },
     summaryInner: { padding: 16 },
-    summaryTitle: {
-      fontSize: 11,
-      fontFamily: "Inter_600SemiBold",
-      color: "rgba(255,255,255,0.6)",
-      letterSpacing: 1.5,
-      marginBottom: 12,
-    },
-    statBoxRow: {
-      flexDirection: "row",
-      gap: 8,
-    },
-    statBox: {
-      flex: 1,
-      backgroundColor: "rgba(0,0,0,0.25)",
-      borderRadius: 10,
-      padding: 10,
-    },
-    statBoxLabel: {
-      fontSize: 9,
-      fontFamily: "Inter_500Medium",
-      color: "rgba(255,255,255,0.5)",
-      letterSpacing: 1,
-      marginBottom: 4,
-    },
-    statBoxValue: {
-      fontSize: 14,
-      fontFamily: "Inter_700Bold",
-      color: "#FFFFFF",
-      marginBottom: 2,
-    },
-    statBoxSub: {
-      fontSize: 10,
-      fontFamily: "Inter_400Regular",
-      color: "rgba(255,255,255,0.5)",
-    },
-    pillRow: {
-      flexDirection: "row",
-      gap: 8,
-      marginHorizontal: 20,
-      marginBottom: 12,
-    },
+    summaryTitle: { fontSize: 11, fontFamily: "Inter_600SemiBold", color: "rgba(255,255,255,0.6)", letterSpacing: 1.5, marginBottom: 12 },
+    statBoxRow: { flexDirection: "row", gap: 8 },
+    statBox: { flex: 1, backgroundColor: "rgba(0,0,0,0.25)", borderRadius: 10, padding: 10 },
+    statBoxLabel: { fontSize: 9, fontFamily: "Inter_500Medium", color: "rgba(255,255,255,0.5)", letterSpacing: 1, marginBottom: 4 },
+    statBoxValue: { fontSize: 14, fontFamily: "Inter_700Bold", color: "#FFFFFF", marginBottom: 2 },
+    statBoxSub: { fontSize: 10, fontFamily: "Inter_400Regular", color: "rgba(255,255,255,0.5)" },
+    pillRow: { flexDirection: "row", gap: 8, marginHorizontal: 20, marginBottom: 12 },
     pill: {
       flexDirection: "row",
       alignItems: "center",
@@ -299,11 +238,7 @@ export default function EarningsScreen() {
       paddingHorizontal: 12,
       paddingVertical: 6,
     },
-    pillText: {
-      fontSize: 12,
-      fontFamily: "Inter_500Medium",
-      color: colors.foreground,
-    },
+    pillText: { fontSize: 12, fontFamily: "Inter_500Medium", color: colors.foreground },
     tabRow: {
       flexDirection: "row",
       marginHorizontal: 20,
@@ -314,131 +249,30 @@ export default function EarningsScreen() {
       borderColor: colors.border,
       padding: 3,
     },
-    tabBtn: {
-      flex: 1,
-      paddingVertical: 8,
-      alignItems: "center",
-      borderRadius: colors.radius - 2,
-    },
-    tabBtnActive: {
-      backgroundColor: colors.primary,
-    },
-    tabBtnText: {
-      fontSize: 12,
-      fontFamily: "Inter_600SemiBold",
-      color: colors.mutedForeground,
-    },
-    tabBtnTextActive: {
-      color: "#FFFFFF",
-    },
-    listSeparator: {
-      height: 1,
-      backgroundColor: colors.border,
-      marginLeft: 20,
-    },
-    // Treasury row
-    treasuryRow: {
-      paddingHorizontal: 20,
-      paddingVertical: 12,
-      borderBottomWidth: 1,
-      borderBottomColor: colors.border,
-    },
-    treasuryTop: {
-      flexDirection: "row",
-      justifyContent: "space-between",
-      alignItems: "center",
-      marginBottom: 6,
-    },
-    treasuryPeriod: {
-      fontSize: 13,
-      fontFamily: "Inter_500Medium",
-      color: colors.foreground,
-      flex: 1,
-    },
-    treasuryAmount: {
-      fontSize: 14,
-      fontFamily: "Inter_700Bold",
-      color: colors.success,
-    },
-    uptimeBarBg: {
-      height: 6,
-      backgroundColor: colors.muted,
-      borderRadius: 3,
-      marginBottom: 6,
-      overflow: "hidden",
-    },
-    uptimeBarFill: {
-      height: "100%",
-      borderRadius: 3,
-    },
-    treasuryBottom: {
-      flexDirection: "row",
-      justifyContent: "space-between",
-      alignItems: "center",
-    },
-    uptimePctText: {
-      fontSize: 11,
-      fontFamily: "Inter_500Medium",
-      color: colors.mutedForeground,
-    },
-    statusChip: {
-      paddingHorizontal: 8,
-      paddingVertical: 2,
-      borderRadius: 10,
-    },
-    statusChipText: {
-      fontSize: 10,
-      fontFamily: "Inter_600SemiBold",
-    },
-    // Gas row
-    gasRow: {
-      paddingHorizontal: 20,
-      paddingVertical: 12,
-      borderBottomWidth: 1,
-      borderBottomColor: colors.border,
-    },
-    gasTop: {
-      flexDirection: "row",
-      justifyContent: "space-between",
-      alignItems: "center",
-      marginBottom: 4,
-    },
-    gasBlock: {
-      fontSize: 13,
-      fontFamily: "Inter_600SemiBold",
-      color: colors.foreground,
-    },
-    gasShare: {
-      fontSize: 14,
-      fontFamily: "Inter_700Bold",
-      color: colors.success,
-    },
-    gasMid: {
-      flexDirection: "row",
-      justifyContent: "space-between",
-      alignItems: "center",
-    },
-    gasFee: {
-      fontSize: 11,
-      fontFamily: "Inter_400Regular",
-      color: colors.mutedForeground,
-    },
-    splitChip: {
-      paddingHorizontal: 8,
-      paddingVertical: 2,
-      borderRadius: 10,
-    },
-    splitChipText: {
-      fontSize: 10,
-      fontFamily: "Inter_600SemiBold",
-    },
-    gasTime: {
-      fontSize: 11,
-      fontFamily: "Inter_400Regular",
-      color: colors.mutedForeground,
-      marginTop: 4,
-    },
-    // Block row
+    tabBtn: { flex: 1, paddingVertical: 8, alignItems: "center", borderRadius: colors.radius - 2 },
+    tabBtnActive: { backgroundColor: colors.primary },
+    tabBtnText: { fontSize: 12, fontFamily: "Inter_600SemiBold", color: colors.mutedForeground },
+    tabBtnTextActive: { color: "#FFFFFF" },
+    listSeparator: { height: 1, backgroundColor: colors.border, marginLeft: 20 },
+    treasuryRow: { paddingHorizontal: 20, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: colors.border },
+    treasuryTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 6 },
+    treasuryPeriod: { fontSize: 13, fontFamily: "Inter_500Medium", color: colors.foreground, flex: 1 },
+    treasuryAmount: { fontSize: 14, fontFamily: "Inter_700Bold", color: colors.success },
+    uptimeBarBg: { height: 6, backgroundColor: colors.muted, borderRadius: 3, marginBottom: 6, overflow: "hidden" },
+    uptimeBarFill: { height: "100%", borderRadius: 3 },
+    treasuryBottom: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+    uptimePctText: { fontSize: 11, fontFamily: "Inter_500Medium", color: colors.mutedForeground },
+    statusChip: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 },
+    statusChipText: { fontSize: 10, fontFamily: "Inter_600SemiBold" },
+    gasRow: { paddingHorizontal: 20, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: colors.border },
+    gasTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 4 },
+    gasBlock: { fontSize: 13, fontFamily: "Inter_600SemiBold", color: colors.foreground },
+    gasShare: { fontSize: 14, fontFamily: "Inter_700Bold", color: colors.success },
+    gasMid: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+    gasFee: { fontSize: 11, fontFamily: "Inter_400Regular", color: colors.mutedForeground },
+    splitChip: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 },
+    splitChipText: { fontSize: 10, fontFamily: "Inter_600SemiBold" },
+    gasTime: { fontSize: 11, fontFamily: "Inter_400Regular", color: colors.mutedForeground, marginTop: 4 },
     tableHeader: {
       flexDirection: "row",
       paddingHorizontal: 20,
@@ -447,98 +281,20 @@ export default function EarningsScreen() {
       borderBottomWidth: 1,
       borderBottomColor: colors.border,
     },
-    thBlock: {
-      width: 80,
-      fontSize: 10,
-      fontFamily: "Inter_600SemiBold",
-      color: colors.mutedForeground,
-      letterSpacing: 1,
-    },
-    thTxs: {
-      width: 36,
-      fontSize: 10,
-      fontFamily: "Inter_600SemiBold",
-      color: colors.mutedForeground,
-      letterSpacing: 1,
-    },
-    thGas: {
-      flex: 1,
-      fontSize: 10,
-      fontFamily: "Inter_600SemiBold",
-      color: colors.mutedForeground,
-      letterSpacing: 1,
-    },
-    thTime: {
-      width: 90,
-      fontSize: 10,
-      fontFamily: "Inter_600SemiBold",
-      color: colors.mutedForeground,
-      letterSpacing: 1,
-      textAlign: "right",
-    },
-    blockRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      paddingHorizontal: 20,
-      paddingVertical: 10,
-      borderBottomWidth: 1,
-      borderBottomColor: colors.border,
-    },
-    blockRowHighlight: {
-      borderLeftWidth: 3,
-      borderLeftColor: "#10B98160",
-      paddingLeft: 17,
-    },
-    blockHeight: {
-      width: 80,
-      fontSize: 13,
-      fontFamily: "Inter_600SemiBold",
-      color: colors.foreground,
-    },
-    blockTxs: {
-      width: 36,
-      fontSize: 13,
-      fontFamily: "Inter_400Regular",
-      color: colors.foreground,
-    },
-    blockGas: {
-      flex: 1,
-      fontSize: 13,
-      fontFamily: "Inter_400Regular",
-      color: colors.mutedForeground,
-    },
-    blockTime: {
-      width: 90,
-      fontSize: 11,
-      fontFamily: "Inter_400Regular",
-      color: colors.mutedForeground,
-      textAlign: "right",
-    },
-    // Load more / footer
-    loadMoreBtn: {
-      marginHorizontal: 20,
-      marginVertical: 16,
-      paddingVertical: 12,
-      borderRadius: colors.radius,
-      borderWidth: 1,
-      borderColor: colors.border,
-      alignItems: "center",
-    },
-    loadMoreText: {
-      fontSize: 13,
-      fontFamily: "Inter_600SemiBold",
-      color: colors.primary,
-    },
-    emptyState: {
-      paddingVertical: 40,
-      alignItems: "center",
-      gap: 8,
-    },
-    emptyText: {
-      fontSize: 14,
-      fontFamily: "Inter_400Regular",
-      color: colors.mutedForeground,
-    },
+    thBlock: { width: 80, fontSize: 10, fontFamily: "Inter_600SemiBold", color: colors.mutedForeground, letterSpacing: 1 },
+    thTxs: { width: 36, fontSize: 10, fontFamily: "Inter_600SemiBold", color: colors.mutedForeground, letterSpacing: 1 },
+    thGas: { flex: 1, fontSize: 10, fontFamily: "Inter_600SemiBold", color: colors.mutedForeground, letterSpacing: 1 },
+    thTime: { width: 90, fontSize: 10, fontFamily: "Inter_600SemiBold", color: colors.mutedForeground, letterSpacing: 1, textAlign: "right" },
+    blockRow: { flexDirection: "row", alignItems: "center", paddingHorizontal: 20, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border },
+    blockRowHighlight: { borderLeftWidth: 3, borderLeftColor: "#10B98160", paddingLeft: 17 },
+    blockHeight: { width: 80, fontSize: 13, fontFamily: "Inter_600SemiBold", color: colors.foreground },
+    blockTxs: { width: 36, fontSize: 13, fontFamily: "Inter_400Regular", color: colors.foreground },
+    blockGas: { flex: 1, fontSize: 13, fontFamily: "Inter_400Regular", color: colors.mutedForeground },
+    blockTime: { width: 90, fontSize: 11, fontFamily: "Inter_400Regular", color: colors.mutedForeground, textAlign: "right" },
+    loadMoreBtn: { marginHorizontal: 20, marginVertical: 16, paddingVertical: 12, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border, alignItems: "center" },
+    loadMoreText: { fontSize: 13, fontFamily: "Inter_600SemiBold", color: colors.primary },
+    emptyState: { paddingVertical: 40, alignItems: "center", gap: 8 },
+    emptyText: { fontSize: 14, fontFamily: "Inter_400Regular", color: colors.mutedForeground },
     errorBanner: {
       marginHorizontal: 20,
       marginVertical: 12,
@@ -551,23 +307,9 @@ export default function EarningsScreen() {
       alignItems: "center",
       gap: 10,
     },
-    errorText: {
-      flex: 1,
-      fontSize: 13,
-      fontFamily: "Inter_400Regular",
-      color: "#F87171",
-    },
-    retryBtn: {
-      paddingHorizontal: 12,
-      paddingVertical: 6,
-      borderRadius: 8,
-      backgroundColor: "#EF444420",
-    },
-    retryText: {
-      fontSize: 12,
-      fontFamily: "Inter_600SemiBold",
-      color: "#F87171",
-    },
+    errorText: { flex: 1, fontSize: 13, fontFamily: "Inter_400Regular", color: "#F87171" },
+    retryBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, backgroundColor: "#EF444420" },
+    retryText: { fontSize: 12, fontFamily: "Inter_600SemiBold", color: "#F87171" },
   });
 
   function TreasuryRowItem({ item }: { item: TreasuryReward }) {
@@ -577,20 +319,14 @@ export default function EarningsScreen() {
     return (
       <View style={s.treasuryRow}>
         <View style={s.treasuryTop}>
-          <Text style={s.treasuryPeriod} numberOfLines={1}>
-            {parsePeriodLabel(item.period)}
-          </Text>
+          <Text style={s.treasuryPeriod} numberOfLines={1}>{parsePeriodLabel(item.period)}</Text>
           <Text style={s.treasuryAmount}>+{parseFloat(item.amountMc).toFixed(4)} MC</Text>
         </View>
         <View style={s.uptimeBarBg}>
-          <View
-            style={[s.uptimeBarFill, { width: `${Math.min(pct, 100)}%`, backgroundColor: barColor }]}
-          />
+          <View style={[s.uptimeBarFill, { width: `${Math.min(pct, 100)}%`, backgroundColor: barColor }]} />
         </View>
         <View style={s.treasuryBottom}>
-          <Text style={s.uptimePctText}>
-            {item.uptimePct}% uptime • {item.activeMinutes}/{item.totalNetworkMinutes} min
-          </Text>
+          <Text style={s.uptimePctText}>{item.uptimePct}% uptime • {item.activeMinutes}/{item.totalNetworkMinutes} min</Text>
           {isDistributed ? (
             <View style={[s.statusChip, { backgroundColor: "#10B98120" }]}>
               <Text style={[s.statusChipText, { color: "#10B981" }]}>distributed</Text>
@@ -609,15 +345,9 @@ export default function EarningsScreen() {
     const chipColor = item.isStaked ? "#10B981" : "#F59E0B";
     const chipBg = item.isStaked ? "#10B98120" : "#F59E0B20";
     return (
-      <TouchableOpacity
-        style={s.gasRow}
-        onPress={() => copyText(String(item.blockHeight), `Block #${item.blockHeight}`)}
-        activeOpacity={0.7}
-      >
+      <TouchableOpacity style={s.gasRow} onPress={() => copyText(String(item.blockHeight), `Block #${item.blockHeight}`)} activeOpacity={0.7}>
         <View style={s.gasTop}>
-          <Text style={s.gasBlock}>
-            Block #{item.blockHeight.toLocaleString()} — {item.txCount} tx{item.txCount !== 1 ? "s" : ""}
-          </Text>
+          <Text style={s.gasBlock}>Block #{item.blockHeight.toLocaleString()} — {item.txCount} tx{item.txCount !== 1 ? "s" : ""}</Text>
           <Text style={s.gasShare}>+{parseFloat(item.validatorShareMc).toFixed(6)} MC</Text>
         </View>
         <View style={s.gasMid}>
@@ -634,22 +364,11 @@ export default function EarningsScreen() {
   function BlockRowItem({ item }: { item: ValidatorBlock }) {
     const hasActivity = item.txCount > 0;
     const d = new Date(item.timestamp);
-    const timeLabel = d.toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
+    const timeLabel = d.toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
     return (
-      <TouchableOpacity
-        style={[s.blockRow, hasActivity && s.blockRowHighlight]}
-        onPress={() => copyText(item.hash, `Block hash`)}
-        activeOpacity={0.7}
-      >
+      <TouchableOpacity style={[s.blockRow, hasActivity && s.blockRowHighlight]} onPress={() => copyText(item.hash, `Block hash`)} activeOpacity={0.7}>
         <Text style={s.blockHeight}>#{item.height.toLocaleString()}</Text>
-        <Text style={[s.blockTxs, hasActivity && { color: colors.success }]}>
-          {item.txCount}
-        </Text>
+        <Text style={[s.blockTxs, hasActivity && { color: colors.success }]}>{item.txCount}</Text>
         <Text style={s.blockGas}>{item.gasUsed.toLocaleString()}</Text>
         <Text style={s.blockTime}>{timeLabel}</Text>
       </TouchableOpacity>
@@ -664,43 +383,30 @@ export default function EarningsScreen() {
 
       {is404 && (
         <View style={s.notRegistered}>
-          <Feather name="shield-off" size={28} color={colors.mutedForeground} />
+          <Ionicons name="shield-half-outline" size={28} color={colors.mutedForeground} />
           <Text style={s.notRegText}>Validator not registered yet</Text>
         </View>
       )}
 
       {earnings && (
         <>
-          <LinearGradient
-            colors={["#0D2B4E", "#091929"]}
-            style={s.summaryGrad}
-          >
+          <LinearGradient colors={["#0D2B4E", "#091929"]} style={s.summaryGrad}>
             <View style={s.summaryInner}>
               <Text style={s.summaryTitle}>EARNINGS SUMMARY</Text>
               <View style={s.statBoxRow}>
                 <View style={s.statBox}>
                   <Text style={s.statBoxLabel}>TREASURY</Text>
-                  <Text style={s.statBoxValue}>
-                    {parseFloat(earnings.earnings.treasuryTotalMc).toFixed(4)}
-                  </Text>
-                  <Text style={s.statBoxSub}>
-                    {earnings.stats.totalRewardPeriods} periods
-                  </Text>
+                  <Text style={s.statBoxValue}>{parseFloat(earnings.earnings.treasuryTotalMc).toFixed(4)}</Text>
+                  <Text style={s.statBoxSub}>{earnings.stats.totalRewardPeriods} periods</Text>
                 </View>
                 <View style={s.statBox}>
                   <Text style={s.statBoxLabel}>GAS FEES</Text>
-                  <Text style={s.statBoxValue}>
-                    {parseFloat(earnings.earnings.gasTotalMc).toFixed(4)}
-                  </Text>
-                  <Text style={s.statBoxSub}>
-                    {earnings.stats.totalBlocksProposed} blk · {earnings.stats.totalTxsProcessed} tx
-                  </Text>
+                  <Text style={s.statBoxValue}>{parseFloat(earnings.earnings.gasTotalMc).toFixed(4)}</Text>
+                  <Text style={s.statBoxSub}>{earnings.stats.totalBlocksProposed} blk · {earnings.stats.totalTxsProcessed} tx</Text>
                 </View>
                 <View style={s.statBox}>
                   <Text style={s.statBoxLabel}>COMBINED</Text>
-                  <Text style={[s.statBoxValue, { color: "#10B981" }]}>
-                    {parseFloat(earnings.earnings.combinedTotalMc).toFixed(4)}
-                  </Text>
+                  <Text style={[s.statBoxValue, { color: "#10B981" }]}>{parseFloat(earnings.earnings.combinedTotalMc).toFixed(4)}</Text>
                   <Text style={s.statBoxSub}>all time</Text>
                 </View>
               </View>
@@ -709,16 +415,12 @@ export default function EarningsScreen() {
 
           <View style={s.pillRow}>
             <View style={s.pill}>
-              <Feather name="box" size={12} color={colors.mutedForeground} />
-              <Text style={s.pillText}>
-                Blocks: {earnings.stats.totalBlocksProposed.toLocaleString()}
-              </Text>
+              <Ionicons name="cube-outline" size={12} color={colors.mutedForeground} />
+              <Text style={s.pillText}>Blocks: {earnings.stats.totalBlocksProposed.toLocaleString()}</Text>
             </View>
             <View style={s.pill}>
-              <Feather name="repeat" size={12} color={colors.mutedForeground} />
-              <Text style={s.pillText}>
-                Txs: {earnings.stats.totalTxsProcessed.toLocaleString()}
-              </Text>
+              <Ionicons name="repeat-outline" size={12} color={colors.mutedForeground} />
+              <Text style={s.pillText}>Txs: {earnings.stats.totalTxsProcessed.toLocaleString()}</Text>
             </View>
           </View>
         </>
@@ -732,83 +434,58 @@ export default function EarningsScreen() {
 
       <View style={s.tabRow}>
         {(["treasury", "gas", "blocks"] as SubTab[]).map((tab) => {
-          const label =
-            tab === "treasury" ? "Treasury" : tab === "gas" ? "Gas Fees" : "Blocks";
+          const label = tab === "treasury" ? "Treasury" : tab === "gas" ? "Gas Fees" : "Blocks";
           const isActive = activeTab === tab;
           return (
-            <TouchableOpacity
-              key={tab}
-              style={[s.tabBtn, isActive && s.tabBtnActive]}
-              onPress={() => setActiveTab(tab)}
-              activeOpacity={0.8}
-            >
-              <Text style={[s.tabBtnText, isActive && s.tabBtnTextActive]}>
-                {label}
-              </Text>
+            <TouchableOpacity key={tab} style={[s.tabBtn, isActive && s.tabBtnActive]} onPress={() => setActiveTab(tab)}>
+              <Text style={[s.tabBtnText, isActive && s.tabBtnTextActive]}>{label}</Text>
             </TouchableOpacity>
           );
         })}
       </View>
-
-      {activeTab === "blocks" && (
-        <View style={s.tableHeader}>
-          <Text style={s.thBlock}>BLOCK</Text>
-          <Text style={s.thTxs}>TXS</Text>
-          <Text style={s.thGas}>GAS USED</Text>
-          <Text style={s.thTime}>TIME</Text>
-        </View>
-      )}
     </>
   );
 
-  // Determine active list data and state
-  const isInitLoading =
-    activeTab === "treasury"
-      ? treasuryInitLoading
-      : activeTab === "gas"
-      ? gasInitLoading
-      : blocksInitLoading;
+  function activeError() {
+    if (activeTab === "treasury") return treasuryError;
+    if (activeTab === "gas") return gasError;
+    return blocksError;
+  }
 
-  const activeError =
-    activeTab === "treasury"
-      ? treasuryError
-      : activeTab === "gas"
-      ? gasError
-      : blocksError;
+  function activeInitLoading() {
+    if (activeTab === "treasury") return treasuryInitLoading;
+    if (activeTab === "gas") return gasInitLoading;
+    return blocksInitLoading;
+  }
 
-  const activeItems: (TreasuryReward | GasReward | ValidatorBlock)[] =
-    activeTab === "treasury"
-      ? treasuryItems
-      : activeTab === "gas"
-      ? gasItems
-      : blocksItems;
+  function activeItems() {
+    if (activeTab === "treasury") return treasuryItems;
+    if (activeTab === "gas") return gasItems;
+    return blocksItems;
+  }
 
-  const activeTotal =
-    activeTab === "treasury"
-      ? treasuryTotal
-      : activeTab === "gas"
-      ? gasTotal
-      : blocksTotal;
+  function activeTotal() {
+    if (activeTab === "treasury") return treasuryTotal;
+    if (activeTab === "gas") return gasTotal;
+    return blocksTotal;
+  }
 
-  const activeOffset =
-    activeTab === "treasury"
-      ? treasuryOffset
-      : activeTab === "gas"
-      ? gasOffset
-      : blocksOffset;
+  function activeOffset() {
+    if (activeTab === "treasury") return treasuryOffset;
+    if (activeTab === "gas") return gasOffset;
+    return blocksOffset;
+  }
 
-  const activeLoadingMore =
-    activeTab === "treasury"
-      ? treasuryLoadingMore
-      : activeTab === "gas"
-      ? gasLoadingMore
-      : blocksLoadingMore;
+  function activeLoadingMore() {
+    if (activeTab === "treasury") return treasuryLoadingMore;
+    if (activeTab === "gas") return gasLoadingMore;
+    return blocksLoadingMore;
+  }
 
   function handleLoadMore() {
-    if (activeLoadingMore || activeOffset >= activeTotal) return;
-    if (activeTab === "treasury") loadTreasury(activeOffset, true);
-    else if (activeTab === "gas") loadGas(activeOffset, true);
-    else loadBlocks(activeOffset, true);
+    if (activeTab === "treasury") loadTreasury(treasuryOffset, true);
+    else if (activeTab === "gas") loadGas(gasOffset, true);
+    else loadBlocks(blocksOffset, true);
   }
 
   function handleRetry() {
@@ -817,99 +494,85 @@ export default function EarningsScreen() {
     else loadBlocks(0, false);
   }
 
-  function renderRow({
-    item,
-  }: {
-    item: TreasuryReward | GasReward | ValidatorBlock;
-  }) {
-    if (activeTab === "treasury") return <TreasuryRowItem item={item as TreasuryReward} />;
-    if (activeTab === "gas") return <GasRowItem item={item as GasReward} />;
-    return <BlockRowItem item={item as ValidatorBlock} />;
-  }
-
-  function ListFooter() {
-    if (activeLoadingMore) {
-      return (
-        <View style={{ paddingVertical: 20, alignItems: "center" }}>
-          <ActivityIndicator color={colors.primary} />
-        </View>
-      );
-    }
-    if (activeOffset < activeTotal) {
-      return (
-        <TouchableOpacity style={s.loadMoreBtn} onPress={handleLoadMore}>
-          <Text style={s.loadMoreText}>
-            Load more ({activeTotal - activeOffset} remaining)
-          </Text>
-        </TouchableOpacity>
-      );
-    }
-    return <View style={{ height: 100 }} />;
-  }
-
-  function ListEmpty() {
-    if (isInitLoading) {
-      return (
-        <>
-          {[0, 1, 2, 3, 4].map((i) => (
-            <SkeletonRow key={i} colors={colors} />
-          ))}
-        </>
-      );
-    }
-    if (activeError) {
-      return (
-        <View style={s.errorBanner}>
-          <Feather name="alert-circle" size={16} color="#F87171" />
-          <Text style={s.errorText}>{activeError}</Text>
-          <TouchableOpacity style={s.retryBtn} onPress={handleRetry}>
-            <Text style={s.retryText}>Retry</Text>
-          </TouchableOpacity>
-        </View>
-      );
-    }
-    return (
-      <View style={s.emptyState}>
-        <Feather name="inbox" size={28} color={colors.mutedForeground} />
-        <Text style={s.emptyText}>No records yet</Text>
-      </View>
-    );
-  }
+  const items = activeItems();
+  const hasMore = activeOffset() < activeTotal();
 
   return (
     <View style={s.container}>
       <FlatList
-        keyExtractor={(item) => {
-          if ("period" in item) return `t-${item.id}`;
-          if ("blockHeight" in item && "validatorShareMc" in item)
-            return `g-${(item as GasReward).id}`;
-          return `b-${(item as ValidatorBlock).height}`;
-        }}
-        data={isInitLoading ? [] : activeItems}
-        ListHeaderComponent={SummaryHeader}
-        renderItem={renderRow}
-        ListEmptyComponent={ListEmpty}
-        ListFooterComponent={ListFooter}
+        contentContainerStyle={{ paddingBottom: 110 }}
         refreshControl={
           <RefreshControl
-            refreshing={earningsQuery.isFetching && !earningsQuery.isLoading}
+            refreshing={false}
             onRefresh={() => {
-              earningsQuery.refetch();
-              if (activeTab === "treasury") loadTreasury(0, false);
-              else if (activeTab === "gas") loadGas(0, false);
-              else loadBlocks(0, false);
+              loadTreasury(0, false);
+              if (activeTab === "gas") loadGas(0, false);
+              if (activeTab === "blocks") loadBlocks(0, false);
             }}
             tintColor={colors.primary}
           />
         }
-        contentContainerStyle={{ paddingBottom: 20 }}
-        extraData={activeTab}
+        ListHeaderComponent={
+          <>
+            {SummaryHeader}
+            {activeError() && (
+              <View style={s.errorBanner}>
+                <Ionicons name="alert-circle-outline" size={18} color="#F87171" />
+                <Text style={s.errorText}>{activeError()}</Text>
+                <TouchableOpacity style={s.retryBtn} onPress={handleRetry}>
+                  <Text style={s.retryText}>Retry</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+            {activeTab === "blocks" && items.length > 0 && (
+              <View style={s.tableHeader}>
+                <Text style={s.thBlock}>BLOCK</Text>
+                <Text style={s.thTxs}>TXS</Text>
+                <Text style={s.thGas}>GAS</Text>
+                <Text style={s.thTime}>TIME</Text>
+              </View>
+            )}
+            {activeInitLoading() && (
+              <>
+                <SkeletonRow colors={colors} />
+                <SkeletonRow colors={colors} />
+                <SkeletonRow colors={colors} />
+              </>
+            )}
+          </>
+        }
+        data={activeInitLoading() ? [] : items}
+        keyExtractor={(item, i) => {
+          if (activeTab === "treasury") return (item as TreasuryReward).id;
+          if (activeTab === "gas") return String((item as GasReward).blockHeight);
+          return String((item as ValidatorBlock).height) + i;
+        }}
+        renderItem={({ item }) => {
+          if (activeTab === "treasury") return <TreasuryRowItem item={item as TreasuryReward} />;
+          if (activeTab === "gas") return <GasRowItem item={item as GasReward} />;
+          return <BlockRowItem item={item as ValidatorBlock} />;
+        }}
+        ListEmptyComponent={
+          !activeInitLoading() && !activeError() ? (
+            <View style={s.emptyState}>
+              <Ionicons name="bar-chart-outline" size={32} color={colors.mutedForeground} />
+              <Text style={s.emptyText}>No data yet</Text>
+            </View>
+          ) : null
+        }
+        ListFooterComponent={
+          hasMore ? (
+            <TouchableOpacity style={s.loadMoreBtn} onPress={handleLoadMore} disabled={activeLoadingMore()}>
+              {activeLoadingMore() ? (
+                <ActivityIndicator color={colors.primary} size="small" />
+              ) : (
+                <Text style={s.loadMoreText}>Load More</Text>
+              )}
+            </TouchableOpacity>
+          ) : null
+        }
       />
-      <Toast
-        message={toast}
-        visible={!!toast}
-        onHide={() => setToast("")}
-      />
+      <Toast message={toast} visible={!!toast} onHide={() => setToast("")} />
     </View>
   );
 }

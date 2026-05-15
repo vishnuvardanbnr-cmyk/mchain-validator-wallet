@@ -1,4 +1,4 @@
-import { Feather } from "@expo/vector-icons";
+import { Ionicons } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
@@ -33,7 +33,6 @@ export default function ReceiveScreen() {
   const [toast, setToast] = useState("");
   const [amountFocused, setAmountFocused] = useState(false);
 
-  // Glow pulse animation
   const glowAnim = useRef(new Animated.Value(0)).current;
   const glowAnim2 = useRef(new Animated.Value(0)).current;
   const copyScale = useRef(new Animated.Value(1)).current;
@@ -41,14 +40,12 @@ export default function ReceiveScreen() {
   const amountHeight = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    // Main glow pulse
     Animated.loop(
       Animated.sequence([
         Animated.timing(glowAnim, { toValue: 1, duration: 2200, useNativeDriver: true, easing: Easing.inOut(Easing.ease) }),
         Animated.timing(glowAnim, { toValue: 0, duration: 2200, useNativeDriver: true, easing: Easing.inOut(Easing.ease) }),
       ])
     ).start();
-    // Offset second glow
     setTimeout(() => {
       Animated.loop(
         Animated.sequence([
@@ -57,8 +54,6 @@ export default function ReceiveScreen() {
         ])
       ).start();
     }, 1100);
-
-    // QR entrance
     Animated.spring(qrScale, { toValue: 1, useNativeDriver: true, bounciness: 6, speed: 6 }).start();
   }, [glowAnim, glowAnim2, qrScale]);
 
@@ -71,7 +66,6 @@ export default function ReceiveScreen() {
     }).start();
   }, [showAmountInput, amountHeight]);
 
-  // Build QR value: address + optional amount request
   const qrValue = requestAmount && parseFloat(requestAmount) > 0
     ? `${mxcAddress ?? ""}?amount=${requestAmount}`
     : (mxcAddress ?? "");
@@ -196,11 +190,7 @@ export default function ReceiveScreen() {
       borderColor: colors.border,
     },
     amountToggleText: { fontSize: 12, fontFamily: "Inter_600SemiBold", color: colors.primary },
-    amountInputWrap: {
-      width: "100%",
-      overflow: "hidden",
-      marginBottom: 12,
-    },
+    amountInputWrap: { width: "100%", overflow: "hidden", marginBottom: 12 },
     amountInputRow: {
       flexDirection: "row",
       alignItems: "center",
@@ -235,57 +225,41 @@ export default function ReceiveScreen() {
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
         <View style={s.header}>
           <TouchableOpacity style={s.backBtn} onPress={() => router.back()}>
-            <Feather name="x" size={18} color={colors.foreground} />
+            <Ionicons name="close" size={18} color={colors.foreground} />
           </TouchableOpacity>
           <Text style={s.headerTitle}>Receive MC</Text>
         </View>
 
         <View style={s.qrSection}>
-          {/* Network badge */}
           <View style={s.networkBadge}>
-            <Feather name="zap" size={12} color={colors.primary} />
+            <Ionicons name="flash-outline" size={12} color={colors.primary} />
             <Text style={s.networkBadgeText}>MChain Network · Chain 1888</Text>
           </View>
 
-          {/* QR with animated glow */}
           <View style={s.qrOuter}>
-            <Animated.View
-              style={[s.glowRing2, { opacity: glowOpacity2, transform: [{ scale: glowScale2 }] }]}
-            />
-            <Animated.View
-              style={[s.glowRing, { opacity: glowOpacity1, transform: [{ scale: glowScale1 }] }]}
-            />
+            <Animated.View style={[s.glowRing2, { opacity: glowOpacity2, transform: [{ scale: glowScale2 }] }]} />
+            <Animated.View style={[s.glowRing, { opacity: glowOpacity1, transform: [{ scale: glowScale1 }] }]} />
             <Animated.View style={[s.qrCard, { transform: [{ scale: qrScale }] }]}>
               {mxcAddress ? (
-                <QRCode
-                  value={qrValue}
-                  size={200}
-                  color="#000000"
-                  backgroundColor="#FFFFFF"
-                />
+                <QRCode value={qrValue} size={200} color="#000000" backgroundColor="#FFFFFF" />
               ) : (
                 <View style={{ width: 200, height: 200, backgroundColor: "#F0F0F0", borderRadius: 8 }} />
               )}
             </Animated.View>
           </View>
 
-          {/* Amount request toggle */}
           <View style={s.amountRequestRow}>
             <Text style={s.amountRequestLabel}>
               {requestAmount && parseFloat(requestAmount) > 0
                 ? `Requesting ${requestAmount} MC`
                 : "Request specific amount"}
             </Text>
-            <TouchableOpacity
-              style={s.amountToggle}
-              onPress={() => setShowAmountInput((v) => !v)}
-            >
-              <Feather name={showAmountInput ? "chevron-up" : "edit-2"} size={12} color={colors.primary} />
+            <TouchableOpacity style={s.amountToggle} onPress={() => setShowAmountInput((v) => !v)}>
+              <Ionicons name={showAmountInput ? "chevron-up" : "pencil-outline"} size={12} color={colors.primary} />
               <Text style={s.amountToggleText}>{showAmountInput ? "Hide" : "Set Amount"}</Text>
             </TouchableOpacity>
           </View>
 
-          {/* Animated amount input */}
           <Animated.View
             style={[
               s.amountInputWrap,
@@ -311,7 +285,6 @@ export default function ReceiveScreen() {
             <Text style={s.amountHint}>Encodes amount into the QR code</Text>
           </Animated.View>
 
-          {/* Address display */}
           <View style={s.addressCard}>
             <Text style={s.addressLabel}>YOUR MXC ADDRESS</Text>
             <Text style={s.addressText} selectable>
@@ -319,7 +292,6 @@ export default function ReceiveScreen() {
             </Text>
           </View>
 
-          {/* Action buttons */}
           <View style={s.actionRow}>
             <Animated.View style={[s.copyBtn, { transform: [{ scale: copyScale }] }]}>
               <TouchableOpacity onPress={handleCopy} activeOpacity={0.85}>
@@ -327,7 +299,7 @@ export default function ReceiveScreen() {
                   colors={copied ? ["#10B981", "#059669"] : ["#0EA5E9", "#0284C7"]}
                   style={{ paddingVertical: 14, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, borderRadius: colors.radius }}
                 >
-                  <Feather name={copied ? "check" : "copy"} size={16} color="#FFFFFF" />
+                  <Ionicons name={copied ? "checkmark" : "copy-outline"} size={16} color="#FFFFFF" />
                   <Text style={{ fontSize: 15, fontFamily: "Inter_600SemiBold", color: "#FFFFFF" }}>
                     {copied ? "Copied!" : "Copy Address"}
                   </Text>
@@ -336,7 +308,7 @@ export default function ReceiveScreen() {
             </Animated.View>
 
             <TouchableOpacity style={s.shareBtn} onPress={handleShare} activeOpacity={0.85}>
-              <Feather name="share-2" size={16} color={colors.foreground} />
+              <Ionicons name="share-social-outline" size={16} color={colors.foreground} />
               <Text style={s.shareBtnText}>Share</Text>
             </TouchableOpacity>
           </View>

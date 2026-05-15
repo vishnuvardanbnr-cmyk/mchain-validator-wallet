@@ -1,4 +1,4 @@
-import { Feather } from "@expo/vector-icons";
+import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
@@ -47,7 +47,6 @@ export default function SendScreen() {
   const [recipientFocused, setRecipientFocused] = useState(false);
   const [amountFocused, setAmountFocused] = useState(false);
 
-  // Animations
   const slideAnim = useRef(new Animated.Value(0)).current;
   const successScale = useRef(new Animated.Value(0)).current;
   const successOpacity = useRef(new Animated.Value(0)).current;
@@ -291,7 +290,6 @@ export default function SendScreen() {
     primaryBtn: { marginHorizontal: 20, borderRadius: colors.radius, overflow: "hidden", marginTop: 4 },
     primaryGrad: { paddingVertical: 16, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 },
     primaryBtnText: { fontSize: 16, fontFamily: "Inter_700Bold", color: "#FFFFFF" },
-    // Confirm styles
     confirmCard: {
       marginHorizontal: 20,
       backgroundColor: colors.card,
@@ -338,7 +336,6 @@ export default function SendScreen() {
     warningText: { flex: 1, fontSize: 12, fontFamily: "Inter_400Regular", color: colors.mutedForeground, lineHeight: 18 },
     ghostBtn: { marginHorizontal: 20, paddingVertical: 14, alignItems: "center", marginTop: 4 },
     ghostBtnText: { fontSize: 15, fontFamily: "Inter_500Medium", color: colors.mutedForeground },
-    // Success
     successContainer: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 32 },
     successCircle: {
       width: 96,
@@ -386,7 +383,7 @@ export default function SendScreen() {
         <Animated.View style={{ transform: [{ scale: successScale }], opacity: successOpacity, alignItems: "center" }}>
           <View style={s.successCircle}>
             <Animated.View style={{ transform: [{ rotate: spin }] }}>
-              <Feather name="check" size={42} color={colors.success} />
+              <Ionicons name="checkmark" size={42} color={colors.success} />
             </Animated.View>
           </View>
           <Text style={s.successTitle}>Sent Successfully</Text>
@@ -426,7 +423,7 @@ export default function SendScreen() {
           <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
             <View style={s.header}>
               <TouchableOpacity style={s.backBtn} onPress={() => slideToStep("input")}>
-                <Feather name="arrow-left" size={18} color={colors.foreground} />
+                <Ionicons name="arrow-back" size={18} color={colors.foreground} />
               </TouchableOpacity>
               <Text style={s.headerTitle}>Review Transaction</Text>
             </View>
@@ -447,7 +444,7 @@ export default function SendScreen() {
               <View style={s.confirmRow}>
                 <Text style={s.confirmLabel}>Network</Text>
                 <View style={s.networkBadge}>
-                  <Feather name="zap" size={10} color={colors.primary} />
+                  <Ionicons name="flash-outline" size={10} color={colors.primary} />
                   <Text style={s.networkBadgeText}>MChain · 1888</Text>
                 </View>
               </View>
@@ -462,7 +459,7 @@ export default function SendScreen() {
             </View>
 
             <View style={s.warningNote}>
-              <Feather name="alert-triangle" size={14} color="#F59E0B" style={{ marginTop: 1 }} />
+              <Ionicons name="warning-outline" size={14} color="#F59E0B" style={{ marginTop: 1 }} />
               <Text style={s.warningText}>
                 This transaction will be signed with your private key and is irreversible. Double-check the recipient address.
               </Text>
@@ -479,7 +476,7 @@ export default function SendScreen() {
                   <ActivityIndicator color="#FFFFFF" />
                 ) : (
                   <>
-                    <Feather name="lock" size={16} color="#FFFFFF" />
+                    <Ionicons name="lock-closed-outline" size={16} color="#FFFFFF" />
                     <Text style={s.primaryBtnText}>Sign & Broadcast</Text>
                   </>
                 )}
@@ -506,23 +503,21 @@ export default function SendScreen() {
         >
           <View style={s.header}>
             <TouchableOpacity style={s.backBtn} onPress={() => router.back()}>
-              <Feather name="x" size={18} color={colors.foreground} />
+              <Ionicons name="close" size={18} color={colors.foreground} />
             </TouchableOpacity>
             <Text style={s.headerTitle}>Send MC</Text>
           </View>
 
-          {/* Balance card */}
           <View style={s.balanceCard}>
             <View>
               <Text style={s.balanceLabel}>AVAILABLE BALANCE</Text>
               <Text style={s.balanceValue}>{balance} MC</Text>
             </View>
             <TouchableOpacity style={s.refreshBtn} onPress={() => refetchAccount()}>
-              <Feather name="refresh-cw" size={14} color={colors.mutedForeground} />
+              <Ionicons name="refresh-outline" size={14} color={colors.mutedForeground} />
             </TouchableOpacity>
           </View>
 
-          {/* Recipient */}
           <View style={s.fieldBlock}>
             <Text style={s.fieldLabel}>RECIPIENT ADDRESS</Text>
             <View style={[s.inputRow, recipientFocused && s.inputRowFocused]}>
@@ -538,13 +533,12 @@ export default function SendScreen() {
                 autoCorrect={false}
               />
               <TouchableOpacity style={s.inputAction} onPress={handlePasteAddress}>
-                <Feather name="clipboard" size={14} color={colors.primary} />
+                <Ionicons name="clipboard-outline" size={14} color={colors.primary} />
                 <Text style={s.inputActionText}>Paste</Text>
               </TouchableOpacity>
             </View>
           </View>
 
-          {/* Recent addresses dropdown */}
           {showRecent && recentAddresses.length > 0 && (
             <View style={s.recentDropdown}>
               <View style={s.recentHeader}>
@@ -560,17 +554,16 @@ export default function SendScreen() {
                     if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                   }}
                 >
-                  <Feather name="clock" size={13} color={colors.mutedForeground} />
+                  <Ionicons name="time-outline" size={13} color={colors.mutedForeground} />
                   <Text style={s.recentAddress} numberOfLines={1}>
                     {shortenAddress(addr, 10)}
                   </Text>
-                  <Feather name="chevron-right" size={13} color={colors.mutedForeground} />
+                  <Ionicons name="chevron-forward" size={13} color={colors.mutedForeground} />
                 </TouchableOpacity>
               ))}
             </View>
           )}
 
-          {/* Amount */}
           <View style={s.fieldBlock}>
             <Text style={s.fieldLabel}>AMOUNT</Text>
             <View style={[s.inputRow, amountFocused && s.inputRowFocused]}>
@@ -587,27 +580,40 @@ export default function SendScreen() {
               <Text style={s.amountSuffix}>MC</Text>
             </View>
             <View style={s.pctRow}>
-              {([0.25, 0.5, 0.75, 1] as const).map((pct) => (
-                <TouchableOpacity
-                  key={pct}
-                  style={s.pctBtn}
-                  onPress={() => setAmountPct(pct)}
-                  activeOpacity={0.7}
-                >
-                  <Text style={s.pctBtnText}>
-                    {pct === 1 ? "MAX" : `${pct * 100}%`}
-                  </Text>
+              {[0.25, 0.5, 0.75, 1].map((pct) => (
+                <TouchableOpacity key={pct} style={s.pctBtn} onPress={() => setAmountPct(pct)}>
+                  <Text style={s.pctBtnText}>{pct === 1 ? "MAX" : `${pct * 100}%`}</Text>
                 </TouchableOpacity>
               ))}
             </View>
           </View>
 
-          {!!error && <Text style={s.errorText}>{error}</Text>}
+          <View style={s.fieldBlock}>
+            <Text style={s.fieldLabel}>MEMO (OPTIONAL)</Text>
+            <View style={s.inputRow}>
+              <TextInput
+                style={s.textInput}
+                placeholder="Add a note..."
+                placeholderTextColor={colors.mutedForeground}
+                value={memo}
+                onChangeText={setMemo}
+                autoCapitalize="none"
+                autoCorrect={false}
+                maxLength={100}
+              />
+            </View>
+          </View>
 
-          <TouchableOpacity style={s.primaryBtn} onPress={handleContinue} activeOpacity={0.85}>
+          {error ? <Text style={s.errorText}>{error}</Text> : null}
+
+          <TouchableOpacity
+            style={s.primaryBtn}
+            onPress={handleContinue}
+            activeOpacity={0.85}
+          >
             <LinearGradient colors={["#0EA5E9", "#0284C7"]} style={s.primaryGrad}>
-              <Text style={s.primaryBtnText}>Review Transaction</Text>
-              <Feather name="arrow-right" size={18} color="#FFFFFF" />
+              <Text style={s.primaryBtnText}>Continue</Text>
+              <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
             </LinearGradient>
           </TouchableOpacity>
         </ScrollView>

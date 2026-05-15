@@ -1,4 +1,4 @@
-import { Feather } from "@expo/vector-icons";
+import { Ionicons } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
 import React, { useState } from "react";
@@ -96,68 +96,22 @@ export default function SettingsScreen() {
   }
 
   const s = StyleSheet.create({
-    container: {
-      flex: 1,
-      backgroundColor: colors.background,
-    },
-    scroll: {
-      paddingBottom: Platform.OS === "web" ? 34 : insets.bottom + 24,
-    },
+    container: { flex: 1, backgroundColor: colors.background },
+    scroll: { paddingBottom: Platform.OS === "web" ? 34 : insets.bottom + 24 },
     header: {
       paddingTop: insets.top + (Platform.OS === "web" ? 67 : 16),
       paddingHorizontal: 20,
       paddingBottom: 16,
     },
-    title: {
-      fontSize: 24,
-      fontFamily: "Inter_700Bold",
-      color: colors.foreground,
-    },
-    section: {
-      marginHorizontal: 20,
-      marginBottom: 20,
-    },
-    sectionLabel: {
-      fontSize: 11,
-      fontFamily: "Inter_600SemiBold",
-      color: colors.mutedForeground,
-      letterSpacing: 1.5,
-      marginBottom: 8,
-    },
-    card: {
-      backgroundColor: colors.card,
-      borderRadius: colors.radius,
-      borderWidth: 1,
-      borderColor: colors.border,
-      overflow: "hidden",
-    },
-    row: {
-      flexDirection: "row",
-      alignItems: "center",
-      padding: 16,
-      borderBottomWidth: 1,
-      borderBottomColor: colors.border,
-    },
-    rowLast: {
-      borderBottomWidth: 0,
-    },
-    rowLabel: {
-      fontSize: 14,
-      fontFamily: "Inter_500Medium",
-      color: colors.mutedForeground,
-      width: 100,
-    },
-    rowValue: {
-      flex: 1,
-      fontSize: 13,
-      fontFamily: "Inter_400Regular",
-      color: colors.foreground,
-    },
-    monikerRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      padding: 16,
-    },
+    title: { fontSize: 24, fontFamily: "Inter_700Bold", color: colors.foreground },
+    section: { marginHorizontal: 20, marginBottom: 20 },
+    sectionLabel: { fontSize: 11, fontFamily: "Inter_600SemiBold", color: colors.mutedForeground, letterSpacing: 1.5, marginBottom: 8 },
+    card: { backgroundColor: colors.card, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border, overflow: "hidden" },
+    row: { flexDirection: "row", alignItems: "center", padding: 16, borderBottomWidth: 1, borderBottomColor: colors.border },
+    rowLast: { borderBottomWidth: 0 },
+    rowLabel: { fontSize: 14, fontFamily: "Inter_500Medium", color: colors.mutedForeground, width: 100 },
+    rowValue: { flex: 1, fontSize: 13, fontFamily: "Inter_400Regular", color: colors.foreground },
+    monikerRow: { flexDirection: "row", alignItems: "center", padding: 16 },
     monikerInput: {
       flex: 1,
       fontSize: 15,
@@ -171,60 +125,15 @@ export default function SettingsScreen() {
       borderColor: colors.primary,
       marginRight: 8,
     },
-    dangerCard: {
-      backgroundColor: "#130000",
-      borderRadius: colors.radius,
-      borderWidth: 1,
-      borderColor: "#EF444430",
-      overflow: "hidden",
-    },
-    dangerRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      padding: 16,
-      borderBottomWidth: 1,
-      borderBottomColor: "#EF444430",
-      gap: 12,
-    },
-    dangerRowLast: {
-      borderBottomWidth: 0,
-    },
-    dangerText: {
-      flex: 1,
-      fontSize: 14,
-      fontFamily: "Inter_500Medium",
-      color: "#F87171",
-    },
-    keyBox: {
-      backgroundColor: colors.secondary,
-      margin: 16,
-      borderRadius: 8,
-      padding: 12,
-    },
-    keyText: {
-      fontSize: 11,
-      fontFamily: "Inter_400Regular",
-      color: colors.mutedForeground,
-      lineHeight: 18,
-      letterSpacing: 0.5,
-    },
-    chainRow: {
-      flexDirection: "row",
-      justifyContent: "space-between",
-      padding: 16,
-      borderBottomWidth: 1,
-      borderBottomColor: colors.border,
-    },
-    chainLabel: {
-      fontSize: 13,
-      fontFamily: "Inter_400Regular",
-      color: colors.mutedForeground,
-    },
-    chainValue: {
-      fontSize: 13,
-      fontFamily: "Inter_600SemiBold",
-      color: colors.foreground,
-    },
+    dangerCard: { backgroundColor: "#130000", borderRadius: colors.radius, borderWidth: 1, borderColor: "#EF444430", overflow: "hidden" },
+    dangerRow: { flexDirection: "row", alignItems: "center", padding: 16, borderBottomWidth: 1, borderBottomColor: "#EF444430", gap: 12 },
+    dangerRowLast: { borderBottomWidth: 0 },
+    dangerText: { flex: 1, fontSize: 14, fontFamily: "Inter_500Medium", color: "#F87171" },
+    keyBox: { backgroundColor: colors.secondary, margin: 16, borderRadius: 8, padding: 12 },
+    keyText: { fontSize: 11, fontFamily: "Inter_400Regular", color: colors.mutedForeground, lineHeight: 18, letterSpacing: 0.5 },
+    chainRow: { flexDirection: "row", justifyContent: "space-between", padding: 16, borderBottomWidth: 1, borderBottomColor: colors.border },
+    chainLabel: { fontSize: 13, fontFamily: "Inter_400Regular", color: colors.mutedForeground },
+    chainValue: { fontSize: 13, fontFamily: "Inter_600SemiBold", color: colors.foreground },
   });
 
   return (
@@ -250,17 +159,17 @@ export default function SettingsScreen() {
                     autoCapitalize="none"
                   />
                   <TouchableOpacity onPress={handleSaveMoniker}>
-                    <Feather name="check" size={20} color={colors.success} />
+                    <Ionicons name="checkmark" size={20} color={colors.success} />
                   </TouchableOpacity>
                   <TouchableOpacity onPress={() => { setEditingMoniker(false); setMonikerInput(moniker); }} style={{ marginLeft: 10 }}>
-                    <Feather name="x" size={20} color={colors.destructive} />
+                    <Ionicons name="close" size={20} color={colors.destructive} />
                   </TouchableOpacity>
                 </>
               ) : (
                 <>
                   <Text style={[s.rowValue, { fontSize: 15, fontFamily: "Inter_600SemiBold" }]}>{moniker || "—"}</Text>
                   <TouchableOpacity onPress={() => { setMonikerInput(moniker); setEditingMoniker(true); }}>
-                    <Feather name="edit-2" size={16} color={colors.mutedForeground} />
+                    <Ionicons name="pencil-outline" size={16} color={colors.mutedForeground} />
                   </TouchableOpacity>
                 </>
               )}
@@ -289,18 +198,13 @@ export default function SettingsScreen() {
         <View style={s.section}>
           <Text style={s.sectionLabel}>SECURITY</Text>
           <View style={s.dangerCard}>
-            <TouchableOpacity
-              style={s.dangerRow}
-              onPress={handleRevealKey}
-            >
+            <TouchableOpacity style={s.dangerRow} onPress={handleRevealKey}>
               {loadingKey ? (
                 <ActivityIndicator color="#F87171" size="small" />
               ) : (
-                <Feather name={keyVisible ? "eye-off" : "eye"} size={18} color="#F87171" />
+                <Ionicons name={keyVisible ? "eye-off-outline" : "eye-outline"} size={18} color="#F87171" />
               )}
-              <Text style={s.dangerText}>
-                {keyVisible ? "Hide" : "Show"} Private Key
-              </Text>
+              <Text style={s.dangerText}>{keyVisible ? "Hide" : "Show"} Private Key</Text>
             </TouchableOpacity>
 
             {keyVisible && privateKey && (
@@ -309,11 +213,8 @@ export default function SettingsScreen() {
               </View>
             )}
 
-            <TouchableOpacity
-              style={[s.dangerRow, s.dangerRowLast]}
-              onPress={handleExportKey}
-            >
-              <Feather name="copy" size={18} color="#F87171" />
+            <TouchableOpacity style={[s.dangerRow, s.dangerRowLast]} onPress={handleExportKey}>
+              <Ionicons name="copy-outline" size={18} color="#F87171" />
               <Text style={s.dangerText}>Export Private Key</Text>
             </TouchableOpacity>
           </View>
@@ -322,7 +223,7 @@ export default function SettingsScreen() {
         <View style={s.section}>
           <Text style={s.sectionLabel}>CHAIN</Text>
           <View style={s.card}>
-            <View style={[s.chainRow]}>
+            <View style={s.chainRow}>
               <Text style={s.chainLabel}>Network</Text>
               <Text style={s.chainValue}>MChain</Text>
             </View>

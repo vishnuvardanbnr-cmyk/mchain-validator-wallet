@@ -1,4 +1,4 @@
-import { Feather } from "@expo/vector-icons";
+import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import React, { useEffect, useRef, useState } from "react";
 import {
@@ -51,7 +51,6 @@ export default function ValidatorScreen() {
   const [monikerFocused, setMonikerFocused] = useState(false);
   const [commissionFocused, setCommissionFocused] = useState(false);
 
-  // Animations
   const pulseScale = useRef(new Animated.Value(1)).current;
   const pulseOpacity = useRef(new Animated.Value(0.6)).current;
   const ring2Scale = useRef(new Animated.Value(1)).current;
@@ -112,7 +111,6 @@ export default function ValidatorScreen() {
     try { return acc + BigInt(r.amount); } catch { return acc; }
   }, BigInt(0));
 
-  // Start/stop pulse animation based on validator status
   useEffect(() => {
     let anim: Animated.CompositeAnimation | null = null;
     if (validator?.status === "active" && !sessionExpired) {
@@ -146,7 +144,6 @@ export default function ValidatorScreen() {
     return () => anim?.stop();
   }, [validator?.status, sessionExpired, pulseScale, pulseOpacity, ring2Scale, ring2Opacity]);
 
-  // Shake animation when session is expired
   useEffect(() => {
     if (sessionExpired) {
       Animated.sequence([
@@ -159,7 +156,6 @@ export default function ValidatorScreen() {
     }
   }, [sessionExpired, expiredShake]);
 
-  // Fade in card when data loads
   useEffect(() => {
     if (validator) {
       Animated.timing(cardFade, { toValue: 1, duration: 400, useNativeDriver: true }).start();
@@ -207,7 +203,6 @@ export default function ValidatorScreen() {
     },
     headerTitle: { fontSize: 24, fontFamily: "Inter_700Bold", color: colors.foreground },
     headerSubtitle: { fontSize: 14, fontFamily: "Inter_400Regular", color: colors.mutedForeground, marginTop: 4 },
-    // Register card
     registerCard: {
       marginHorizontal: 20,
       backgroundColor: colors.card,
@@ -272,7 +267,6 @@ export default function ValidatorScreen() {
     registerBtnGrad: { paddingVertical: 15, alignItems: "center", flexDirection: "row", justifyContent: "center", gap: 8 },
     registerBtnText: { fontSize: 16, fontFamily: "Inter_600SemiBold", color: "#FFFFFF" },
     errorText: { fontSize: 13, fontFamily: "Inter_400Regular", color: colors.destructive, marginBottom: 12 },
-    // Status card
     statusCardWrap: { marginHorizontal: 20, borderRadius: colors.radius + 4, overflow: "hidden", marginBottom: 16 },
     statusGrad: { padding: 20 },
     statusTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 20 },
@@ -289,7 +283,6 @@ export default function ValidatorScreen() {
       backgroundColor: "rgba(0,0,0,0.35)",
     },
     statusBadgeText: { fontSize: 13, fontFamily: "Inter_600SemiBold" },
-    // Pulse animation center
     pulseCenter: { alignItems: "center", marginBottom: 20 },
     pulseRing: {
       position: "absolute",
@@ -317,7 +310,6 @@ export default function ValidatorScreen() {
     statBox: { flex: 1, backgroundColor: "rgba(0,0,0,0.22)", borderRadius: 10, padding: 11 },
     statLabel: { fontSize: 9, fontFamily: "Inter_500Medium", color: "rgba(255,255,255,0.5)", letterSpacing: 1, marginBottom: 5 },
     statValue: { fontSize: 16, fontFamily: "Inter_700Bold", color: "#FFFFFF" },
-    // Session expired banner
     expiredBanner: {
       marginTop: 16,
       backgroundColor: "rgba(245,158,11,0.12)",
@@ -331,7 +323,6 @@ export default function ValidatorScreen() {
     restartBtn: { borderRadius: 10, overflow: "hidden" },
     restartGrad: { paddingVertical: 11, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7 },
     restartBtnText: { fontSize: 14, fontFamily: "Inter_600SemiBold", color: "#FFFFFF" },
-    // Total earned card
     totalCard: {
       marginHorizontal: 20,
       flexDirection: "row",
@@ -347,7 +338,6 @@ export default function ValidatorScreen() {
     totalIcon: { width: 44, height: 44, borderRadius: 22, backgroundColor: "#10B98115", alignItems: "center", justifyContent: "center" },
     totalLabel: { fontSize: 11, fontFamily: "Inter_500Medium", color: colors.mutedForeground, marginBottom: 3, letterSpacing: 0.5 },
     totalValue: { fontSize: 22, fontFamily: "Inter_700Bold", color: colors.success },
-    // Rewards list
     sectionTitle: { fontSize: 11, fontFamily: "Inter_600SemiBold", color: colors.mutedForeground, letterSpacing: 1.5, marginHorizontal: 20, marginBottom: 8 },
     rewardRow: { flexDirection: "row", alignItems: "center", paddingHorizontal: 20, paddingVertical: 13, borderBottomWidth: 1, borderBottomColor: colors.border, gap: 12 },
     rewardIconWrap: { width: 34, height: 34, borderRadius: 17, backgroundColor: "#10B98115", alignItems: "center", justifyContent: "center" },
@@ -369,10 +359,17 @@ export default function ValidatorScreen() {
   const showRegisterForm = !isRegistered;
   const activeColor = sessionExpired ? "#F59E0B" : statusColor(validator?.status);
 
+  function centerIcon() {
+    if (sessionExpired) return "pause-circle-outline";
+    if (validator?.status === "active") return "pulse-outline";
+    if (validator?.status === "pending") return "time-outline";
+    return "shield-half-outline";
+  }
+
   const RegisterForm = (
     <View style={s.registerCard}>
       <View style={s.registerIcon}>
-        <Feather name="shield" size={28} color={colors.primary} />
+        <Ionicons name="shield-outline" size={28} color={colors.primary} />
       </View>
       <Text style={s.registerTitle}>Become a Validator</Text>
       <Text style={s.registerDesc}>
@@ -381,15 +378,15 @@ export default function ValidatorScreen() {
 
       <View style={s.featureRow}>
         <View style={s.featureChip}>
-          <Feather name="clock" size={11} color={colors.primary} />
+          <Ionicons name="time-outline" size={11} color={colors.primary} />
           <Text style={s.featureChipText}>Uptime Rewards</Text>
         </View>
         <View style={s.featureChip}>
-          <Feather name="zap" size={11} color={colors.primary} />
+          <Ionicons name="flash-outline" size={11} color={colors.primary} />
           <Text style={s.featureChipText}>Gas Fees</Text>
         </View>
         <View style={s.featureChip}>
-          <Feather name="cpu" size={11} color={colors.primary} />
+          <Ionicons name="hardware-chip-outline" size={11} color={colors.primary} />
           <Text style={s.featureChipText}>Chain ID 1888</Text>
         </View>
       </View>
@@ -439,7 +436,7 @@ export default function ValidatorScreen() {
             <ActivityIndicator color="#FFFFFF" size="small" />
           ) : (
             <>
-              <Feather name="shield" size={18} color="#FFFFFF" />
+              <Ionicons name="shield-outline" size={18} color="#FFFFFF" />
               <Text style={s.registerBtnText}>Register as Validator</Text>
             </>
           )}
@@ -470,37 +467,11 @@ export default function ValidatorScreen() {
             </View>
           </View>
 
-          {/* Animated pulse indicator */}
           <View style={s.pulseCenter}>
-            {/* Outer ring 2 */}
-            <Animated.View
-              style={[
-                s.pulseRing2,
-                {
-                  borderColor: activeColor,
-                  transform: [{ scale: ring2Scale }],
-                  opacity: ring2Opacity,
-                },
-              ]}
-            />
-            {/* Outer ring 1 */}
-            <Animated.View
-              style={[
-                s.pulseRing,
-                {
-                  borderColor: activeColor,
-                  transform: [{ scale: pulseScale }],
-                  opacity: pulseOpacity,
-                },
-              ]}
-            />
-            {/* Center dot */}
+            <Animated.View style={[s.pulseRing2, { borderColor: activeColor, transform: [{ scale: ring2Scale }], opacity: ring2Opacity }]} />
+            <Animated.View style={[s.pulseRing, { borderColor: activeColor, transform: [{ scale: pulseScale }], opacity: pulseOpacity }]} />
             <View style={[s.pulseInner, { borderWidth: 1.5, borderColor: activeColor + "40" }]}>
-              <Feather
-                name={sessionExpired ? "pause-circle" : validator.status === "active" ? "activity" : validator.status === "pending" ? "clock" : "shield-off"}
-                size={28}
-                color={activeColor}
-              />
+              <Ionicons name={centerIcon()} size={28} color={activeColor} />
             </View>
           </View>
 
@@ -532,25 +503,19 @@ export default function ValidatorScreen() {
             </View>
           </View>
 
-          {/* Session expired banner inside card */}
           {sessionExpired && (
             <View style={s.expiredBanner}>
               <Text style={s.expiredBannerTitle}>⚠ Session Paused</Text>
               <Text style={s.expiredBannerDesc}>
                 Your 2-hour validator session has ended. Restart to resume earning rewards.
               </Text>
-              <TouchableOpacity
-                style={s.restartBtn}
-                onPress={handleRestartSession}
-                disabled={restartLoading}
-                activeOpacity={0.85}
-              >
+              <TouchableOpacity style={s.restartBtn} onPress={handleRestartSession} disabled={restartLoading} activeOpacity={0.85}>
                 <LinearGradient colors={["#F59E0B", "#D97706"]} style={s.restartGrad}>
                   {restartLoading ? (
                     <ActivityIndicator color="#FFFFFF" size="small" />
                   ) : (
                     <>
-                      <Feather name="refresh-cw" size={14} color="#FFFFFF" />
+                      <Ionicons name="refresh-outline" size={14} color="#FFFFFF" />
                       <Text style={s.restartBtnText}>Restart Session</Text>
                     </>
                   )}
@@ -563,7 +528,7 @@ export default function ValidatorScreen() {
 
       <View style={s.totalCard}>
         <View style={s.totalIcon}>
-          <Feather name="award" size={20} color={colors.success} />
+          <Ionicons name="trophy-outline" size={20} color={colors.success} />
         </View>
         <View>
           <Text style={s.totalLabel}>TOTAL MC EARNED</Text>
@@ -592,36 +557,31 @@ export default function ValidatorScreen() {
             <View style={s.header}>
               <Text style={s.headerTitle}>Validator</Text>
               {showRegisterForm && (
-                <Text style={s.headerSubtitle}>Not yet registered on MChain</Text>
+                <Text style={s.headerSubtitle}>Register to start earning MC rewards</Text>
               )}
             </View>
             {showRegisterForm ? RegisterForm : ValidatorStats}
           </>
         }
-        data={showRegisterForm ? [] : rewards}
+        data={isRegistered ? rewards : []}
         keyExtractor={(item) => item.id}
-        renderItem={({ item: reward }) => (
+        renderItem={({ item }) => (
           <View style={s.rewardRow}>
             <View style={s.rewardIconWrap}>
-              <Feather name="trending-up" size={14} color={colors.success} />
+              <Ionicons name="trophy-outline" size={16} color={colors.success} />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={s.rewardDate}>{formatDate(reward.timestamp ?? reward.date)}</Text>
-              <Text style={{ fontSize: 11, fontFamily: "Inter_400Regular", color: colors.mutedForeground }}>
-                Pool share: {reward.poolShare}%
-              </Text>
+              <Text style={s.rewardDate}>{formatDate(item.createdAt)}</Text>
+              <Text style={s.rewardShare}>{item.type}</Text>
             </View>
-            <Text style={s.rewardAmount}>+{weiToMc(reward.amount)} MC</Text>
+            <Text style={s.rewardAmount}>+{weiToMc(item.amount)} MC</Text>
           </View>
         )}
         ListEmptyComponent={
-          !showRegisterForm ? (
+          isRegistered ? (
             <View style={s.emptyState}>
-              <Feather name="award" size={32} color={colors.mutedForeground} />
+              <Ionicons name="trophy-outline" size={32} color={colors.mutedForeground} />
               <Text style={s.emptyText}>No rewards yet</Text>
-              <Text style={{ fontSize: 12, fontFamily: "Inter_400Regular", color: colors.mutedForeground, textAlign: "center", marginTop: 4 }}>
-                Stay online to start earning
-              </Text>
             </View>
           ) : null
         }
