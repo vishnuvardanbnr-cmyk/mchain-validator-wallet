@@ -1,0 +1,27 @@
+kind = "mobile"
+previewPath = "/"
+title = "MChain Validator Wallet"
+version = "1.0.0"
+id = "artifacts/mchain-wallet"
+router = "expo-domain"
+
+[[integratedSkills]]
+name = "expo"
+version = "1.0.0"
+
+[[services]]
+ensurePreviewReachable = "/status"
+name = "expo"
+paths = [ "/" ]
+localPort = 19144
+
+[services.development]
+run = "pnpm --filter @workspace/mchain-wallet run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/mchain-wallet", "run", "build" ]
+run = [ "pnpm", "--filter", "@workspace/mchain-wallet", "run", "serve" ]
+
+[services.env]
+PORT = "19144"
+BASE_PATH = "/"

@@ -1,36 +1,47 @@
-# [Project name]
+# MChain Validator Wallet
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+A React Native (Expo) mobile wallet and validator app for the MChain network — handles secp256k1 key generation, MC token send/receive, validator registration/heartbeats, and transaction history.
 
 ## Run & Operate
 
-- `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
+- `pnpm --filter @workspace/mchain-wallet run dev` — start the Expo dev server (port 19144)
+- `pnpm --filter @workspace/api-server run dev` — run the API server (port 8080)
 - `pnpm run typecheck` — full typecheck across all packages
-- `pnpm run build` — typecheck + build all packages
-- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
-- `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- Required env: `DATABASE_URL` — Postgres connection string
 
 ## Stack
 
 - pnpm workspaces, Node.js 24, TypeScript 5.9
-- API: Express 5
-- DB: PostgreSQL + Drizzle ORM
-- Validation: Zod (`zod/v4`), `drizzle-zod`
-- API codegen: Orval (from OpenAPI spec)
-- Build: esbuild (CJS bundle)
+- Mobile: Expo SDK 54, expo-router (file-based), React Native
+- State: React Context (WalletContext), @tanstack/react-query
+- Crypto: @noble/curves (secp256k1), @noble/hashes (keccak256), bech32
+- Storage: expo-secure-store (private key), AsyncStorage (metadata)
+- Background: expo-background-fetch + expo-task-manager (heartbeats)
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+- `artifacts/mchain-wallet/` — Expo mobile app
+  - `app/_layout.tsx` — root layout (WalletProvider, QueryClient, nav)
+  - `app/(tabs)/` — 5 tab screens: index, send, receive, validator, settings
+  - `app/onboarding.tsx` — first-run keypair generation flow
+  - `context/WalletContext.tsx` — global wallet state, key management
+  - `services/crypto.ts` — secp256k1 keygen + mxc1 bech32 address derivation
+  - `services/api.ts` — all MChain REST API calls (chain.mvault.pro)
+  - `services/backgroundTasks.ts` — expo-task-manager heartbeat task
+  - `hooks/useHeartbeat.ts` — foreground heartbeat polling (60s)
+  - `constants/colors.ts` — dark-only theme palette
+- `artifacts/api-server/` — Express API server
 
 ## Architecture decisions
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- Dark-only theme: both `light` and `dark` color keys use the same dark palette (`#0A0F1E` background, `#0EA5E9` primary)
+- Address derivation: compressed secp256k1 pubkey → keccak256 → last 20 bytes → bech32 prefix "mxc1"
+- Private key stored only in expo-secure-store; never in AsyncStorage or logs
+- Background heartbeat uses `expo-background-fetch` + `expo-task-manager`; foreground polling via React hook
+- Chain ID: 1888, native token: MC, API base: `https://chain.mvault.pro/api`
 
 ## Product
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+MChain Validator Wallet lets users: generate a secp256k1 wallet with a `mxc1` bech32 address, register as a validator on the MChain network (Chain ID 1888), send/receive MC tokens via QR code, monitor validator heartbeat status with background uptime tracking, and view transaction history.
 
 ## User preferences
 
@@ -38,8 +49,12 @@ _Populate as you build — explicit user instructions worth remembering across s
 
 ## Gotchas
 
-_Populate as you build — sharp edges, "always run X before Y" rules._
+- The chain API (`chain.mvault.pro`) sends duplicate `Access-Control-Allow-Origin` headers — CORS errors appear in the web preview but native iOS/Android builds are unaffected
+- Use `@noble/curves@^1.x` and `@noble/hashes@^1.x` — v2 has Metro bundler subpath export issues in Expo
+- `expo-battery` requires `Platform.OS !== 'web'` guard
+- Background task (`HEARTBEAT_TASK`) must be defined via `TaskManager.defineTask` at module top level — the import in `_layout.tsx` ensures this runs before registration
 
 ## Pointers
 
 - See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details
+- See the `expo` skill for Expo-specific patterns
