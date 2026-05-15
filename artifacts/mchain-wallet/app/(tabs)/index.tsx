@@ -6,7 +6,6 @@ import { router } from "expo-router";
 import React, { useEffect } from "react";
 import {
   ActivityIndicator,
-  FlatList,
   Platform,
   RefreshControl,
   ScrollView,
@@ -70,13 +69,6 @@ export default function DashboardScreen() {
     refetchInterval: 10_000,
   });
 
-  const { data: txData, refetch: refetchTx } = useQuery({
-    queryKey: ["transactions", mxcAddress],
-    queryFn: () => api.getTransactions(mxcAddress!, 5),
-    enabled: !!mxcAddress,
-    refetchInterval: 15_000,
-  });
-
   const { data: validatorData, refetch: refetchValidator } = useQuery({
     queryKey: ["validator", mxcAddress],
     queryFn: () => api.getValidatorStatus(mxcAddress!),
@@ -93,7 +85,7 @@ export default function DashboardScreen() {
   const isRefreshing = false;
 
   async function handleRefresh() {
-    await Promise.all([refetchAccount(), refetchChain(), refetchTx(), refetchValidator()]);
+    await Promise.all([refetchAccount(), refetchChain(), refetchValidator()]);
   }
 
   async function copyAddress() {
@@ -104,7 +96,6 @@ export default function DashboardScreen() {
 
   const balance = account?.balance ? weiToMc(account.balance) : "0.00";
   const vStatus = validatorData?.validator?.status ?? validatorStatus;
-  const transactions = txData?.transactions ?? [];
 
   const s = StyleSheet.create({
     container: {
@@ -228,67 +219,6 @@ export default function DashboardScreen() {
       fontSize: 13,
       fontFamily: "Inter_500Medium",
       color: "#D4A017",
-    },
-    sectionHeader: {
-      paddingHorizontal: 20,
-      flexDirection: "row",
-      justifyContent: "space-between",
-      alignItems: "center",
-      marginBottom: 12,
-    },
-    sectionTitle: {
-      fontSize: 13,
-      fontFamily: "Inter_600SemiBold",
-      color: colors.mutedForeground,
-      letterSpacing: 1.5,
-    },
-    seeAll: {
-      fontSize: 13,
-      fontFamily: "Inter_500Medium",
-      color: colors.primary,
-    },
-    txRow: {
-      marginHorizontal: 20,
-      flexDirection: "row",
-      alignItems: "center",
-      paddingVertical: 12,
-      borderBottomWidth: 1,
-      borderBottomColor: colors.border,
-      gap: 12,
-    },
-    txIcon: {
-      width: 36,
-      height: 36,
-      borderRadius: 18,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    txAmount: {
-      fontSize: 15,
-      fontFamily: "Inter_600SemiBold",
-    },
-    txAddr: {
-      fontSize: 12,
-      fontFamily: "Inter_400Regular",
-      color: colors.mutedForeground,
-      marginTop: 2,
-    },
-    txTime: {
-      fontSize: 12,
-      fontFamily: "Inter_400Regular",
-      color: colors.mutedForeground,
-      marginLeft: "auto" as const,
-    },
-    emptyState: {
-      marginHorizontal: 20,
-      paddingVertical: 32,
-      alignItems: "center",
-    },
-    emptyText: {
-      fontSize: 14,
-      fontFamily: "Inter_400Regular",
-      color: colors.mutedForeground,
-      marginTop: 8,
     },
     quickActions: {
       flexDirection: "row",
@@ -518,39 +448,6 @@ export default function DashboardScreen() {
           </TouchableOpacity>
         </View>
 
-        <View style={s.sectionHeader}>
-          <Text style={s.sectionTitle}>RECENT TRANSACTIONS</Text>
-        </View>
-
-        {transactions.length === 0 ? (
-          <View style={s.emptyState}>
-            <Feather name="inbox" size={32} color={colors.mutedForeground} />
-            <Text style={s.emptyText}>No transactions yet</Text>
-          </View>
-        ) : (
-          transactions.map((tx) => {
-            const isOut = tx.from === mxcAddress;
-            const otherAddr = isOut ? tx.to : tx.from;
-            return (
-              <View style={s.txRow} key={tx.hash}>
-                <View style={[s.txIcon, { backgroundColor: isOut ? "#0EA5E920" : "#10B98120" }]}>
-                  <Feather
-                    name={isOut ? "arrow-up-right" : "arrow-down-left"}
-                    size={18}
-                    color={isOut ? colors.primary : colors.success}
-                  />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[s.txAmount, { color: isOut ? colors.primary : colors.success }]}>
-                    {isOut ? "-" : "+"}{weiToMc(tx.amount)} MC
-                  </Text>
-                  <Text style={s.txAddr}>{shortenAddress(otherAddr)}</Text>
-                </View>
-                <Text style={s.txTime}>{formatDate(tx.timestamp)}</Text>
-              </View>
-            );
-          })
-        )}
       </ScrollView>
       <Toast
         message={toastMessage}
