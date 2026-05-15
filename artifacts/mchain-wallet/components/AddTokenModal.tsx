@@ -225,7 +225,31 @@ export function AddTokenModal({ visible, onClose, onAdded }: Props) {
               <TouchableOpacity
                 key={token.coingeckoId}
                 style={s.tokenItem}
-                onPress={() => { setSelectedVerified(token); setContractInput(""); setError(""); }}
+                onPress={async () => {
+                  if (token.contractAddress) {
+                    setSaving(true);
+                    setError("");
+                    try {
+                      await addCustomToken({
+                        contractAddress: token.contractAddress,
+                        symbol: token.symbol,
+                        name: token.name,
+                        decimals: token.decimals,
+                        logoUrl: token.logoUrl,
+                        verified: true,
+                      });
+                      if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                      onAdded();
+                      onClose();
+                    } finally {
+                      setSaving(false);
+                    }
+                  } else {
+                    setSelectedVerified(token);
+                    setContractInput("");
+                    setError("");
+                  }
+                }}
                 activeOpacity={0.75}
               >
                 <Image

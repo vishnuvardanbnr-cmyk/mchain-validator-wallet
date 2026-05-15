@@ -20,9 +20,13 @@ export interface VerifiedToken {
   decimals: number;
   logoUrl: string;
   coingeckoId: string;
+  /** Pre-filled MChain contract address — when set, the token is added in one tap (no manual address entry). */
+  contractAddress?: string;
 }
 
 // ─── Verified token registry ──────────────────────────────────────────────────
+// Set contractAddress once the MChain deployment address is known — the modal
+// will then skip the manual entry step and add the token with a single tap.
 export const VERIFIED_TOKENS: VerifiedToken[] = [
   {
     symbol: "USDT",
@@ -30,55 +34,7 @@ export const VERIFIED_TOKENS: VerifiedToken[] = [
     decimals: 6,
     logoUrl: "https://assets.coingecko.com/coins/images/325/small/Tether.png",
     coingeckoId: "tether",
-  },
-  {
-    symbol: "USDC",
-    name: "USD Coin",
-    decimals: 6,
-    logoUrl: "https://assets.coingecko.com/coins/images/6319/small/usdc.png",
-    coingeckoId: "usd-coin",
-  },
-  {
-    symbol: "WETH",
-    name: "Wrapped Ether",
-    decimals: 18,
-    logoUrl: "https://assets.coingecko.com/coins/images/2518/small/weth.png",
-    coingeckoId: "weth",
-  },
-  {
-    symbol: "WBTC",
-    name: "Wrapped Bitcoin",
-    decimals: 8,
-    logoUrl: "https://assets.coingecko.com/coins/images/7598/small/wrapped_bitcoin_wbtc.png",
-    coingeckoId: "wrapped-bitcoin",
-  },
-  {
-    symbol: "BNB",
-    name: "BNB",
-    decimals: 18,
-    logoUrl: "https://assets.coingecko.com/coins/images/825/small/bnb-icon2_2x.png",
-    coingeckoId: "binancecoin",
-  },
-  {
-    symbol: "DAI",
-    name: "Dai Stablecoin",
-    decimals: 18,
-    logoUrl: "https://assets.coingecko.com/coins/images/9956/small/4943.png",
-    coingeckoId: "dai",
-  },
-  {
-    symbol: "MATIC",
-    name: "Polygon",
-    decimals: 18,
-    logoUrl: "https://assets.coingecko.com/coins/images/4713/small/matic-token-icon.png",
-    coingeckoId: "matic-network",
-  },
-  {
-    symbol: "LINK",
-    name: "Chainlink",
-    decimals: 18,
-    logoUrl: "https://assets.coingecko.com/coins/images/877/small/chainlink-new-logo.png",
-    coingeckoId: "chainlink",
+    // contractAddress: "0x...", // TODO: set MChain USDT contract address
   },
 ];
 
