@@ -119,6 +119,78 @@ export interface ChainInfo {
   gasPrice: string;
 }
 
+export interface ValidatorEarnings {
+  address: string;
+  moniker: string;
+  totalActiveMinutes: number;
+  currentBalanceMc: string;
+  earnings: {
+    treasuryTotalMc: string;
+    gasTotalMc: string;
+    combinedTotalMc: string;
+  };
+  stats: {
+    totalRewardPeriods: number;
+    lastRewardPeriod: string;
+    totalBlocksProposed: number;
+    totalTxsProcessed: number;
+  };
+}
+
+export interface TreasuryReward {
+  id: number;
+  period: string;
+  activeMinutes: number;
+  totalNetworkMinutes: number;
+  uptimePct: string;
+  amountMc: string;
+  status: string;
+  distributedAt: string | null;
+}
+
+export interface TreasuryRewardsPage {
+  rewards: TreasuryReward[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface GasReward {
+  id: number;
+  blockHeight: number;
+  txCount: number;
+  totalFeeMc: string;
+  validatorShareMc: string;
+  adminShareMc: string;
+  isStaked: boolean;
+  splitPct: string;
+  timestamp: string;
+}
+
+export interface GasRewardsPage {
+  gasRewards: GasReward[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface ValidatorBlock {
+  height: number;
+  hash: string;
+  txCount: number;
+  gasUsed: number;
+  timestamp: string;
+}
+
+export interface ValidatorBlocksPage {
+  blocks: ValidatorBlock[];
+  total: number;
+  totalTxsProcessed: number;
+  totalGasUsed: string;
+  limit: number;
+  offset: number;
+}
+
 export const api = {
   getAccount: (address: string) =>
     request<AccountInfo>(`/accounts/${encodeURIComponent(address)}`),
@@ -188,4 +260,22 @@ export const api = {
   getChainInfo: () => request<ChainInfo>("/chain/info"),
 
   healthCheck: () => request<{ status: string }>("/healthz"),
+
+  getValidatorEarnings: (address: string) =>
+    request<ValidatorEarnings>(`/validators/${encodeURIComponent(address)}/earnings`),
+
+  getTreasuryRewards: (address: string, limit = 50, offset = 0) =>
+    request<TreasuryRewardsPage>(
+      `/validators/${encodeURIComponent(address)}/treasury-rewards?limit=${limit}&offset=${offset}`
+    ),
+
+  getGasRewards: (address: string, limit = 50, offset = 0) =>
+    request<GasRewardsPage>(
+      `/validators/${encodeURIComponent(address)}/gas-rewards?limit=${limit}&offset=${offset}`
+    ),
+
+  getValidatorBlocks: (address: string, limit = 50, offset = 0) =>
+    request<ValidatorBlocksPage>(
+      `/validators/${encodeURIComponent(address)}/blocks?limit=${limit}&offset=${offset}`
+    ),
 };

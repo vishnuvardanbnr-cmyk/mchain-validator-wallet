@@ -28,6 +28,10 @@ function NativeTabLayout() {
         <Icon sf={{ default: "cpu", selected: "cpu.fill" }} />
         <Label>Validator</Label>
       </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="earnings">
+        <Icon sf={{ default: "chart.bar", selected: "chart.bar.fill" }} />
+        <Label>Earnings</Label>
+      </NativeTabs.Trigger>
       <NativeTabs.Trigger name="settings">
         <Icon sf={{ default: "gearshape", selected: "gearshape.fill" }} />
         <Label>Settings</Label>
@@ -118,6 +122,18 @@ function ClassicTabLayout() {
               <SymbolView name="cpu.fill" tintColor={color} size={22} />
             ) : (
               <Feather name="shield" size={22} color={color} />
+            ),
+        }}
+      />
+      <Tabs.Screen
+        name="earnings"
+        options={{
+          title: "Earnings",
+          tabBarIcon: ({ color }) =>
+            isIOS ? (
+              <SymbolView name="chart.bar.fill" tintColor={color} size={22} />
+            ) : (
+              <Feather name="bar-chart-2" size={22} color={color} />
             ),
         }}
       />
