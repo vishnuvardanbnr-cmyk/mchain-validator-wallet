@@ -27,8 +27,12 @@ import {
   type ValidatorBlock,
 } from "@/services/api";
 import { formatUptime, weiToMc } from "@/services/crypto";
+import {
+  registerHeartbeatTask,
+  unregisterHeartbeatTask,
+} from "@/services/backgroundTasks";
 import { PulsingDot } from "@/components/PulsingDot";
-import { SessionTimer } from "@/components/SessionTimer";
+
 import { Toast } from "@/components/Toast";
 import { useColors } from "@/hooks/useColors";
 
@@ -75,12 +79,10 @@ export default function ValidatorScreen() {
     validatorWallet,
     deviceId,
     moniker,
+    validatorStatus: ctxValidatorStatus,
+    setValidatorStatus,
     sessionExpired,
-    sessionExpiresAt,
-    isStaked,
     setSessionExpired,
-    setSessionExpiresAt,
-    setIsStaked,
   } = useWallet();
 
   const mxcAddress = validatorWallet?.mxcAddress ?? null;
@@ -231,10 +233,15 @@ export default function ValidatorScreen() {
     onError: (err: Error) => { setRegError(err.message || "Registration failed."); Alert.alert("Registration Failed", err.message || "Please try again."); },
   });
 
+  // ── Derived state — declared before animation effects ────────────────────────
+  const isPaused = validator?.status === "paused" || sessionExpired || ctxValidatorStatus === "paused";
+  const isInactive = validator?.status === "inactive" || ctxValidatorStatus === "inactive";
+  const isBanned = validator?.status === "banned" || ctxValidatorStatus === "banned";
+
   // ── Animations ──────────────────────────────────────────────────────────────
   useEffect(() => {
     let anim: Animated.CompositeAnimation | null = null;
-    if (validator?.status === "active" && !sessionExpired) {
+    if (validator?.status === "active" && !isPaused) {
       anim = Animated.loop(Animated.parallel([
         Animated.sequence([
           Animated.timing(pulseScale, { toValue: 1.5, duration: 2000, useNativeDriver: true, easing: Easing.inOut(Easing.ease) }),
@@ -259,10 +266,10 @@ export default function ValidatorScreen() {
       ring2Scale.setValue(1); ring2Opacity.setValue(0);
     }
     return () => anim?.stop();
-  }, [validator?.status, sessionExpired, pulseScale, pulseOpacity, ring2Scale, ring2Opacity]);
+  }, [validator?.status, isPaused, pulseScale, pulseOpacity, ring2Scale, ring2Opacity]);
 
   useEffect(() => {
-    if (sessionExpired) {
+    if (isPaused) {
       Animated.sequence([
         Animated.timing(expiredShake, { toValue: 8, duration: 60, useNativeDriver: true }),
         Animated.timing(expiredShake, { toValue: -8, duration: 60, useNativeDriver: true }),
@@ -271,7 +278,7 @@ export default function ValidatorScreen() {
         Animated.timing(expiredShake, { toValue: 0, duration: 60, useNativeDriver: true }),
       ]).start();
     }
-  }, [sessionExpired, expiredShake]);
+  }, [isPaused, expiredShake]);
 
   useEffect(() => {
     if (validator) Animated.timing(cardFade, { toValue: 1, duration: 500, useNativeDriver: true }).start();
@@ -282,13 +289,30 @@ export default function ValidatorScreen() {
     if (!mxcAddress) return;
     setRestartLoading(true);
     try {
-      const result = await api.restartSession(mxcAddress);
-      await setSessionExpiresAt(result.sessionExpiresAt);
+      await api.restartSession(mxcAddress);
+      setValidatorStatus("active");
       setSessionExpired(false);
-      setIsStaked(false);
-      setToast("Session restarted — earning rewards again");
+      await registerHeartbeatTask();
+      qc.invalidateQueries({ queryKey: ["validatorDetail", mxcAddress] });
+      setToast("Validator restarted — earning rewards again");
     } catch (err) {
-      setToast(err instanceof Error ? err.message : "Failed to restart session");
+      setToast(err instanceof Error ? err.message : "Failed to restart validator");
+    } finally {
+      setRestartLoading(false);
+    }
+  }
+
+  async function handlePauseValidator() {
+    if (!mxcAddress) return;
+    setRestartLoading(true);
+    try {
+      await unregisterHeartbeatTask();
+      await api.pauseValidator(mxcAddress);
+      setValidatorStatus("paused");
+      qc.invalidateQueries({ queryKey: ["validatorDetail", mxcAddress] });
+      setToast("Validator paused");
+    } catch (err) {
+      setToast(err instanceof Error ? err.message : "Failed to pause validator");
     } finally {
       setRestartLoading(false);
     }
@@ -301,21 +325,24 @@ export default function ValidatorScreen() {
   }
 
   function statusColor(status: string | undefined) {
-    if (sessionExpired) return "#F59E0B";
+    if (isPaused) return "#F59E0B";
+    if (isInactive || isBanned) return "#EF4444";
     switch (status) {
       case "active": return "#10B981";
       case "pending": return "#F59E0B";
-      case "banned": return "#EF4444";
       default: return colors.mutedForeground;
     }
   }
   function statusLabel(status: string | undefined) {
-    if (sessionExpired) return "Paused";
+    if (isPaused) return "Paused";
+    if (isInactive) return "Inactive";
+    if (isBanned) return "Banned";
     if (!status) return "Unknown";
     return status.charAt(0).toUpperCase() + status.slice(1);
   }
   function centerIcon() {
-    if (sessionExpired) return "pause-circle-outline";
+    if (isPaused) return "pause-circle-outline";
+    if (isInactive || isBanned) return "close-circle-outline";
     if (validator?.status === "active") return "pulse-outline";
     if (validator?.status === "pending") return "time-outline";
     return "shield-half-outline";
@@ -457,6 +484,13 @@ export default function ValidatorScreen() {
     restartBtn: { borderRadius: 10, overflow: "hidden" },
     restartGrad: { paddingVertical: 11, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7 },
     restartBtnText: { fontSize: 13, fontFamily: "Inter_600SemiBold", color: "#FFFFFF" },
+    pauseBtn: {
+      marginTop: 12, flexDirection: "row", alignItems: "center", justifyContent: "center",
+      gap: 6, paddingVertical: 9,
+      borderRadius: 10, borderWidth: 1, borderColor: "rgba(255,255,255,0.12)",
+      backgroundColor: "rgba(0,0,0,0.25)",
+    },
+    pauseBtnText: { fontSize: 12, fontFamily: "Inter_500Medium", color: "rgba(255,255,255,0.5)" },
 
     // Earnings overview card
     earningsCard: {
@@ -624,13 +658,18 @@ export default function ValidatorScreen() {
     );
   }
 
-  const activeColor = sessionExpired ? "#F59E0B" : statusColor(validator?.status);
+  const activeColor = statusColor(validator?.status);
 
   // ── Hero card (registered) ───────────────────────────────────────────────────
   const HeroCard = validator ? (
-    <Animated.View style={[s.heroWrap, { opacity: cardFade }, sessionExpired && { transform: [{ translateX: expiredShake }] }]}>
+    <Animated.View style={[s.heroWrap, { opacity: cardFade }, isPaused && { transform: [{ translateX: expiredShake }] }]}>
       <LinearGradient
-        colors={sessionExpired ? ["#1E1200", "#130C00", "#0A0600"] : ["#0E2F52", "#081E38", "#040E1C"]}
+        colors={
+          isBanned ? ["#1E0000", "#130000", "#0A0000"] :
+          isInactive ? ["#1A1A1A", "#111111", "#0A0A0A"] :
+          isPaused ? ["#1E1200", "#130C00", "#0A0600"] :
+          ["#0E2F52", "#081E38", "#040E1C"]
+        }
         start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
         style={s.heroGrad}
       >
@@ -643,8 +682,8 @@ export default function ValidatorScreen() {
               <Text style={s.heroAddress} numberOfLines={1}>{mxcAddress?.substring(0, 22)}…</Text>
             </TouchableOpacity>
           </View>
-          <View style={[s.statusBadge, sessionExpired && { borderColor: "rgba(245,158,11,0.3)" }]}>
-            <PulsingDot status={sessionExpired ? "pending" : validator.status} size={7} />
+          <View style={[s.statusBadge, (isPaused || isInactive || isBanned) && { borderColor: activeColor + "50" }]}>
+            <PulsingDot status={isPaused ? "pending" : validator.status} size={7} />
             <Text style={[s.statusBadgeText, { color: activeColor }]}>{statusLabel(validator.status)}</Text>
           </View>
         </View>
@@ -678,42 +717,62 @@ export default function ValidatorScreen() {
             <Text style={s.statSub}>MC total</Text>
           </View>
           <View style={s.statBox}>
-            <Text style={s.statLabel}>SESSION</Text>
-            {isStaked ? (
-              <Text style={[s.statValue, { color: "#10B981", fontSize: 12 }]}>Unlimited</Text>
-            ) : sessionExpired ? (
-              <Text style={[s.statValue, { color: "#F59E0B", fontSize: 12 }]}>Expired</Text>
-            ) : sessionExpiresAt ? (
-              <SessionTimer
-                expiresAt={sessionExpiresAt}
-                compact
-                onExpired={() => setSessionExpired(true)}
-                style={{ fontSize: 12, fontFamily: "Inter_700Bold", color: "#FFFFFF" }}
-              />
-            ) : (
-              <Text style={s.statValue}>—</Text>
-            )}
+            <Text style={s.statLabel}>STATUS</Text>
+            <Text style={[s.statValue, { color: activeColor, fontSize: 12 }]}>{statusLabel(validator.status)}</Text>
             <Text style={s.statSub}>{validator.commissionRate}% commission</Text>
           </View>
         </View>
 
-        {/* Session expired banner (inside hero) */}
-        {sessionExpired && (
+        {/* Pause button — only when active */}
+        {validator.status === "active" && !isPaused && (
+          <TouchableOpacity
+            style={s.pauseBtn}
+            onPress={handlePauseValidator}
+            disabled={restartLoading}
+            activeOpacity={0.75}
+          >
+            {restartLoading ? (
+              <ActivityIndicator color="rgba(255,255,255,0.6)" size="small" />
+            ) : (
+              <>
+                <Icon name="pause-circle-outline" size={14} color="rgba(255,255,255,0.55)" />
+                <Text style={s.pauseBtnText}>Pause Validator</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        )}
+
+        {/* Paused banner — restart CTA */}
+        {isPaused && (
           <View style={s.expiredBanner}>
-            <Text style={s.expiredTitle}>⚠ Session Paused</Text>
+            <Text style={s.expiredTitle}>⚠ Validator Paused</Text>
             <Text style={s.expiredDesc}>
-              Your 2-hour validator session has ended. Restart to resume earning rewards.
+              No heartbeat received for 3 hours. Restart to resume earning rewards.
             </Text>
             <TouchableOpacity style={s.restartBtn} onPress={handleRestartSession} disabled={restartLoading} activeOpacity={0.85}>
               <LinearGradient colors={["#F59E0B", "#D97706"]} style={s.restartGrad}>
                 {restartLoading ? <ActivityIndicator color="#FFFFFF" size="small" /> : (
                   <>
                     <Icon name="refresh-outline" size={14} color="#FFFFFF" />
-                    <Text style={s.restartBtnText}>Restart Session</Text>
+                    <Text style={s.restartBtnText}>Restart Validator</Text>
                   </>
                 )}
               </LinearGradient>
             </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Inactive/banned banner */}
+        {(isInactive || isBanned) && (
+          <View style={[s.expiredBanner, { borderColor: "rgba(239,68,68,0.35)", backgroundColor: "rgba(239,68,68,0.08)" }]}>
+            <Text style={[s.expiredTitle, { color: "#EF4444" }]}>
+              {isBanned ? "⛔ Validator Banned" : "⛔ Validator Inactive"}
+            </Text>
+            <Text style={s.expiredDesc}>
+              {isBanned
+                ? "This validator has been banned. Please contact support."
+                : "This validator is inactive. Please contact support to reactivate."}
+            </Text>
           </View>
         )}
       </LinearGradient>
@@ -893,9 +952,9 @@ export default function ValidatorScreen() {
         ListHeaderComponent={ListHeader}
         data={(isRegistered && !activeInitLoading() ? items : []) as any[]}
         keyExtractor={(item, i) => {
-          if (activeTab === "treasury") return (item as TreasuryReward).id;
+          if (activeTab === "treasury") return String((item as TreasuryReward).id);
           if (activeTab === "gas") return String((item as GasReward).blockHeight);
-          return String((item as ValidatorBlock).height) + i;
+          return String((item as ValidatorBlock).height) + String(i);
         }}
         renderItem={({ item }) => {
           if (activeTab === "treasury") return <TreasuryRowItem item={item as TreasuryReward} />;

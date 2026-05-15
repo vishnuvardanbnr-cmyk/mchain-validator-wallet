@@ -25,6 +25,7 @@ const KEYS = {
   ACTIVE_WALLET_ID: "mchain_active_wallet_id",
   VALIDATOR_WALLET_ID: "mchain_validator_wallet_id",
   VALIDATOR_ADDRESS: "mchain_validator_address",
+  VALIDATOR_STATUS: "validatorStatus",
   MONIKER: "mchain_moniker",
   DEVICE_ID: "mchain_device_id",
   SESSION_EXPIRES_AT: "mchain_session_expires_at",
@@ -51,9 +52,9 @@ interface WalletContextType {
 
   moniker: string;
   deviceId: string;
-  validatorStatus: "active" | "pending" | "offline" | "banned" | null;
+  validatorStatus: "active" | "paused" | "pending" | "inactive" | "banned" | null;
   setValidatorStatus: (
-    status: "active" | "pending" | "offline" | "banned" | null
+    status: "active" | "paused" | "pending" | "inactive" | "banned" | null
   ) => void;
   pendingHeartbeat: boolean;
   setPendingHeartbeat: (pending: boolean) => void;
@@ -93,8 +94,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
   const [moniker, setMoniker] = useState("");
   const [deviceId, setDeviceId] = useState("");
-  const [validatorStatus, setValidatorStatus] = useState<
-    "active" | "pending" | "offline" | "banned" | null
+  const [validatorStatus, setValidatorStatusState] = useState<
+    "active" | "paused" | "pending" | "inactive" | "banned" | null
   >(null);
   const [pendingHeartbeat, setPendingHeartbeat] = useState(false);
   const [sessionExpired, setSessionExpired] = useState(false);
@@ -208,6 +209,19 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       setActiveWalletId(loadedActiveId);
       setValidatorWalletId(loadedValidatorId);
 
+      // Load persisted validator status
+      try {
+        const storedStatus = await AsyncStorage.getItem(KEYS.VALIDATOR_STATUS);
+        if (storedStatus) {
+          setValidatorStatusState(
+            storedStatus as "active" | "paused" | "pending" | "inactive" | "banned"
+          );
+          if (storedStatus === "paused") setSessionExpired(true);
+        }
+      } catch {
+        // ignore
+      }
+
       try {
         const storedExpiry = await SecureStore.getItemAsync(KEYS.SESSION_EXPIRES_AT);
         if (storedExpiry) {
@@ -225,6 +239,20 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       setIsLoading(false);
     }
   }
+
+  // Persists validator status to AsyncStorage and keeps sessionExpired in sync
+  const setValidatorStatus = useCallback(
+    (status: "active" | "paused" | "pending" | "inactive" | "banned" | null) => {
+      setValidatorStatusState(status);
+      setSessionExpired(status === "paused");
+      if (status) {
+        AsyncStorage.setItem(KEYS.VALIDATOR_STATUS, status).catch(() => {});
+      } else {
+        AsyncStorage.removeItem(KEYS.VALIDATOR_STATUS).catch(() => {});
+      }
+    },
+    []
+  );
 
   const setSessionExpiresAt = useCallback(async (value: string | null) => {
     setSessionExpiresAtState(value);
@@ -386,7 +414,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         moniker,
         deviceId,
         validatorStatus,
-        setValidatorStatus,
+        setValidatorStatus: setValidatorStatus,
         pendingHeartbeat,
         setPendingHeartbeat,
         sessionExpired,

@@ -72,7 +72,7 @@ export interface ValidatorInfo {
   publicKey: string;
   deviceId: string;
   moniker: string;
-  status: "active" | "pending" | "offline" | "banned";
+  status: "active" | "pending" | "paused" | "inactive" | "banned";
   totalActiveMinutes: number;
   lastSeenAt: string;
   commissionRate: string;
@@ -91,16 +91,16 @@ export interface HeartbeatRecord {
 export interface HeartbeatResponse {
   ok: boolean;
   blockHeight?: number;
-  isStaked?: boolean;
-  sessionExpiresAt?: string | null;
+  timestamp?: string;
 }
 
-export interface SessionRestartResponse {
+export interface ValidatorRestartResponse {
   ok: boolean;
+  status: string;
   sessionStartedAt: string;
-  sessionExpiresAt: string;
-  sessionHours: number;
 }
+
+export type SessionRestartResponse = ValidatorRestartResponse;
 
 export interface Reward {
   id: string;
@@ -241,8 +241,14 @@ export const api = {
       body: JSON.stringify(data),
     }),
 
+  pauseValidator: (address: string) =>
+    request<{ ok: boolean; status: string }>("/validators/pause", {
+      method: "POST",
+      body: JSON.stringify({ address }),
+    }),
+
   restartSession: (address: string) =>
-    request<SessionRestartResponse>("/validators/restart", {
+    request<ValidatorRestartResponse>("/validators/restart", {
       method: "POST",
       body: JSON.stringify({ address }),
     }),

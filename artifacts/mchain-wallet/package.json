@@ -63,6 +63,7 @@
     "expo-battery": "^10.0.8",
     "expo-camera": "^17.0.10",
     "expo-clipboard": "^8.0.8",
+    "expo-notifications": "^55.0.23",
     "expo-secure-store": "^15.0.8",
     "expo-task-manager": "^14.0.9",
     "lucide-react-native": "^1.14.0",

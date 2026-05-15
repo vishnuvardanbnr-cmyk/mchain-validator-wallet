@@ -8,15 +8,17 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 
-type Status = "active" | "pending" | "offline" | "banned" | null;
+type Status = "active" | "pending" | "paused" | "inactive" | "offline" | "banned" | null;
 
 function statusColor(status: Status): string {
   switch (status) {
     case "active":
       return "#10B981";
     case "pending":
+    case "paused":
       return "#F59E0B";
     case "banned":
+    case "inactive":
       return "#EF4444";
     default:
       return "#4B5563";

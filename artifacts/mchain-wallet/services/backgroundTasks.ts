@@ -1,30 +1,27 @@
 import * as BackgroundFetch from "expo-background-fetch";
+import * as Notifications from "expo-notifications";
 import * as TaskManager from "expo-task-manager";
-import * as SecureStore from "expo-secure-store";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Platform } from "react-native";
-import { api } from "./api";
 
-export const HEARTBEAT_TASK = "mchain-heartbeat-task";
-const SESSION_EXPIRES_AT_KEY = "mchain_session_expires_at";
-const VALIDATOR_ADDRESS_KEY = "mchain_validator_address";
+export const HEARTBEAT_TASK = "mchain-validator-heartbeat";
 
+const CHAIN_BASE = "https://chain.mvault.pro/api";
+const VALIDATOR_ADDRESS_KEY = "validatorAddress";
+const VALIDATOR_STATUS_KEY = "validatorStatus";
+
+// ─── Define the background task at module top-level ───────────────────────────
 TaskManager.defineTask(HEARTBEAT_TASK, async () => {
   try {
     const address = await AsyncStorage.getItem(VALIDATOR_ADDRESS_KEY);
     if (!address) return BackgroundFetch.BackgroundFetchResult.NoData;
 
-    // Check if session is already expired before attempting heartbeat
-    try {
-      const storedExpiry = await SecureStore.getItemAsync(SESSION_EXPIRES_AT_KEY);
-      if (storedExpiry && new Date(storedExpiry) < new Date()) {
-        return BackgroundFetch.BackgroundFetchResult.NoData;
-      }
-    } catch {
-      // ignore
+    const status = await AsyncStorage.getItem(VALIDATOR_STATUS_KEY);
+    if (status === "paused" || status === "inactive" || status === "banned") {
+      return BackgroundFetch.BackgroundFetchResult.NoData;
     }
 
-    let batteryLevel = 50;
+    let batteryLevel = 85;
     let isCharging = false;
 
     if (Platform.OS !== "web") {
@@ -42,51 +39,57 @@ TaskManager.defineTask(HEARTBEAT_TASK, async () => {
       }
     }
 
-    const res = await api.sendHeartbeat({
-      address,
-      batteryLevel,
-      isCharging,
-      activeMinutes: 1,
+    const response = await fetch(`${CHAIN_BASE}/validators/heartbeat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ address, batteryLevel, isCharging, activeMinutes: 15 }),
     });
 
-    // Persist updated session expiry from successful heartbeat
-    if (res.sessionExpiresAt) {
-      await SecureStore.setItemAsync(SESSION_EXPIRES_AT_KEY, res.sessionExpiresAt);
-    }
+    if (response.status === 403) {
+      const data = await response.json().catch(() => ({}));
+      const errorMsg: string = data.error ?? data.message ?? "";
 
-    return BackgroundFetch.BackgroundFetchResult.NewData;
-  } catch (err: unknown) {
-    const apiErr = err as { status?: number; data?: Record<string, unknown> };
-
-    if (apiErr?.status === 403 && apiErr?.data?.error === "session_expired") {
-      const expiredAt = apiErr.data.expiredAt as string | undefined;
-      if (expiredAt) {
-        try {
-          await SecureStore.setItemAsync(SESSION_EXPIRES_AT_KEY, expiredAt);
-        } catch {
-          // ignore
-        }
+      if (errorMsg === "validator_paused") {
+        await AsyncStorage.setItem(VALIDATOR_STATUS_KEY, "paused");
+        await Notifications.scheduleNotificationAsync({
+          content: {
+            title: "Validator Paused",
+            body: "Your phone was offline too long. Open the app to restart and keep earning.",
+          },
+          trigger: null,
+        });
+      } else if (errorMsg.includes("pending")) {
+        // awaiting approval — no action needed, just wait
+      } else if (errorMsg.includes("inactive")) {
+        await AsyncStorage.setItem(VALIDATOR_STATUS_KEY, "inactive");
+      } else if (errorMsg.includes("banned")) {
+        await AsyncStorage.setItem(VALIDATOR_STATUS_KEY, "banned");
       }
-      return BackgroundFetch.BackgroundFetchResult.NoData;
+
+      return BackgroundFetch.BackgroundFetchResult.Failed;
     }
 
+    await AsyncStorage.setItem(VALIDATOR_STATUS_KEY, "active");
+    return BackgroundFetch.BackgroundFetchResult.NewData;
+  } catch {
     return BackgroundFetch.BackgroundFetchResult.Failed;
   }
 });
 
+// ─── Register / unregister ────────────────────────────────────────────────────
 export async function registerHeartbeatTask(): Promise<void> {
   if (Platform.OS === "web") return;
   try {
     const isRegistered = await TaskManager.isTaskRegisteredAsync(HEARTBEAT_TASK);
     if (!isRegistered) {
       await BackgroundFetch.registerTaskAsync(HEARTBEAT_TASK, {
-        minimumInterval: 60,
-        stopOnTerminate: false,
-        startOnBoot: true,
+        minimumInterval: 15 * 60, // 15 minutes
+        stopOnTerminate: false,   // keep running on Android when app is closed
+        startOnBoot: true,        // restart after phone reboot
       });
     }
   } catch {
-    // Background fetch not available in this environment
+    // Background fetch unavailable in this environment (simulator / web)
   }
 }
 

@@ -1,4 +1,3 @@
-import { router } from "expo-router";
 import { useCallback, useEffect, useRef } from "react";
 import { Platform } from "react-native";
 import { useWallet } from "@/context/WalletContext";
@@ -9,12 +8,9 @@ type ApiError = Error & { status?: number; data?: Record<string, unknown> };
 export function useHeartbeat() {
   const {
     validatorWallet,
+    validatorStatus,
     setValidatorStatus,
     setPendingHeartbeat,
-    sessionExpired,
-    setSessionExpired,
-    setSessionExpiresAt,
-    setIsStaked,
   } = useWallet();
 
   const validatorAddress = validatorWallet?.mxcAddress ?? null;
@@ -23,7 +19,6 @@ export function useHeartbeat() {
   const activeMinutesRef = useRef(0);
   const validatorAddressRef = useRef(validatorAddress);
   const stoppedRef = useRef(false);
-  const prevSessionExpiredRef = useRef(sessionExpired);
 
   useEffect(() => {
     validatorAddressRef.current = validatorAddress;
@@ -50,7 +45,11 @@ export function useHeartbeat() {
     const address = validatorAddressRef.current;
     if (!address || stoppedRef.current) return;
 
-    let batteryLevel = 50;
+    // Don't send heartbeats if paused, inactive, or banned
+    const currentStatus = validatorAddressRef.current ? undefined : null;
+    void currentStatus; // status is read from context via validatorStatus directly
+
+    let batteryLevel = 85;
     let isCharging = false;
 
     if (Platform.OS !== "web") {
@@ -68,7 +67,7 @@ export function useHeartbeat() {
     }
 
     try {
-      const res = await api.sendHeartbeat({
+      await api.sendHeartbeat({
         address,
         batteryLevel,
         isCharging,
@@ -76,55 +75,59 @@ export function useHeartbeat() {
       });
 
       setPendingHeartbeat(false);
-      setSessionExpired(false);
+      setValidatorStatus("active");
       activeMinutesRef.current = 0;
-
-      if (res.isStaked !== undefined) setIsStaked(res.isStaked);
-      if (res.sessionExpiresAt !== undefined) {
-        await setSessionExpiresAt(res.sessionExpiresAt ?? null);
-      }
     } catch (err: unknown) {
       const apiErr = err as ApiError;
 
       if (apiErr?.status === 403) {
-        if (apiErr?.data?.error === "session_expired") {
+        const errorMsg: string =
+          (apiErr.data?.error as string) ??
+          (apiErr.data?.message as string) ??
+          "";
+
+        if (errorMsg === "validator_paused" || errorMsg.includes("paused")) {
           stopInterval();
-          setSessionExpired(true);
-          const expiredAt = apiErr.data.expiredAt as string | undefined;
-          if (expiredAt) await setSessionExpiresAt(expiredAt);
-          router.push("/(tabs)");
+          setValidatorStatus("paused");
+        } else if (errorMsg.includes("pending")) {
+          setPendingHeartbeat(true);
+          setValidatorStatus("pending");
+        } else if (errorMsg.includes("inactive")) {
+          stopInterval();
+          setValidatorStatus("inactive");
+        } else if (errorMsg.includes("banned")) {
+          stopInterval();
+          setValidatorStatus("banned");
         } else {
           setPendingHeartbeat(true);
           setValidatorStatus("pending");
         }
       }
     }
-  }, [
-    setValidatorStatus,
-    setPendingHeartbeat,
-    setSessionExpired,
-    setSessionExpiresAt,
-    setIsStaked,
-    stopInterval,
-  ]);
+  }, [setValidatorStatus, setPendingHeartbeat, stopInterval]);
 
-  // Resume interval when session is restarted from any screen
+  // Restart the foreground interval when the validator is re-activated
+  const prevStatusRef = useRef(validatorStatus);
   useEffect(() => {
-    if (prevSessionExpiredRef.current && !sessionExpired && validatorAddress) {
+    const prev = prevStatusRef.current;
+    prevStatusRef.current = validatorStatus;
+    if (
+      prev !== "active" &&
+      validatorStatus === "active" &&
+      validatorAddress
+    ) {
       stoppedRef.current = false;
       sendHeartbeat();
       startInterval(sendHeartbeat);
     }
-    prevSessionExpiredRef.current = sessionExpired;
-  }, [sessionExpired, validatorAddress, sendHeartbeat, startInterval]);
+  }, [validatorStatus, validatorAddress, sendHeartbeat, startInterval]);
 
+  // Start interval when validator address is available and status is active
   useEffect(() => {
     if (!validatorAddress) return;
     stoppedRef.current = false;
-
     sendHeartbeat();
     startInterval(sendHeartbeat);
-
     return () => stopInterval();
   }, [validatorAddress, sendHeartbeat, startInterval, stopInterval]);
 
@@ -133,17 +136,12 @@ export function useHeartbeat() {
     if (!address) throw new Error("No validator wallet address");
 
     const result = await api.restartSession(address);
-
-    await setSessionExpiresAt(result.sessionExpiresAt);
-    setSessionExpired(false);
-    setIsStaked(false);
+    setValidatorStatus("active");
     activeMinutesRef.current = 0;
-
     sendHeartbeat();
     startInterval(sendHeartbeat);
-
     return result;
-  }, [setSessionExpiresAt, setSessionExpired, setIsStaked, sendHeartbeat, startInterval]);
+  }, [setValidatorStatus, sendHeartbeat, startInterval]);
 
   return { sendHeartbeat, restartSession };
 }
