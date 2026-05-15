@@ -1,15 +1,27 @@
 import * as BackgroundFetch from "expo-background-fetch";
 import * as TaskManager from "expo-task-manager";
+import * as SecureStore from "expo-secure-store";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Platform } from "react-native";
 import { api } from "./api";
 
 export const HEARTBEAT_TASK = "mchain-heartbeat-task";
+const SESSION_EXPIRES_AT_KEY = "mchain_session_expires_at";
 
 TaskManager.defineTask(HEARTBEAT_TASK, async () => {
   try {
     const address = await AsyncStorage.getItem("mchain_mxc_address");
     if (!address) return BackgroundFetch.BackgroundFetchResult.NoData;
+
+    // Check if session is already expired before attempting heartbeat
+    try {
+      const storedExpiry = await SecureStore.getItemAsync(SESSION_EXPIRES_AT_KEY);
+      if (storedExpiry && new Date(storedExpiry) < new Date()) {
+        return BackgroundFetch.BackgroundFetchResult.NoData;
+      }
+    } catch {
+      // ignore
+    }
 
     let batteryLevel = 50;
     let isCharging = false;
@@ -29,15 +41,35 @@ TaskManager.defineTask(HEARTBEAT_TASK, async () => {
       }
     }
 
-    await api.sendHeartbeat({
+    const res = await api.sendHeartbeat({
       address,
       batteryLevel,
       isCharging,
       activeMinutes: 1,
     });
 
+    // Persist updated session expiry from successful heartbeat
+    if (res.sessionExpiresAt) {
+      await SecureStore.setItemAsync(SESSION_EXPIRES_AT_KEY, res.sessionExpiresAt);
+    }
+
     return BackgroundFetch.BackgroundFetchResult.NewData;
-  } catch {
+  } catch (err: unknown) {
+    const apiErr = err as { status?: number; data?: Record<string, unknown> };
+
+    if (apiErr?.status === 403 && apiErr?.data?.error === "session_expired") {
+      // Store expiry so foreground app shows restart UI on next launch
+      const expiredAt = apiErr.data.expiredAt as string | undefined;
+      if (expiredAt) {
+        try {
+          await SecureStore.setItemAsync(SESSION_EXPIRES_AT_KEY, expiredAt);
+        } catch {
+          // ignore
+        }
+      }
+      return BackgroundFetch.BackgroundFetchResult.NoData;
+    }
+
     return BackgroundFetch.BackgroundFetchResult.Failed;
   }
 });

@@ -19,13 +19,14 @@ import { useWallet } from "@/context/WalletContext";
 import { api } from "@/services/api";
 import { formatDate, formatUptime, weiToMc } from "@/services/crypto";
 import { PulsingDot } from "@/components/PulsingDot";
+import { SessionTimer } from "@/components/SessionTimer";
 import { useColors } from "@/hooks/useColors";
 
 export default function ValidatorScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const qc = useQueryClient();
-  const { mxcAddress, ethAddress, publicKey, deviceId, moniker } = useWallet();
+  const { mxcAddress, ethAddress, publicKey, deviceId, moniker, sessionExpired, sessionExpiresAt, isStaked, setSessionExpired } = useWallet();
 
   const [regMoniker, setRegMoniker] = useState(moniker || "");
   const [commissionRate, setCommissionRate] = useState("5");
@@ -430,6 +431,23 @@ export default function ValidatorScreen() {
             <View style={s.statBox}>
               <Text style={s.statLabel}>COMMISSION</Text>
               <Text style={s.statValue}>{validator.commissionRate}%</Text>
+            </View>
+            <View style={s.statBox}>
+              <Text style={s.statLabel}>SESSION</Text>
+              {isStaked ? (
+                <Text style={[s.statValue, { color: "#10B981", fontSize: 13 }]}>Unlimited</Text>
+              ) : sessionExpired ? (
+                <Text style={[s.statValue, { color: "#EF4444", fontSize: 11 }]}>Expired</Text>
+              ) : sessionExpiresAt ? (
+                <SessionTimer
+                  expiresAt={sessionExpiresAt}
+                  compact
+                  onExpired={() => setSessionExpired(true)}
+                  style={{ fontSize: 15, fontFamily: "Inter_700Bold" }}
+                />
+              ) : (
+                <Text style={s.statValue}>—</Text>
+              )}
             </View>
           </View>
         </LinearGradient>

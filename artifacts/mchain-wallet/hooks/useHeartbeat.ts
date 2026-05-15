@@ -1,21 +1,50 @@
+import { router } from "expo-router";
 import { useCallback, useEffect, useRef } from "react";
 import { Platform } from "react-native";
 import { useWallet } from "@/context/WalletContext";
 import { api } from "@/services/api";
 
+type ApiError = Error & { status?: number; data?: Record<string, unknown> };
+
 export function useHeartbeat() {
-  const { mxcAddress, setValidatorStatus, setPendingHeartbeat } = useWallet();
+  const {
+    mxcAddress,
+    setValidatorStatus,
+    setPendingHeartbeat,
+    setSessionExpired,
+    setSessionExpiresAt,
+    setIsStaked,
+  } = useWallet();
+
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const activeMinutesRef = useRef(0);
   const mxcAddressRef = useRef(mxcAddress);
+  const stoppedRef = useRef(false);
 
   useEffect(() => {
     mxcAddressRef.current = mxcAddress;
   }, [mxcAddress]);
 
+  const stopInterval = useCallback(() => {
+    stoppedRef.current = true;
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+  }, []);
+
+  const startInterval = useCallback((beat: () => void) => {
+    stoppedRef.current = false;
+    if (intervalRef.current) clearInterval(intervalRef.current);
+    intervalRef.current = setInterval(() => {
+      activeMinutesRef.current += 1;
+      beat();
+    }, 60_000);
+  }, []);
+
   const sendHeartbeat = useCallback(async () => {
     const address = mxcAddressRef.current;
-    if (!address) return;
+    if (!address || stoppedRef.current) return;
 
     let batteryLevel = 50;
     let isCharging = false;
@@ -35,37 +64,75 @@ export function useHeartbeat() {
     }
 
     try {
-      await api.sendHeartbeat({
+      const res = await api.sendHeartbeat({
         address,
         batteryLevel,
         isCharging,
         activeMinutes: activeMinutesRef.current,
       });
+
       setPendingHeartbeat(false);
+      setSessionExpired(false);
       activeMinutesRef.current = 0;
+
+      if (res.isStaked !== undefined) setIsStaked(res.isStaked);
+      if (res.sessionExpiresAt !== undefined) {
+        await setSessionExpiresAt(res.sessionExpiresAt ?? null);
+      }
     } catch (err: unknown) {
-      const apiErr = err as { status?: number };
+      const apiErr = err as ApiError;
+
       if (apiErr?.status === 403) {
-        setPendingHeartbeat(true);
-        setValidatorStatus("pending");
+        if (apiErr?.data?.error === "session_expired") {
+          // Session expired — stop heartbeats and show restart UI
+          stopInterval();
+          setSessionExpired(true);
+          const expiredAt = apiErr.data.expiredAt as string | undefined;
+          if (expiredAt) await setSessionExpiresAt(expiredAt);
+          router.push("/(tabs)");
+        } else {
+          // Validator pending approval
+          setPendingHeartbeat(true);
+          setValidatorStatus("pending");
+        }
       }
     }
-  }, [setValidatorStatus, setPendingHeartbeat]);
+  }, [
+    setValidatorStatus,
+    setPendingHeartbeat,
+    setSessionExpired,
+    setSessionExpiresAt,
+    setIsStaked,
+    stopInterval,
+  ]);
 
   useEffect(() => {
     if (!mxcAddress) return;
+    stoppedRef.current = false;
 
     sendHeartbeat();
+    startInterval(sendHeartbeat);
 
-    intervalRef.current = setInterval(() => {
-      activeMinutesRef.current += 1;
-      sendHeartbeat();
-    }, 60_000);
+    return () => stopInterval();
+  }, [mxcAddress, sendHeartbeat, startInterval, stopInterval]);
 
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-    };
-  }, [mxcAddress, sendHeartbeat]);
+  const restartSession = useCallback(async () => {
+    const address = mxcAddressRef.current;
+    if (!address) throw new Error("No wallet address");
 
-  return { sendHeartbeat };
+    const result = await api.restartSession(address);
+
+    await setSessionExpiresAt(result.sessionExpiresAt);
+    setSessionExpired(false);
+    setIsStaked(false);
+    activeMinutesRef.current = 0;
+
+    // Resume heartbeats
+    sendHeartbeat();
+    startInterval(sendHeartbeat);
+
+    return result;
+  }, [setSessionExpiresAt, setSessionExpired, setIsStaked, sendHeartbeat, startInterval]);
+
+  return { sendHeartbeat, restartSession };
 }

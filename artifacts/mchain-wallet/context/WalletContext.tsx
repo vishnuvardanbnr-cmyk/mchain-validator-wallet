@@ -17,6 +17,7 @@ const KEYS = {
   MONIKER: "mchain_moniker",
   DEVICE_ID: "mchain_device_id",
   PRIVATE_KEY: "mchain_private_key",
+  SESSION_EXPIRES_AT: "mchain_session_expires_at",
 };
 
 interface WalletContextType {
@@ -33,6 +34,12 @@ interface WalletContextType {
   ) => void;
   pendingHeartbeat: boolean;
   setPendingHeartbeat: (pending: boolean) => void;
+  sessionExpired: boolean;
+  setSessionExpired: (expired: boolean) => void;
+  sessionExpiresAt: string | null;
+  setSessionExpiresAt: (value: string | null) => Promise<void>;
+  isStaked: boolean;
+  setIsStaked: (staked: boolean) => void;
   generateAndStoreKeyPair: () => Promise<KeyPair>;
   completeOnboarding: (
     mxcAddress: string,
@@ -59,6 +66,9 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     "active" | "pending" | "offline" | "banned" | null
   >(null);
   const [pendingHeartbeat, setPendingHeartbeat] = useState(false);
+  const [sessionExpired, setSessionExpired] = useState(false);
+  const [sessionExpiresAt, setSessionExpiresAtState] = useState<string | null>(null);
+  const [isStaked, setIsStaked] = useState(false);
 
   useEffect(() => {
     loadStoredData();
@@ -78,7 +88,6 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       setIsOnboarded(onboarded === "true");
 
       // Migration: fix addresses generated with wrong bech32 HRP "mxc1" (produces "mxc11…")
-      // Correct HRP is "mxc", which produces the proper "mxc1…" bech32 separator format.
       let correctedAddr = addr;
       if (addr && addr.startsWith("mxc11") && pubKey) {
         try {
@@ -102,12 +111,38 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         await AsyncStorage.setItem(KEYS.DEVICE_ID, newId);
         setDeviceId(newId);
       }
+
+      // Load session expiry and check if already expired
+      try {
+        const storedExpiry = await SecureStore.getItemAsync(KEYS.SESSION_EXPIRES_AT);
+        if (storedExpiry) {
+          setSessionExpiresAtState(storedExpiry);
+          if (new Date(storedExpiry) < new Date()) {
+            setSessionExpired(true);
+          }
+        }
+      } catch {
+        // Session data unavailable
+      }
     } catch {
       // Continue with defaults
     } finally {
       setIsLoading(false);
     }
   }
+
+  const setSessionExpiresAt = useCallback(async (value: string | null) => {
+    setSessionExpiresAtState(value);
+    try {
+      if (value) {
+        await SecureStore.setItemAsync(KEYS.SESSION_EXPIRES_AT, value);
+      } else {
+        await SecureStore.deleteItemAsync(KEYS.SESSION_EXPIRES_AT);
+      }
+    } catch {
+      // ignore persistence errors
+    }
+  }, []);
 
   const generateAndStoreKeyPair = useCallback(async (): Promise<KeyPair> => {
     return generateKeyPair();
@@ -161,6 +196,12 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         setValidatorStatus,
         pendingHeartbeat,
         setPendingHeartbeat,
+        sessionExpired,
+        setSessionExpired,
+        sessionExpiresAt,
+        setSessionExpiresAt,
+        isStaked,
+        setIsStaked,
         generateAndStoreKeyPair,
         completeOnboarding,
         getPrivateKey,

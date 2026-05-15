@@ -22,13 +22,40 @@ import { useHeartbeat } from "@/hooks/useHeartbeat";
 import { api } from "@/services/api";
 import { formatDate, formatUptime, shortenAddress, weiToMc } from "@/services/crypto";
 import { PulsingDot } from "@/components/PulsingDot";
+import { SessionTimer } from "@/components/SessionTimer";
+import { Toast } from "@/components/Toast";
 import { useColors } from "@/hooks/useColors";
 
 export default function DashboardScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { mxcAddress, moniker, validatorStatus, setValidatorStatus, pendingHeartbeat } = useWallet();
-  useHeartbeat();
+  const {
+    mxcAddress,
+    moniker,
+    validatorStatus,
+    setValidatorStatus,
+    pendingHeartbeat,
+    sessionExpired,
+    setSessionExpired,
+    sessionExpiresAt,
+    isStaked,
+  } = useWallet();
+  const { restartSession } = useHeartbeat();
+  const [toastMessage, setToastMessage] = React.useState("");
+  const [isRestarting, setIsRestarting] = React.useState(false);
+
+  async function handleRestartSession() {
+    setIsRestarting(true);
+    try {
+      await restartSession();
+      setToastMessage("Session restarted — you're earning rewards again");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to restart session";
+      setToastMessage(msg);
+    } finally {
+      setIsRestarting(false);
+    }
+  }
 
   const { data: account, isLoading: acctLoading, refetch: refetchAccount } = useQuery({
     queryKey: ["account", mxcAddress],
@@ -286,6 +313,71 @@ export default function DashboardScreen() {
       fontFamily: "Inter_600SemiBold",
       color: "#FFFFFF",
     },
+    sessionCard: {
+      marginHorizontal: 20,
+      backgroundColor: colors.card,
+      borderRadius: colors.radius,
+      borderWidth: 1,
+      borderColor: colors.border,
+      padding: 16,
+      marginBottom: 16,
+    },
+    sessionRow: {
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      gap: 8,
+      flexWrap: "wrap" as const,
+    },
+    sessionTimerHint: {
+      fontSize: 12,
+      fontFamily: "Inter_400Regular",
+      color: colors.mutedForeground,
+      marginTop: 4,
+    },
+    sessionExpiredHeader: {
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      gap: 8,
+      marginBottom: 8,
+    },
+    sessionExpiredTitle: {
+      fontSize: 16,
+      fontFamily: "Inter_700Bold",
+      color: "#F59E0B",
+    },
+    sessionExpiredDesc: {
+      fontSize: 13,
+      fontFamily: "Inter_400Regular",
+      color: colors.mutedForeground,
+      lineHeight: 20,
+      marginBottom: 16,
+    },
+    restartBtn: {
+      borderRadius: colors.radius - 4,
+      overflow: "hidden" as const,
+    },
+    restartGrad: {
+      paddingVertical: 14,
+      alignItems: "center" as const,
+      flexDirection: "row" as const,
+      justifyContent: "center" as const,
+      gap: 8,
+    },
+    restartBtnText: {
+      fontSize: 15,
+      fontFamily: "Inter_600SemiBold",
+      color: "#FFFFFF",
+    },
+    stakedBadge: {
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      gap: 8,
+    },
+    stakedText: {
+      fontSize: 13,
+      fontFamily: "Inter_500Medium",
+      color: colors.success,
+    },
   });
 
   return (
@@ -364,6 +456,53 @@ export default function DashboardScreen() {
           )}
         </View>
 
+        {mxcAddress && (isStaked || sessionExpired || !!sessionExpiresAt) && (
+          <View style={s.sessionCard}>
+            {isStaked ? (
+              <View style={s.stakedBadge}>
+                <Feather name="check-circle" size={16} color={colors.success} />
+                <Text style={s.stakedText}>Unlimited session — staked validator</Text>
+              </View>
+            ) : sessionExpired ? (
+              <>
+                <View style={s.sessionExpiredHeader}>
+                  <Feather name="alert-triangle" size={18} color="#F59E0B" />
+                  <Text style={s.sessionExpiredTitle}>Session Expired</Text>
+                </View>
+                <Text style={s.sessionExpiredDesc}>
+                  Your validator session ended. Tap Restart to earn rewards again.
+                </Text>
+                <TouchableOpacity
+                  style={s.restartBtn}
+                  onPress={handleRestartSession}
+                  disabled={isRestarting}
+                  activeOpacity={0.8}
+                >
+                  <LinearGradient colors={["#F59E0B", "#D97706"]} style={s.restartGrad}>
+                    {isRestarting ? (
+                      <ActivityIndicator color="#FFFFFF" size="small" />
+                    ) : (
+                      <>
+                        <Feather name="refresh-cw" size={16} color="#FFFFFF" />
+                        <Text style={s.restartBtnText}>Restart Session</Text>
+                      </>
+                    )}
+                  </LinearGradient>
+                </TouchableOpacity>
+              </>
+            ) : sessionExpiresAt ? (
+              <View style={s.sessionRow}>
+                <Feather name="clock" size={14} color={colors.mutedForeground} />
+                <SessionTimer
+                  expiresAt={sessionExpiresAt}
+                  onExpired={() => setSessionExpired(true)}
+                />
+                <Text style={s.sessionTimerHint}>Stake MC to remove limit</Text>
+              </View>
+            ) : null}
+          </View>
+        )}
+
         <View style={s.quickActions}>
           <TouchableOpacity style={s.actionBtn} onPress={() => router.push("/(tabs)/send")}>
             <LinearGradient colors={["#0EA5E9", "#0284C7"]} style={s.actionGrad}>
@@ -413,6 +552,11 @@ export default function DashboardScreen() {
           })
         )}
       </ScrollView>
+      <Toast
+        message={toastMessage}
+        visible={!!toastMessage}
+        onHide={() => setToastMessage("")}
+      />
     </View>
   );
 }

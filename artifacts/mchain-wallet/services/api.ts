@@ -27,14 +27,20 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   if (!response.ok) {
     const text = await response.text().catch(() => "Request failed");
     let message = text;
+    let data: Record<string, unknown> | undefined;
     try {
       const json = JSON.parse(text);
       message = json.message ?? json.error ?? text;
+      data = json as Record<string, unknown>;
     } catch {
       // use raw text
     }
-    const err = new Error(message) as Error & { status: number };
+    const err = new Error(message) as Error & {
+      status: number;
+      data?: Record<string, unknown>;
+    };
     err.status = response.status;
+    err.data = data;
     throw err;
   }
 
@@ -80,6 +86,20 @@ export interface HeartbeatRecord {
   isCharging: boolean;
   blockHeight: number;
   timestamp: string;
+}
+
+export interface HeartbeatResponse {
+  ok: boolean;
+  blockHeight?: number;
+  isStaked?: boolean;
+  sessionExpiresAt?: string | null;
+}
+
+export interface SessionRestartResponse {
+  ok: boolean;
+  sessionStartedAt: string;
+  sessionExpiresAt: string;
+  sessionHours: number;
 }
 
 export interface Reward {
@@ -144,9 +164,15 @@ export const api = {
     isCharging: boolean;
     activeMinutes: number;
   }) =>
-    request<{ ok: boolean; blockHeight: number }>("/validators/heartbeat", {
+    request<HeartbeatResponse>("/validators/heartbeat", {
       method: "POST",
       body: JSON.stringify(data),
+    }),
+
+  restartSession: (address: string) =>
+    request<SessionRestartResponse>("/validators/restart", {
+      method: "POST",
+      body: JSON.stringify({ address }),
     }),
 
   getValidatorStatus: (address: string) =>
