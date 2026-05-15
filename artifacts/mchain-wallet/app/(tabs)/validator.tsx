@@ -30,9 +30,7 @@ export default function ValidatorScreen() {
   const insets = useSafeAreaInsets();
   const qc = useQueryClient();
   const {
-    mxcAddress,
-    ethAddress,
-    publicKey,
+    validatorWallet,
     deviceId,
     moniker,
     sessionExpired,
@@ -42,6 +40,10 @@ export default function ValidatorScreen() {
     setSessionExpiresAt,
     setIsStaked,
   } = useWallet();
+
+  const mxcAddress = validatorWallet?.mxcAddress ?? null;
+  const ethAddress = validatorWallet?.ethAddress ?? null;
+  const publicKey = validatorWallet?.publicKey ?? null;
 
   const [regMoniker, setRegMoniker] = useState(moniker || "");
   const [commissionRate, setCommissionRate] = useState("5");

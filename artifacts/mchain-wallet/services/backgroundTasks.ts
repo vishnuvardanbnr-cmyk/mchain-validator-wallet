@@ -7,10 +7,11 @@ import { api } from "./api";
 
 export const HEARTBEAT_TASK = "mchain-heartbeat-task";
 const SESSION_EXPIRES_AT_KEY = "mchain_session_expires_at";
+const VALIDATOR_ADDRESS_KEY = "mchain_validator_address";
 
 TaskManager.defineTask(HEARTBEAT_TASK, async () => {
   try {
-    const address = await AsyncStorage.getItem("mchain_mxc_address");
+    const address = await AsyncStorage.getItem(VALIDATOR_ADDRESS_KEY);
     if (!address) return BackgroundFetch.BackgroundFetchResult.NoData;
 
     // Check if session is already expired before attempting heartbeat
@@ -58,7 +59,6 @@ TaskManager.defineTask(HEARTBEAT_TASK, async () => {
     const apiErr = err as { status?: number; data?: Record<string, unknown> };
 
     if (apiErr?.status === 403 && apiErr?.data?.error === "session_expired") {
-      // Store expiry so foreground app shows restart UI on next launch
       const expiredAt = apiErr.data.expiredAt as string | undefined;
       if (expiredAt) {
         try {

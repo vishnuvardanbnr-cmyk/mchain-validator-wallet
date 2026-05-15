@@ -8,7 +8,7 @@ type ApiError = Error & { status?: number; data?: Record<string, unknown> };
 
 export function useHeartbeat() {
   const {
-    mxcAddress,
+    validatorWallet,
     setValidatorStatus,
     setPendingHeartbeat,
     sessionExpired,
@@ -17,15 +17,17 @@ export function useHeartbeat() {
     setIsStaked,
   } = useWallet();
 
+  const validatorAddress = validatorWallet?.mxcAddress ?? null;
+
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const activeMinutesRef = useRef(0);
-  const mxcAddressRef = useRef(mxcAddress);
+  const validatorAddressRef = useRef(validatorAddress);
   const stoppedRef = useRef(false);
   const prevSessionExpiredRef = useRef(sessionExpired);
 
   useEffect(() => {
-    mxcAddressRef.current = mxcAddress;
-  }, [mxcAddress]);
+    validatorAddressRef.current = validatorAddress;
+  }, [validatorAddress]);
 
   const stopInterval = useCallback(() => {
     stoppedRef.current = true;
@@ -45,7 +47,7 @@ export function useHeartbeat() {
   }, []);
 
   const sendHeartbeat = useCallback(async () => {
-    const address = mxcAddressRef.current;
+    const address = validatorAddressRef.current;
     if (!address || stoppedRef.current) return;
 
     let batteryLevel = 50;
@@ -108,27 +110,27 @@ export function useHeartbeat() {
 
   // Resume interval when session is restarted from any screen
   useEffect(() => {
-    if (prevSessionExpiredRef.current && !sessionExpired && mxcAddress) {
+    if (prevSessionExpiredRef.current && !sessionExpired && validatorAddress) {
       stoppedRef.current = false;
       sendHeartbeat();
       startInterval(sendHeartbeat);
     }
     prevSessionExpiredRef.current = sessionExpired;
-  }, [sessionExpired, mxcAddress, sendHeartbeat, startInterval]);
+  }, [sessionExpired, validatorAddress, sendHeartbeat, startInterval]);
 
   useEffect(() => {
-    if (!mxcAddress) return;
+    if (!validatorAddress) return;
     stoppedRef.current = false;
 
     sendHeartbeat();
     startInterval(sendHeartbeat);
 
     return () => stopInterval();
-  }, [mxcAddress, sendHeartbeat, startInterval, stopInterval]);
+  }, [validatorAddress, sendHeartbeat, startInterval, stopInterval]);
 
   const restartSession = useCallback(async () => {
-    const address = mxcAddressRef.current;
-    if (!address) throw new Error("No wallet address");
+    const address = validatorAddressRef.current;
+    if (!address) throw new Error("No validator wallet address");
 
     const result = await api.restartSession(address);
 

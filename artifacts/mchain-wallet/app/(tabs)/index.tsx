@@ -1,5 +1,6 @@
 import { Icon } from "@/components/Icon";
 import { NewWalletModal } from "@/components/NewWalletModal";
+import { WalletSwitcherModal } from "@/components/WalletSwitcherModal";
 import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
@@ -44,6 +45,7 @@ export default function DashboardScreen() {
   const [toastMessage, setToastMessage] = React.useState("");
   const [isRestarting, setIsRestarting] = React.useState(false);
   const [showNewWallet, setShowNewWallet] = React.useState(false);
+  const [showSwitcher, setShowSwitcher] = React.useState(false);
 
   async function handleRestartSession() {
     setIsRestarting(true);
@@ -340,7 +342,7 @@ export default function DashboardScreen() {
         }
       >
         <View style={s.header}>
-          <View style={s.headerLeft}>
+          <TouchableOpacity style={s.headerLeft} onPress={() => setShowSwitcher(true)} activeOpacity={0.7}>
             <Icon name="menu" size={22} color={colors.foreground} />
             <View style={[s.statusDot, {
               backgroundColor:
@@ -349,7 +351,7 @@ export default function DashboardScreen() {
                 vStatus === "banned" ? "#EF4444" :
                 colors.mutedForeground,
             }]} />
-          </View>
+          </TouchableOpacity>
           <View style={s.headerRight}>
             <TouchableOpacity style={s.headerIconBtn} onPress={() => setShowNewWallet(true)}>
               <Icon name="wallet" size={18} color={colors.foreground} />
@@ -411,6 +413,11 @@ export default function DashboardScreen() {
         message={toastMessage}
         visible={!!toastMessage}
         onHide={() => setToastMessage("")}
+      />
+      <WalletSwitcherModal
+        visible={showSwitcher}
+        onClose={() => setShowSwitcher(false)}
+        onAddWallet={() => setShowNewWallet(true)}
       />
       <NewWalletModal
         visible={showNewWallet}

@@ -11,6 +11,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
@@ -20,7 +21,7 @@ import { useWallet } from "@/context/WalletContext";
 import { generateKeyPair, type KeyPair } from "@/services/crypto";
 import { useColors } from "@/hooks/useColors";
 
-type Step = "warn" | "backup" | "confirm";
+type Step = "backup" | "label" | "done";
 
 type Props = {
   visible: boolean;
@@ -30,26 +31,31 @@ type Props = {
 export function NewWalletModal({ visible, onClose }: Props) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { completeOnboarding, moniker } = useWallet();
+  const { addWallet, switchWallet } = useWallet();
 
-  const [step, setStep] = useState<Step>("warn");
+  const [step, setStep] = useState<Step>("backup");
   const [keyPair, setKeyPair] = useState<KeyPair | null>(null);
   const [generating, setGenerating] = useState(false);
-  const [replacing, setReplacing] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [keyVisible, setKeyVisible] = useState(false);
   const [keyCopied, setKeyCopied] = useState(false);
   const [addrCopied, setAddrCopied] = useState(false);
+  const [walletLabel, setWalletLabel] = useState("");
+  const [addedWalletId, setAddedWalletId] = useState<string | null>(null);
 
   const slideAnim = useRef(new Animated.Value(400)).current;
   const overlayOpacity = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     if (visible) {
-      setStep("warn");
+      setStep("backup");
       setKeyPair(null);
       setKeyVisible(false);
       setKeyCopied(false);
       setAddrCopied(false);
+      setWalletLabel("");
+      setAddedWalletId(null);
+      generateNewPair();
       Animated.parallel([
         Animated.timing(slideAnim, { toValue: 0, duration: 320, useNativeDriver: true, easing: Easing.out(Easing.cubic) }),
         Animated.timing(overlayOpacity, { toValue: 1, duration: 250, useNativeDriver: true }),
@@ -60,15 +66,13 @@ export function NewWalletModal({ visible, onClose }: Props) {
         Animated.timing(overlayOpacity, { toValue: 0, duration: 200, useNativeDriver: true }),
       ]).start();
     }
-  }, [visible, slideAnim, overlayOpacity]);
+  }, [visible]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  async function handleGenerate() {
+  async function generateNewPair() {
     setGenerating(true);
     try {
       const kp = await generateKeyPair();
       setKeyPair(kp);
-      setStep("backup");
-      if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     } finally {
       setGenerating(false);
     }
@@ -90,23 +94,25 @@ export function NewWalletModal({ visible, onClose }: Props) {
     setTimeout(() => setAddrCopied(false), 2500);
   }
 
-  async function handleReplace() {
+  async function handleSave(switchTo: boolean) {
     if (!keyPair) return;
-    setReplacing(true);
+    setSaving(true);
     try {
-      await completeOnboarding(
-        keyPair.mxcAddress,
-        keyPair.ethAddress,
-        keyPair.publicKey,
-        keyPair.privateKey,
-        moniker || "Validator"
-      );
+      const entry = await addWallet(keyPair, walletLabel || "My Wallet");
+      setAddedWalletId(entry.id);
+      if (switchTo) await switchWallet(entry.id);
       if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       onClose();
     } finally {
-      setReplacing(false);
+      setSaving(false);
     }
   }
+
+  const stepTitles: Record<Step, string> = {
+    backup: "New Wallet",
+    label: "Name Your Wallet",
+    done: "Wallet Added",
+  };
 
   const s = StyleSheet.create({
     overlay: {
@@ -161,65 +167,38 @@ export function NewWalletModal({ visible, onClose }: Props) {
       paddingTop: 20,
       paddingBottom: 8,
     },
-    warningBox: {
-      backgroundColor: "#1A0A00",
+    infoBox: {
+      backgroundColor: colors.card,
       borderRadius: 14,
       borderWidth: 1,
-      borderColor: "#EF444440",
-      padding: 18,
+      borderColor: colors.border,
+      padding: 16,
       marginBottom: 20,
       flexDirection: "row",
-      gap: 14,
+      gap: 12,
       alignItems: "flex-start",
     },
-    warningIconWrap: {
-      width: 36,
-      height: 36,
-      borderRadius: 18,
-      backgroundColor: "#EF444415",
+    infoIconWrap: {
+      width: 32,
+      height: 32,
+      borderRadius: 16,
+      backgroundColor: colors.primary + "20",
       alignItems: "center",
       justifyContent: "center",
       flexShrink: 0,
     },
-    warningTextWrap: { flex: 1 },
-    warningTitle: {
-      fontSize: 15,
-      fontFamily: "Inter_700Bold",
-      color: "#F87171",
-      marginBottom: 6,
-    },
-    warningDesc: {
-      fontSize: 13,
-      fontFamily: "Inter_400Regular",
-      color: colors.mutedForeground,
-      lineHeight: 20,
-    },
-    primaryBtn: {
-      borderRadius: 14,
-      overflow: "hidden",
-      marginBottom: 12,
-    },
-    primaryGrad: {
-      paddingVertical: 15,
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "center",
-      gap: 8,
-    },
-    primaryBtnText: {
-      fontSize: 15,
-      fontFamily: "Inter_700Bold",
-      color: "#FFFFFF",
-    },
-    ghostBtn: {
-      paddingVertical: 13,
-      alignItems: "center",
+    infoTextWrap: { flex: 1 },
+    infoTitle: {
+      fontSize: 14,
+      fontFamily: "Inter_600SemiBold",
+      color: colors.foreground,
       marginBottom: 4,
     },
-    ghostBtnText: {
-      fontSize: 14,
-      fontFamily: "Inter_500Medium",
+    infoDesc: {
+      fontSize: 12,
+      fontFamily: "Inter_400Regular",
       color: colors.mutedForeground,
+      lineHeight: 18,
     },
     sectionLabel: {
       fontSize: 10,
@@ -267,7 +246,7 @@ export function NewWalletModal({ visible, onClose }: Props) {
       backgroundColor: "#080808",
       borderRadius: 12,
       borderWidth: 1,
-      borderColor: "#EF444430",
+      borderColor: "#F59E0B30",
       padding: 14,
       marginBottom: 4,
     },
@@ -318,37 +297,55 @@ export function NewWalletModal({ visible, onClose }: Props) {
       color: "#D4A017",
       lineHeight: 18,
     },
-    confirmCard: {
-      backgroundColor: colors.card,
-      borderRadius: 14,
-      borderWidth: 1,
-      borderColor: colors.border,
-      padding: 16,
-      marginBottom: 20,
-      gap: 10,
-    },
-    confirmRow: {
-      flexDirection: "row",
-      justifyContent: "space-between",
-      alignItems: "center",
-    },
-    confirmLabel: {
-      fontSize: 12,
-      fontFamily: "Inter_500Medium",
-      color: colors.mutedForeground,
-    },
-    confirmValue: {
-      fontSize: 12,
-      fontFamily: "Inter_600SemiBold",
-      color: colors.foreground,
-      flex: 1,
-      textAlign: "right",
-      marginLeft: 16,
-    },
-    destructiveBtn: {
+    primaryBtn: {
       borderRadius: 14,
       overflow: "hidden",
       marginBottom: 12,
+    },
+    primaryGrad: {
+      paddingVertical: 15,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 8,
+    },
+    primaryBtnText: {
+      fontSize: 15,
+      fontFamily: "Inter_700Bold",
+      color: "#FFFFFF",
+    },
+    ghostBtn: {
+      paddingVertical: 13,
+      alignItems: "center",
+      marginBottom: 4,
+    },
+    ghostBtnText: {
+      fontSize: 14,
+      fontFamily: "Inter_500Medium",
+      color: colors.mutedForeground,
+    },
+    labelInput: {
+      backgroundColor: colors.card,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: colors.border,
+      paddingHorizontal: 16,
+      paddingVertical: 14,
+      fontSize: 15,
+      fontFamily: "Inter_400Regular",
+      color: colors.foreground,
+      marginBottom: 20,
+    },
+    loadingCenter: {
+      paddingVertical: 40,
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 12,
+    },
+    loadingText: {
+      fontSize: 14,
+      fontFamily: "Inter_400Regular",
+      color: colors.mutedForeground,
     },
   });
 
@@ -365,157 +362,147 @@ export function NewWalletModal({ visible, onClose }: Props) {
         <Animated.View style={[s.sheet, { transform: [{ translateY: slideAnim }] }]}>
           <View style={s.handle} />
           <View style={s.sheetHeader}>
-            <Text style={s.sheetTitle}>
-              {step === "warn" ? "Create New Wallet" : step === "backup" ? "Back Up New Keys" : "Confirm Replacement"}
-            </Text>
+            <Text style={s.sheetTitle}>{stepTitles[step]}</Text>
             <TouchableOpacity style={s.closeBtn} onPress={onClose}>
               <Icon name="close" size={14} color={colors.mutedForeground} />
             </TouchableOpacity>
           </View>
 
-          <ScrollView contentContainerStyle={s.body} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-
-            {step === "warn" && (
+          <ScrollView
+            contentContainerStyle={s.body}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+          >
+            {step === "backup" && (
               <>
-                <View style={s.warningBox}>
-                  <View style={s.warningIconWrap}>
-                    <Icon name="warning-outline" size={18} color="#F87171" />
+                {generating || !keyPair ? (
+                  <View style={s.loadingCenter}>
+                    <ActivityIndicator color={colors.primary} />
+                    <Text style={s.loadingText}>Generating keypair…</Text>
                   </View>
-                  <View style={s.warningTextWrap}>
-                    <Text style={s.warningTitle}>Replace Existing Wallet</Text>
-                    <Text style={s.warningDesc}>
-                      This will permanently replace your current wallet and private key.
-                      {"\n\n"}
-                      Make sure you have backed up your existing private key before continuing — it cannot be recovered afterward.
-                    </Text>
-                  </View>
-                </View>
+                ) : (
+                  <>
+                    <View style={s.infoBox}>
+                      <View style={s.infoIconWrap}>
+                        <Icon name="wallet" size={15} color={colors.primary} />
+                      </View>
+                      <View style={s.infoTextWrap}>
+                        <Text style={s.infoTitle}>New wallet generated</Text>
+                        <Text style={s.infoDesc}>
+                          This wallet is separate from your validator wallet. Save the private key before adding it.
+                        </Text>
+                      </View>
+                    </View>
 
-                <TouchableOpacity
-                  style={[s.primaryBtn, generating && { opacity: 0.7 }]}
-                  onPress={handleGenerate}
-                  disabled={generating}
-                  activeOpacity={0.85}
-                >
-                  <LinearGradient colors={["#EF4444", "#B91C1C"]} style={s.primaryGrad}>
-                    {generating ? (
-                      <ActivityIndicator color="#FFFFFF" size="small" />
-                    ) : (
-                      <>
-                        <Icon name="wallet" size={16} color="#FFFFFF" />
-                        <Text style={s.primaryBtnText}>Generate New Wallet</Text>
-                      </>
-                    )}
-                  </LinearGradient>
-                </TouchableOpacity>
+                    <Text style={s.sectionLabel}>ADDRESS</Text>
+                    <View style={s.addressBox}>
+                      <Text style={s.addressText} selectable>{keyPair.mxcAddress}</Text>
+                    </View>
+                    <View style={s.copyRow}>
+                      <TouchableOpacity style={s.copyChip} onPress={handleCopyAddress}>
+                        <Icon
+                          name={addrCopied ? "checkmark" : "copy-outline"}
+                          size={11}
+                          color={addrCopied ? colors.success : colors.primary}
+                        />
+                        <Text style={[s.copyChipText, addrCopied && { color: colors.success }]}>
+                          {addrCopied ? "Copied!" : "Copy Address"}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
 
-                <TouchableOpacity style={s.ghostBtn} onPress={onClose}>
-                  <Text style={s.ghostBtnText}>Cancel — keep current wallet</Text>
-                </TouchableOpacity>
-              </>
-            )}
-
-            {step === "backup" && keyPair && (
-              <>
-                <Text style={s.sectionLabel}>NEW ADDRESS</Text>
-                <View style={s.addressBox}>
-                  <Text style={s.addressText} selectable>{keyPair.mxcAddress}</Text>
-                </View>
-                <View style={s.copyRow}>
-                  <TouchableOpacity style={s.copyChip} onPress={handleCopyAddress}>
-                    <Icon name={addrCopied ? "checkmark" : "copy-outline"} size={11} color={addrCopied ? colors.success : colors.primary} />
-                    <Text style={[s.copyChipText, addrCopied && { color: colors.success }]}>
-                      {addrCopied ? "Copied!" : "Copy Address"}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-
-                <Text style={s.sectionLabel}>PRIVATE KEY</Text>
-                <View style={s.keyBox}>
-                  <Text style={s.keyText} selectable>
-                    {keyVisible ? keyPair.privateKey : "•".repeat(64)}
-                  </Text>
-                </View>
-                <View style={s.revealRow}>
-                  <TouchableOpacity style={s.revealBtn} onPress={() => setKeyVisible(v => !v)}>
-                    <Icon name={keyVisible ? "eye-off-outline" : "eye-outline"} size={12} color={colors.mutedForeground} />
-                    <Text style={s.revealBtnText}>{keyVisible ? "Hide" : "Reveal"}</Text>
-                  </TouchableOpacity>
-                  {keyVisible && (
-                    <TouchableOpacity style={[s.copyChip, { borderColor: "#F59E0B50" }]} onPress={handleCopyKey}>
-                      <Icon name={keyCopied ? "checkmark" : "copy-outline"} size={11} color={keyCopied ? colors.success : "#F59E0B"} />
-                      <Text style={[s.copyChipText, { color: keyCopied ? colors.success : "#F59E0B" }]}>
-                        {keyCopied ? "Copied!" : "Copy Key"}
+                    <Text style={s.sectionLabel}>PRIVATE KEY</Text>
+                    <View style={s.keyBox}>
+                      <Text style={s.keyText} selectable>
+                        {keyVisible ? keyPair.privateKey : "•".repeat(64)}
                       </Text>
+                    </View>
+                    <View style={s.revealRow}>
+                      <TouchableOpacity style={s.revealBtn} onPress={() => setKeyVisible((v) => !v)}>
+                        <Icon
+                          name={keyVisible ? "eye-off-outline" : "eye-outline"}
+                          size={12}
+                          color={colors.mutedForeground}
+                        />
+                        <Text style={s.revealBtnText}>{keyVisible ? "Hide" : "Reveal"}</Text>
+                      </TouchableOpacity>
+                      {keyVisible && (
+                        <TouchableOpacity
+                          style={[s.copyChip, { borderColor: "#F59E0B50" }]}
+                          onPress={handleCopyKey}
+                        >
+                          <Icon
+                            name={keyCopied ? "checkmark" : "copy-outline"}
+                            size={11}
+                            color={keyCopied ? colors.success : "#F59E0B"}
+                          />
+                          <Text style={[s.copyChipText, { color: keyCopied ? colors.success : "#F59E0B" }]}>
+                            {keyCopied ? "Copied!" : "Copy Key"}
+                          </Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+
+                    <View style={s.keyNotice}>
+                      <Icon name="warning-outline" size={13} color="#F59E0B" style={{ marginTop: 1 }} />
+                      <Text style={s.keyNoticeText}>
+                        Store your private key safely before continuing. This is the only time it will be shown.
+                      </Text>
+                    </View>
+
+                    <TouchableOpacity
+                      style={s.primaryBtn}
+                      onPress={() => setStep("label")}
+                      activeOpacity={0.85}
+                    >
+                      <LinearGradient colors={["#0EA5E9", "#0284C7"]} style={s.primaryGrad}>
+                        <Text style={s.primaryBtnText}>I've Saved My Key →</Text>
+                      </LinearGradient>
                     </TouchableOpacity>
-                  )}
-                </View>
 
-                <View style={s.keyNotice}>
-                  <Icon name="warning-outline" size={13} color="#F59E0B" style={{ marginTop: 1 }} />
-                  <Text style={s.keyNoticeText}>
-                    Store your private key somewhere safe before continuing. This is the only time you can see it during setup.
-                  </Text>
-                </View>
-
-                <TouchableOpacity style={s.primaryBtn} onPress={() => setStep("confirm")} activeOpacity={0.85}>
-                  <LinearGradient colors={["#0EA5E9", "#0284C7"]} style={s.primaryGrad}>
-                    <Text style={s.primaryBtnText}>I've Saved My Key →</Text>
-                  </LinearGradient>
-                </TouchableOpacity>
-
-                <TouchableOpacity style={s.ghostBtn} onPress={onClose}>
-                  <Text style={s.ghostBtnText}>Cancel</Text>
-                </TouchableOpacity>
+                    <TouchableOpacity style={s.ghostBtn} onPress={onClose}>
+                      <Text style={s.ghostBtnText}>Cancel</Text>
+                    </TouchableOpacity>
+                  </>
+                )}
               </>
             )}
 
-            {step === "confirm" && keyPair && (
+            {step === "label" && (
               <>
-                <View style={s.confirmCard}>
-                  <View style={s.confirmRow}>
-                    <Text style={s.confirmLabel}>New Address</Text>
-                    <Text style={s.confirmValue} numberOfLines={1}>
-                      {keyPair.mxcAddress.slice(0, 16)}…{keyPair.mxcAddress.slice(-8)}
-                    </Text>
-                  </View>
-                  <View style={[s.confirmRow, { borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 10 }]}>
-                    <Text style={s.confirmLabel}>Network</Text>
-                    <Text style={s.confirmValue}>MChain · Chain 1888</Text>
-                  </View>
-                  <View style={[s.confirmRow, { borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 10 }]}>
-                    <Text style={s.confirmLabel}>Action</Text>
-                    <Text style={[s.confirmValue, { color: "#F87171" }]}>Replace current wallet</Text>
-                  </View>
-                </View>
-
-                <View style={[s.warningBox, { marginBottom: 20 }]}>
-                  <View style={s.warningIconWrap}>
-                    <Icon name="warning-outline" size={18} color="#F87171" />
-                  </View>
-                  <View style={s.warningTextWrap}>
-                    <Text style={[s.warningDesc, { color: "#F87171", fontFamily: "Inter_600SemiBold", marginBottom: 4 }]}>
-                      This cannot be undone
-                    </Text>
-                    <Text style={s.warningDesc}>
-                      Your current wallet will be removed. Any funds in it will only be accessible if you have your old private key.
-                    </Text>
-                  </View>
-                </View>
+                <Text style={s.sectionLabel}>WALLET NAME (OPTIONAL)</Text>
+                <TextInput
+                  style={s.labelInput}
+                  value={walletLabel}
+                  onChangeText={setWalletLabel}
+                  placeholder="e.g. Trading Wallet"
+                  placeholderTextColor={colors.mutedForeground}
+                  maxLength={32}
+                  autoFocus
+                  returnKeyType="done"
+                />
 
                 <TouchableOpacity
-                  style={[s.destructiveBtn, replacing && { opacity: 0.7 }]}
-                  onPress={handleReplace}
-                  disabled={replacing}
+                  style={[s.primaryBtn, saving && { opacity: 0.7 }]}
+                  onPress={() => handleSave(false)}
+                  disabled={saving}
                   activeOpacity={0.85}
                 >
-                  <LinearGradient colors={["#EF4444", "#B91C1C"]} style={s.primaryGrad}>
-                    {replacing ? (
+                  <LinearGradient colors={["#0EA5E9", "#0284C7"]} style={s.primaryGrad}>
+                    {saving ? (
                       <ActivityIndicator color="#FFFFFF" size="small" />
                     ) : (
-                      <Text style={s.primaryBtnText}>Replace Wallet</Text>
+                      <Text style={s.primaryBtnText}>Add Wallet</Text>
                     )}
                   </LinearGradient>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[s.ghostBtn, saving && { opacity: 0.5 }]}
+                  onPress={() => handleSave(true)}
+                  disabled={saving}
+                >
+                  <Text style={s.ghostBtnText}>Add & Switch to This Wallet</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity style={s.ghostBtn} onPress={() => setStep("backup")}>
@@ -523,7 +510,6 @@ export function NewWalletModal({ visible, onClose }: Props) {
                 </TouchableOpacity>
               </>
             )}
-
           </ScrollView>
         </Animated.View>
       </Animated.View>
