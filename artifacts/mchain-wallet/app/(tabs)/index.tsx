@@ -25,17 +25,105 @@ import { useWallet } from "@/context/WalletContext";
 import { useHeartbeat } from "@/hooks/useHeartbeat";
 import { api } from "@/services/api";
 import { formatDate, formatUptime, shortenAddress, weiToMc } from "@/services/crypto";
-import { getCustomTokens, removeCustomToken, type CustomToken } from "@/services/tokens";
+import { fetchTokenBalance, getCustomTokens, removeCustomToken, type CustomToken } from "@/services/tokens";
 import { PulsingDot } from "@/components/PulsingDot";
 import { SessionTimer } from "@/components/SessionTimer";
 import { Toast } from "@/components/Toast";
 import { useColors } from "@/hooks/useColors";
+
+function TokenBalanceRow({
+  token,
+  userEthAddress,
+  onRemove,
+}: {
+  token: CustomToken;
+  userEthAddress: string | null;
+  onRemove: () => void;
+}) {
+  const colors = useColors();
+  const s = StyleSheet.create({
+    tokenRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingHorizontal: 16,
+      paddingVertical: 14,
+      gap: 12,
+    },
+    tokenIconWrap: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      backgroundColor: colors.primary + "20",
+      borderWidth: 1,
+      borderColor: colors.primary + "40",
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    tokenIconText: { fontSize: 11, fontFamily: "Inter_700Bold", color: colors.primary },
+    tokenInfo: { flex: 1, gap: 2 },
+    tokenName: { fontSize: 14, fontFamily: "Inter_600SemiBold", color: colors.foreground },
+    tokenSymbol: { fontSize: 11, fontFamily: "Inter_400Regular", color: colors.mutedForeground },
+    tokenAmountCol: { alignItems: "flex-end", gap: 2 },
+    tokenAmount: { fontSize: 14, fontFamily: "Inter_600SemiBold", color: colors.foreground },
+    tokenSub: { fontSize: 11, fontFamily: "Inter_400Regular", color: colors.mutedForeground },
+    tokenLogoImg: { width: 40, height: 40, borderRadius: 20 },
+    verifiedBadge: { paddingHorizontal: 5, paddingVertical: 1, borderRadius: 5, backgroundColor: "#10B98115", borderWidth: 1, borderColor: "#10B98140" },
+    verifiedText: { fontSize: 9, fontFamily: "Inter_700Bold", color: "#10B981" },
+  });
+
+  const { data: balance, isLoading } = useQuery({
+    queryKey: ["tokenBalance", token.contractAddress, userEthAddress],
+    queryFn: () =>
+      userEthAddress
+        ? fetchTokenBalance(token.contractAddress, userEthAddress, token.decimals)
+        : Promise.resolve("0"),
+    enabled: !!userEthAddress,
+    refetchInterval: 30_000,
+    staleTime: 15_000,
+  });
+
+  return (
+    <View style={s.tokenRow}>
+      {token.logoUrl ? (
+        <Image source={{ uri: token.logoUrl }} style={s.tokenLogoImg} />
+      ) : (
+        <View style={s.tokenIconWrap}>
+          <Text style={s.tokenIconText}>{token.symbol.slice(0, 3)}</Text>
+        </View>
+      )}
+      <View style={s.tokenInfo}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+          <Text style={s.tokenName}>{token.symbol}</Text>
+          {token.verified && (
+            <View style={s.verifiedBadge}>
+              <Text style={s.verifiedText}>✓</Text>
+            </View>
+          )}
+        </View>
+        <Text style={s.tokenSymbol} numberOfLines={1}>{token.name}</Text>
+      </View>
+      <View style={s.tokenAmountCol}>
+        {isLoading ? (
+          <ActivityIndicator size="small" color={colors.primary} style={{ marginBottom: 4 }} />
+        ) : (
+          <Text style={[s.tokenAmount, balance && balance !== "0" ? {} : { color: colors.mutedForeground }]}>
+            {balance ?? "—"}
+          </Text>
+        )}
+        <TouchableOpacity onPress={onRemove} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+          <Icon name="trash-outline" size={14} color={colors.mutedForeground} />
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
 
 export default function DashboardScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const {
     mxcAddress,
+    ethAddress,
     moniker,
     validatorStatus,
     setValidatorStatus,
@@ -706,38 +794,15 @@ export default function DashboardScreen() {
 
               {/* Custom tokens */}
               {customTokens.map((token) => (
-                <View key={token.id} style={s.tokenRow}>
-                  {token.logoUrl ? (
-                    <Image source={{ uri: token.logoUrl }} style={s.tokenLogoImg} />
-                  ) : (
-                    <View style={s.tokenIconWrap}>
-                      <Text style={s.tokenIconText}>{token.symbol.slice(0, 3)}</Text>
-                    </View>
-                  )}
-                  <View style={s.tokenInfo}>
-                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                      <Text style={s.tokenName}>{token.symbol}</Text>
-                      {token.verified && (
-                        <View style={s.verifiedBadge}>
-                          <Text style={s.verifiedText}>✓</Text>
-                        </View>
-                      )}
-                    </View>
-                    <Text style={s.tokenSymbol} numberOfLines={1}>{token.name}</Text>
-                  </View>
-                  <View style={s.tokenAmountCol}>
-                    <Text style={[s.tokenAmount, { color: colors.mutedForeground }]}>—</Text>
-                    <TouchableOpacity
-                      onPress={async () => {
-                        await removeCustomToken(token.contractAddress);
-                        refetchTokens();
-                      }}
-                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                    >
-                      <Icon name="trash-outline" size={14} color={colors.mutedForeground} />
-                    </TouchableOpacity>
-                  </View>
-                </View>
+                <TokenBalanceRow
+                  key={token.id}
+                  token={token}
+                  userEthAddress={ethAddress ?? null}
+                  onRemove={async () => {
+                    await removeCustomToken(token.contractAddress);
+                    refetchTokens();
+                  }}
+                />
               ))}
 
               {/* Add token button */}

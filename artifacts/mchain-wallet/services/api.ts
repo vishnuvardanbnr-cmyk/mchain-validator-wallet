@@ -51,7 +51,17 @@ export interface AccountInfo {
   address: string;
   ethAddress: string;
   balance: string;
+  balanceMc?: string;
   nonce: number;
+  isContract?: boolean;
+  exists?: boolean;
+}
+
+export interface RpcCallResult {
+  jsonrpc: string;
+  id: number;
+  result?: string;
+  error?: { code: number; message: string };
 }
 
 export interface Transaction {
@@ -301,6 +311,17 @@ export const api = {
     ),
 
   ping: () => request<unknown>("/ping"),
+
+  rpcCall: (to: string, data: string) =>
+    request<RpcCallResult>("/rpc", {
+      method: "POST",
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "eth_call",
+        params: [{ to, data }, "latest"],
+      }),
+    }),
 
   // ── Epoch endpoints ─────────────────────────────────────────────────────────
   getOpenEpoch: () =>

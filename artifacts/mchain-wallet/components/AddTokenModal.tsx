@@ -2,6 +2,7 @@ import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import React, { useEffect, useRef, useState } from "react";
 import {
+  ActivityIndicator,
   Animated,
   Easing,
   Image,
@@ -17,9 +18,12 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Icon } from "@/components/Icon";
 import { useColors } from "@/hooks/useColors";
+import { useWallet } from "@/context/WalletContext";
 import {
   addCustomToken,
+  fetchTokenMetadata,
   VERIFIED_TOKENS,
+  type TokenMetadata,
   type VerifiedToken,
 } from "@/services/tokens";
 
@@ -34,6 +38,7 @@ type Props = {
 export function AddTokenModal({ visible, onClose, onAdded }: Props) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const { ethAddress } = useWallet();
 
   const [panel, setPanel] = useState<Panel>("popular");
   const [search, setSearch] = useState("");
@@ -50,8 +55,40 @@ export function AddTokenModal({ visible, onClose, onAdded }: Props) {
   const [cName, setCName] = useState("");
   const [cDecimals, setCDecimals] = useState("18");
 
+  // Auto-fetch state for custom panel
+  const [fetchLoading, setFetchLoading] = useState(false);
+  const [fetchedMeta, setFetchedMeta] = useState<TokenMetadata | null>(null);
+  const [fetchError, setFetchError] = useState("");
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const slideAnim = useRef(new Animated.Value(500)).current;
   const overlayOpacity = useRef(new Animated.Value(0)).current;
+
+  // Auto-fetch metadata when a valid contract address is typed in custom panel
+  useEffect(() => {
+    setFetchedMeta(null);
+    setFetchError("");
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (!/^0x[0-9a-fA-F]{40}$/.test(cAddress.trim())) return;
+
+    debounceRef.current = setTimeout(async () => {
+      setFetchLoading(true);
+      try {
+        const meta = await fetchTokenMetadata(cAddress.trim(), ethAddress ?? undefined);
+        setFetchedMeta(meta);
+        setCSymbol(meta.symbol);
+        setCName(meta.name);
+        setCDecimals(String(meta.decimals));
+        if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      } catch (err) {
+        setFetchError(err instanceof Error ? err.message : "Could not fetch token details");
+      } finally {
+        setFetchLoading(false);
+      }
+    }, 600);
+
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+  }, [cAddress, ethAddress]);
 
   useEffect(() => {
     if (visible) {
@@ -61,6 +98,7 @@ export function AddTokenModal({ visible, onClose, onAdded }: Props) {
       setContractInput("");
       setError("");
       setCAddress(""); setCSymbol(""); setCName(""); setCDecimals("18");
+      setFetchedMeta(null); setFetchError(""); setFetchLoading(false);
       Animated.parallel([
         Animated.timing(slideAnim, { toValue: 0, duration: 320, useNativeDriver: true, easing: Easing.out(Easing.cubic) }),
         Animated.timing(overlayOpacity, { toValue: 1, duration: 250, useNativeDriver: true }),
@@ -179,6 +217,57 @@ export function AddTokenModal({ visible, onClose, onAdded }: Props) {
     primaryBtnText: { fontSize: 15, fontFamily: "Inter_700Bold", color: "#FFFFFF" },
     row2: { flexDirection: "row", gap: 10 },
     halfInput: { flex: 1 },
+    addrInputRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      backgroundColor: colors.card,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: colors.border,
+      paddingHorizontal: 12,
+      paddingVertical: 4,
+      marginBottom: 14,
+      gap: 8,
+    },
+    addrInputRowValid: { borderColor: colors.primary + "60" },
+    previewCard: {
+      borderRadius: 14,
+      overflow: "hidden",
+      borderWidth: 1,
+      borderColor: colors.primary + "30",
+      marginBottom: 16,
+    },
+    previewGrad: { padding: 14 },
+    previewTopRow: { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 12 },
+    tokenIconWrap: {
+      width: 44,
+      height: 44,
+      borderRadius: 22,
+      backgroundColor: colors.primary + "20",
+      borderWidth: 1,
+      borderColor: colors.primary + "40",
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    tokenIconText: { fontSize: 12, fontFamily: "Inter_700Bold", color: colors.primary },
+    previewTokenName: { fontSize: 16, fontFamily: "Inter_700Bold", color: "#FFFFFF" },
+    previewTokenSub: { fontSize: 11, fontFamily: "Inter_400Regular", color: "rgba(255,255,255,0.5)", marginTop: 2 },
+    statsRow: { flexDirection: "row", gap: 8 },
+    statBox: { flex: 1, backgroundColor: "rgba(0,0,0,0.3)", borderRadius: 10, padding: 10 },
+    statLabel: { fontSize: 8, fontFamily: "Inter_600SemiBold", color: "rgba(255,255,255,0.4)", letterSpacing: 1.2, marginBottom: 4 },
+    statValue: { fontSize: 13, fontFamily: "Inter_600SemiBold", color: "#FFFFFF" },
+    fetchErrorBox: {
+      flexDirection: "row",
+      alignItems: "flex-start",
+      gap: 8,
+      backgroundColor: "#1A0000",
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: "#EF444440",
+      padding: 12,
+      marginBottom: 14,
+    },
+    fetchErrorText: { flex: 1, fontSize: 13, fontFamily: "Inter_400Regular", color: "#F87171", lineHeight: 18 },
   });
 
   const body = (
@@ -331,32 +420,96 @@ export function AddTokenModal({ visible, onClose, onAdded }: Props) {
           <View style={s.contractStep}>
             <View style={{ height: 10 }} />
             <Text style={s.fieldLabel}>CONTRACT ADDRESS</Text>
-            <TextInput style={s.fieldInput} value={cAddress} onChangeText={(v) => { setCAddress(v); setError(""); }} placeholder="0x…" placeholderTextColor={colors.mutedForeground} autoCorrect={false} autoCapitalize="none" />
-
-            <View style={s.row2}>
-              <View style={s.halfInput}>
-                <Text style={s.fieldLabel}>SYMBOL</Text>
-                <TextInput style={s.fieldInput} value={cSymbol} onChangeText={(v) => { setCSymbol(v); setError(""); }} placeholder="e.g. USDT" placeholderTextColor={colors.mutedForeground} autoCapitalize="characters" />
-              </View>
-              <View style={s.halfInput}>
-                <Text style={s.fieldLabel}>DECIMALS</Text>
-                <TextInput style={s.fieldInput} value={cDecimals} onChangeText={(v) => { setCDecimals(v); setError(""); }} placeholder="18" placeholderTextColor={colors.mutedForeground} keyboardType="numeric" />
-              </View>
+            <View style={[s.addrInputRow, cAddress.length > 0 && /^0x[0-9a-fA-F]{40}$/.test(cAddress) && s.addrInputRowValid]}>
+              <Icon name="cube-outline" size={15} color={colors.mutedForeground} style={{ marginRight: 2 }} />
+              <TextInput
+                style={[s.fieldInput, { flex: 1, marginBottom: 0, borderWidth: 0, paddingHorizontal: 0, backgroundColor: "transparent" }]}
+                value={cAddress}
+                onChangeText={(v) => { setCAddress(v.trim()); setError(""); }}
+                placeholder="0x…"
+                placeholderTextColor={colors.mutedForeground}
+                autoCorrect={false}
+                autoCapitalize="none"
+              />
+              {fetchLoading ? (
+                <ActivityIndicator size="small" color={colors.primary} />
+              ) : cAddress.length > 0 ? (
+                <TouchableOpacity onPress={() => { setCAddress(""); setFetchedMeta(null); setFetchError(""); }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <Icon name="close-circle" size={15} color={colors.mutedForeground} />
+                </TouchableOpacity>
+              ) : null}
             </View>
 
-            <Text style={s.fieldLabel}>TOKEN NAME</Text>
-            <TextInput style={s.fieldInput} value={cName} onChangeText={(v) => { setCName(v); setError(""); }} placeholder="e.g. Tether USD" placeholderTextColor={colors.mutedForeground} />
+            {/* Auto-fetch preview */}
+            {fetchedMeta && !fetchError && (
+              <View style={s.previewCard}>
+                <LinearGradient colors={["#071A2E", "#040F1C"]} style={s.previewGrad}>
+                  <View style={s.previewTopRow}>
+                    <View style={s.tokenIconWrap}>
+                      <Text style={s.tokenIconText}>{fetchedMeta.symbol.slice(0, 3)}</Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={s.previewTokenName}>{fetchedMeta.name}</Text>
+                      <Text style={s.previewTokenSub}>{fetchedMeta.symbol} · {fetchedMeta.decimals} decimals</Text>
+                    </View>
+                  </View>
+                  <View style={s.statsRow}>
+                    <View style={s.statBox}>
+                      <Text style={s.statLabel}>TOTAL SUPPLY</Text>
+                      <Text style={s.statValue}>{fetchedMeta.totalSupply}</Text>
+                    </View>
+                    <View style={s.statBox}>
+                      <Text style={s.statLabel}>YOUR BALANCE</Text>
+                      <Text style={[s.statValue, fetchedMeta.userBalance && fetchedMeta.userBalance !== "0" ? { color: "#10B981" } : {}]}>
+                        {fetchedMeta.userBalance ?? "—"} {fetchedMeta.symbol}
+                      </Text>
+                    </View>
+                  </View>
+                </LinearGradient>
+              </View>
+            )}
+
+            {fetchError && (
+              <View style={s.fetchErrorBox}>
+                <Icon name="alert-circle-outline" size={15} color="#EF4444" />
+                <Text style={s.fetchErrorText}>{fetchError}</Text>
+              </View>
+            )}
+
+            {/* Manual overrides — shown collapsed when auto-fetched, expanded otherwise */}
+            {!fetchedMeta && !fetchLoading && (
+              <>
+                <View style={s.row2}>
+                  <View style={s.halfInput}>
+                    <Text style={s.fieldLabel}>SYMBOL</Text>
+                    <TextInput style={s.fieldInput} value={cSymbol} onChangeText={(v) => { setCSymbol(v); setError(""); }} placeholder="e.g. USDT" placeholderTextColor={colors.mutedForeground} autoCapitalize="characters" />
+                  </View>
+                  <View style={s.halfInput}>
+                    <Text style={s.fieldLabel}>DECIMALS</Text>
+                    <TextInput style={s.fieldInput} value={cDecimals} onChangeText={(v) => { setCDecimals(v); setError(""); }} placeholder="18" placeholderTextColor={colors.mutedForeground} keyboardType="numeric" />
+                  </View>
+                </View>
+                <Text style={s.fieldLabel}>TOKEN NAME</Text>
+                <TextInput style={s.fieldInput} value={cName} onChangeText={(v) => { setCName(v); setError(""); }} placeholder="e.g. Tether USD" placeholderTextColor={colors.mutedForeground} />
+              </>
+            )}
 
             {error ? <Text style={s.errorText}>{error}</Text> : null}
 
             <TouchableOpacity
-              style={[s.primaryBtn, saving && { opacity: 0.65 }]}
+              style={[s.primaryBtn, (saving || fetchLoading || (!fetchedMeta && !cSymbol)) && { opacity: 0.55 }]}
               onPress={handleAddCustom}
-              disabled={saving}
+              disabled={saving || fetchLoading || (!fetchedMeta && !cSymbol.trim())}
               activeOpacity={0.85}
             >
               <LinearGradient colors={["#0EA5E9", "#0284C7"]} style={s.primaryGrad}>
-                <Text style={s.primaryBtnText}>Add Custom Token</Text>
+                {saving ? (
+                  <ActivityIndicator color="#FFFFFF" size="small" />
+                ) : (
+                  <Text style={s.primaryBtnText}>
+                    {fetchedMeta ? `Add ${fetchedMeta.symbol} to Wallet` : "Add Custom Token"}
+                  </Text>
+                )}
               </LinearGradient>
             </TouchableOpacity>
           </View>
