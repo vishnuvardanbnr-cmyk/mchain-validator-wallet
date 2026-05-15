@@ -1,4 +1,4 @@
-import { Ionicons } from "@expo/vector-icons";
+import { Icon } from "@/components/Icon";
 import { BlurView } from "expo-blur";
 import { Tabs } from "expo-router";
 import React from "react";
@@ -51,7 +51,7 @@ export default function TabLayout() {
         options={{
           title: "Home",
           tabBarIcon: ({ color, focused }) => (
-            <Ionicons name={focused ? "home" : "home-outline"} size={22} color={color} />
+            <Icon name={focused ? "home" : "home-outline"} size={22} color={color} />
           ),
         }}
       />
@@ -62,7 +62,7 @@ export default function TabLayout() {
         options={{
           title: "Validator",
           tabBarIcon: ({ color, focused }) => (
-            <Ionicons name={focused ? "shield" : "shield-outline"} size={22} color={color} />
+            <Icon name={focused ? "shield" : "shield-outline"} size={22} color={color} />
           ),
         }}
       />
@@ -71,7 +71,7 @@ export default function TabLayout() {
         options={{
           title: "Earnings",
           tabBarIcon: ({ color, focused }) => (
-            <Ionicons name={focused ? "bar-chart" : "bar-chart-outline"} size={22} color={color} />
+            <Icon name={focused ? "bar-chart" : "bar-chart-outline"} size={22} color={color} />
           ),
         }}
       />
@@ -80,7 +80,7 @@ export default function TabLayout() {
         options={{
           title: "Settings",
           tabBarIcon: ({ color, focused }) => (
-            <Ionicons name={focused ? "settings" : "settings-outline"} size={22} color={color} />
+            <Icon name={focused ? "settings" : "settings-outline"} size={22} color={color} />
           ),
         }}
       />

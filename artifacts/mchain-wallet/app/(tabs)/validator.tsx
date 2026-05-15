@@ -1,4 +1,4 @@
-import { Ionicons } from "@expo/vector-icons";
+import { Icon } from "@/components/Icon";
 import { LinearGradient } from "expo-linear-gradient";
 import React, { useEffect, useRef, useState } from "react";
 import {
@@ -369,7 +369,7 @@ export default function ValidatorScreen() {
   const RegisterForm = (
     <View style={s.registerCard}>
       <View style={s.registerIcon}>
-        <Ionicons name="shield-outline" size={28} color={colors.primary} />
+        <Icon name="shield-outline" size={28} color={colors.primary} />
       </View>
       <Text style={s.registerTitle}>Become a Validator</Text>
       <Text style={s.registerDesc}>
@@ -378,15 +378,15 @@ export default function ValidatorScreen() {
 
       <View style={s.featureRow}>
         <View style={s.featureChip}>
-          <Ionicons name="time-outline" size={11} color={colors.primary} />
+          <Icon name="time-outline" size={11} color={colors.primary} />
           <Text style={s.featureChipText}>Uptime Rewards</Text>
         </View>
         <View style={s.featureChip}>
-          <Ionicons name="flash-outline" size={11} color={colors.primary} />
+          <Icon name="flash-outline" size={11} color={colors.primary} />
           <Text style={s.featureChipText}>Gas Fees</Text>
         </View>
         <View style={s.featureChip}>
-          <Ionicons name="hardware-chip-outline" size={11} color={colors.primary} />
+          <Icon name="hardware-chip-outline" size={11} color={colors.primary} />
           <Text style={s.featureChipText}>Chain ID 1888</Text>
         </View>
       </View>
@@ -436,7 +436,7 @@ export default function ValidatorScreen() {
             <ActivityIndicator color="#FFFFFF" size="small" />
           ) : (
             <>
-              <Ionicons name="shield-outline" size={18} color="#FFFFFF" />
+              <Icon name="shield-outline" size={18} color="#FFFFFF" />
               <Text style={s.registerBtnText}>Register as Validator</Text>
             </>
           )}
@@ -471,7 +471,7 @@ export default function ValidatorScreen() {
             <Animated.View style={[s.pulseRing2, { borderColor: activeColor, transform: [{ scale: ring2Scale }], opacity: ring2Opacity }]} />
             <Animated.View style={[s.pulseRing, { borderColor: activeColor, transform: [{ scale: pulseScale }], opacity: pulseOpacity }]} />
             <View style={[s.pulseInner, { borderWidth: 1.5, borderColor: activeColor + "40" }]}>
-              <Ionicons name={centerIcon()} size={28} color={activeColor} />
+              <Icon name={centerIcon()} size={28} color={activeColor} />
             </View>
           </View>
 
@@ -515,7 +515,7 @@ export default function ValidatorScreen() {
                     <ActivityIndicator color="#FFFFFF" size="small" />
                   ) : (
                     <>
-                      <Ionicons name="refresh-outline" size={14} color="#FFFFFF" />
+                      <Icon name="refresh-outline" size={14} color="#FFFFFF" />
                       <Text style={s.restartBtnText}>Restart Session</Text>
                     </>
                   )}
@@ -528,7 +528,7 @@ export default function ValidatorScreen() {
 
       <View style={s.totalCard}>
         <View style={s.totalIcon}>
-          <Ionicons name="trophy-outline" size={20} color={colors.success} />
+          <Icon name="trophy-outline" size={20} color={colors.success} />
         </View>
         <View>
           <Text style={s.totalLabel}>TOTAL MC EARNED</Text>
@@ -568,7 +568,7 @@ export default function ValidatorScreen() {
         renderItem={({ item }) => (
           <View style={s.rewardRow}>
             <View style={s.rewardIconWrap}>
-              <Ionicons name="trophy-outline" size={16} color={colors.success} />
+              <Icon name="trophy-outline" size={16} color={colors.success} />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={s.rewardDate}>{formatDate(item.createdAt)}</Text>
@@ -580,7 +580,7 @@ export default function ValidatorScreen() {
         ListEmptyComponent={
           isRegistered ? (
             <View style={s.emptyState}>
-              <Ionicons name="trophy-outline" size={32} color={colors.mutedForeground} />
+              <Icon name="trophy-outline" size={32} color={colors.mutedForeground} />
               <Text style={s.emptyText}>No rewards yet</Text>
             </View>
           ) : null

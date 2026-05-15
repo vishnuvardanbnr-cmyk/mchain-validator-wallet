@@ -1,4 +1,4 @@
-import { Ionicons } from "@expo/vector-icons";
+import { Icon } from "@/components/Icon";
 import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
 import React, { useState } from "react";
@@ -159,17 +159,17 @@ export default function SettingsScreen() {
                     autoCapitalize="none"
                   />
                   <TouchableOpacity onPress={handleSaveMoniker}>
-                    <Ionicons name="checkmark" size={20} color={colors.success} />
+                    <Icon name="checkmark" size={20} color={colors.success} />
                   </TouchableOpacity>
                   <TouchableOpacity onPress={() => { setEditingMoniker(false); setMonikerInput(moniker); }} style={{ marginLeft: 10 }}>
-                    <Ionicons name="close" size={20} color={colors.destructive} />
+                    <Icon name="close" size={20} color={colors.destructive} />
                   </TouchableOpacity>
                 </>
               ) : (
                 <>
                   <Text style={[s.rowValue, { fontSize: 15, fontFamily: "Inter_600SemiBold" }]}>{moniker || "—"}</Text>
                   <TouchableOpacity onPress={() => { setMonikerInput(moniker); setEditingMoniker(true); }}>
-                    <Ionicons name="pencil-outline" size={16} color={colors.mutedForeground} />
+                    <Icon name="pencil-outline" size={16} color={colors.mutedForeground} />
                   </TouchableOpacity>
                 </>
               )}
@@ -202,7 +202,7 @@ export default function SettingsScreen() {
               {loadingKey ? (
                 <ActivityIndicator color="#F87171" size="small" />
               ) : (
-                <Ionicons name={keyVisible ? "eye-off-outline" : "eye-outline"} size={18} color="#F87171" />
+                <Icon name={keyVisible ? "eye-off-outline" : "eye-outline"} size={18} color="#F87171" />
               )}
               <Text style={s.dangerText}>{keyVisible ? "Hide" : "Show"} Private Key</Text>
             </TouchableOpacity>
@@ -214,7 +214,7 @@ export default function SettingsScreen() {
             )}
 
             <TouchableOpacity style={[s.dangerRow, s.dangerRowLast]} onPress={handleExportKey}>
-              <Ionicons name="copy-outline" size={18} color="#F87171" />
+              <Icon name="copy-outline" size={18} color="#F87171" />
               <Text style={s.dangerText}>Export Private Key</Text>
             </TouchableOpacity>
           </View>

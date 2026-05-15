@@ -1,4 +1,4 @@
-import { Ionicons } from "@expo/vector-icons";
+import { Icon } from "@/components/Icon";
 import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
@@ -225,14 +225,14 @@ export default function ReceiveScreen() {
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
         <View style={s.header}>
           <TouchableOpacity style={s.backBtn} onPress={() => router.back()}>
-            <Ionicons name="close" size={18} color={colors.foreground} />
+            <Icon name="close" size={18} color={colors.foreground} />
           </TouchableOpacity>
           <Text style={s.headerTitle}>Receive MC</Text>
         </View>
 
         <View style={s.qrSection}>
           <View style={s.networkBadge}>
-            <Ionicons name="flash-outline" size={12} color={colors.primary} />
+            <Icon name="flash-outline" size={12} color={colors.primary} />
             <Text style={s.networkBadgeText}>MChain Network · Chain 1888</Text>
           </View>
 
@@ -255,7 +255,7 @@ export default function ReceiveScreen() {
                 : "Request specific amount"}
             </Text>
             <TouchableOpacity style={s.amountToggle} onPress={() => setShowAmountInput((v) => !v)}>
-              <Ionicons name={showAmountInput ? "chevron-up" : "pencil-outline"} size={12} color={colors.primary} />
+              <Icon name={showAmountInput ? "chevron-up" : "pencil-outline"} size={12} color={colors.primary} />
               <Text style={s.amountToggleText}>{showAmountInput ? "Hide" : "Set Amount"}</Text>
             </TouchableOpacity>
           </View>
@@ -299,7 +299,7 @@ export default function ReceiveScreen() {
                   colors={copied ? ["#10B981", "#059669"] : ["#0EA5E9", "#0284C7"]}
                   style={{ paddingVertical: 14, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, borderRadius: colors.radius }}
                 >
-                  <Ionicons name={copied ? "checkmark" : "copy-outline"} size={16} color="#FFFFFF" />
+                  <Icon name={copied ? "checkmark" : "copy-outline"} size={16} color="#FFFFFF" />
                   <Text style={{ fontSize: 15, fontFamily: "Inter_600SemiBold", color: "#FFFFFF" }}>
                     {copied ? "Copied!" : "Copy Address"}
                   </Text>
@@ -308,7 +308,7 @@ export default function ReceiveScreen() {
             </Animated.View>
 
             <TouchableOpacity style={s.shareBtn} onPress={handleShare} activeOpacity={0.85}>
-              <Ionicons name="share-social-outline" size={16} color={colors.foreground} />
+              <Icon name="share-social-outline" size={16} color={colors.foreground} />
               <Text style={s.shareBtnText}>Share</Text>
             </TouchableOpacity>
           </View>

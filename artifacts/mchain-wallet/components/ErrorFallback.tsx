@@ -1,4 +1,4 @@
-import { Ionicons } from "@expo/vector-icons";
+import { Icon } from "@/components/Icon";
 import { reloadAppAsync } from "expo";
 import React, { useState } from "react";
 import {
@@ -64,7 +64,7 @@ export function ErrorFallback({ error, resetError }: ErrorFallbackProps) {
             },
           ]}
         >
-          <Ionicons name="alert-circle-outline" size={20} color={colors.foreground} />
+          <Icon name="alert-circle-outline" size={20} color={colors.foreground} />
         </Pressable>
       ) : null}
 
@@ -131,7 +131,7 @@ export function ErrorFallback({ error, resetError }: ErrorFallbackProps) {
                     { opacity: pressed ? 0.6 : 1 },
                   ]}
                 >
-                  <Ionicons name="close" size={24} color={colors.foreground} />
+                  <Icon name="close" size={24} color={colors.foreground} />
                 </Pressable>
               </View>
 

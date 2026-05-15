@@ -1,4 +1,4 @@
-import { Ionicons } from "@expo/vector-icons";
+import { Icon } from "@/components/Icon";
 import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
@@ -383,7 +383,7 @@ export default function EarningsScreen() {
 
       {is404 && (
         <View style={s.notRegistered}>
-          <Ionicons name="shield-half-outline" size={28} color={colors.mutedForeground} />
+          <Icon name="shield-half-outline" size={28} color={colors.mutedForeground} />
           <Text style={s.notRegText}>Validator not registered yet</Text>
         </View>
       )}
@@ -415,11 +415,11 @@ export default function EarningsScreen() {
 
           <View style={s.pillRow}>
             <View style={s.pill}>
-              <Ionicons name="cube-outline" size={12} color={colors.mutedForeground} />
+              <Icon name="cube-outline" size={12} color={colors.mutedForeground} />
               <Text style={s.pillText}>Blocks: {earnings.stats.totalBlocksProposed.toLocaleString()}</Text>
             </View>
             <View style={s.pill}>
-              <Ionicons name="repeat-outline" size={12} color={colors.mutedForeground} />
+              <Icon name="repeat-outline" size={12} color={colors.mutedForeground} />
               <Text style={s.pillText}>Txs: {earnings.stats.totalTxsProcessed.toLocaleString()}</Text>
             </View>
           </View>
@@ -517,7 +517,7 @@ export default function EarningsScreen() {
             {SummaryHeader}
             {activeError() && (
               <View style={s.errorBanner}>
-                <Ionicons name="alert-circle-outline" size={18} color="#F87171" />
+                <Icon name="alert-circle-outline" size={18} color="#F87171" />
                 <Text style={s.errorText}>{activeError()}</Text>
                 <TouchableOpacity style={s.retryBtn} onPress={handleRetry}>
                   <Text style={s.retryText}>Retry</Text>
@@ -555,7 +555,7 @@ export default function EarningsScreen() {
         ListEmptyComponent={
           !activeInitLoading() && !activeError() ? (
             <View style={s.emptyState}>
-              <Ionicons name="bar-chart-outline" size={32} color={colors.mutedForeground} />
+              <Icon name="bar-chart-outline" size={32} color={colors.mutedForeground} />
               <Text style={s.emptyText}>No data yet</Text>
             </View>
           ) : null

@@ -1,4 +1,4 @@
-import { Ionicons } from "@expo/vector-icons";
+import { Icon } from "@/components/Icon";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
@@ -383,7 +383,7 @@ export default function SendScreen() {
         <Animated.View style={{ transform: [{ scale: successScale }], opacity: successOpacity, alignItems: "center" }}>
           <View style={s.successCircle}>
             <Animated.View style={{ transform: [{ rotate: spin }] }}>
-              <Ionicons name="checkmark" size={42} color={colors.success} />
+              <Icon name="checkmark" size={42} color={colors.success} />
             </Animated.View>
           </View>
           <Text style={s.successTitle}>Sent Successfully</Text>
@@ -423,7 +423,7 @@ export default function SendScreen() {
           <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
             <View style={s.header}>
               <TouchableOpacity style={s.backBtn} onPress={() => slideToStep("input")}>
-                <Ionicons name="arrow-back" size={18} color={colors.foreground} />
+                <Icon name="arrow-back" size={18} color={colors.foreground} />
               </TouchableOpacity>
               <Text style={s.headerTitle}>Review Transaction</Text>
             </View>
@@ -444,7 +444,7 @@ export default function SendScreen() {
               <View style={s.confirmRow}>
                 <Text style={s.confirmLabel}>Network</Text>
                 <View style={s.networkBadge}>
-                  <Ionicons name="flash-outline" size={10} color={colors.primary} />
+                  <Icon name="flash-outline" size={10} color={colors.primary} />
                   <Text style={s.networkBadgeText}>MChain · 1888</Text>
                 </View>
               </View>
@@ -459,7 +459,7 @@ export default function SendScreen() {
             </View>
 
             <View style={s.warningNote}>
-              <Ionicons name="warning-outline" size={14} color="#F59E0B" style={{ marginTop: 1 }} />
+              <Icon name="warning-outline" size={14} color="#F59E0B" style={{ marginTop: 1 }} />
               <Text style={s.warningText}>
                 This transaction will be signed with your private key and is irreversible. Double-check the recipient address.
               </Text>
@@ -476,7 +476,7 @@ export default function SendScreen() {
                   <ActivityIndicator color="#FFFFFF" />
                 ) : (
                   <>
-                    <Ionicons name="lock-closed-outline" size={16} color="#FFFFFF" />
+                    <Icon name="lock-closed-outline" size={16} color="#FFFFFF" />
                     <Text style={s.primaryBtnText}>Sign & Broadcast</Text>
                   </>
                 )}
@@ -503,7 +503,7 @@ export default function SendScreen() {
         >
           <View style={s.header}>
             <TouchableOpacity style={s.backBtn} onPress={() => router.back()}>
-              <Ionicons name="close" size={18} color={colors.foreground} />
+              <Icon name="close" size={18} color={colors.foreground} />
             </TouchableOpacity>
             <Text style={s.headerTitle}>Send MC</Text>
           </View>
@@ -514,7 +514,7 @@ export default function SendScreen() {
               <Text style={s.balanceValue}>{balance} MC</Text>
             </View>
             <TouchableOpacity style={s.refreshBtn} onPress={() => refetchAccount()}>
-              <Ionicons name="refresh-outline" size={14} color={colors.mutedForeground} />
+              <Icon name="refresh-outline" size={14} color={colors.mutedForeground} />
             </TouchableOpacity>
           </View>
 
@@ -533,7 +533,7 @@ export default function SendScreen() {
                 autoCorrect={false}
               />
               <TouchableOpacity style={s.inputAction} onPress={handlePasteAddress}>
-                <Ionicons name="clipboard-outline" size={14} color={colors.primary} />
+                <Icon name="clipboard-outline" size={14} color={colors.primary} />
                 <Text style={s.inputActionText}>Paste</Text>
               </TouchableOpacity>
             </View>
@@ -554,11 +554,11 @@ export default function SendScreen() {
                     if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                   }}
                 >
-                  <Ionicons name="time-outline" size={13} color={colors.mutedForeground} />
+                  <Icon name="time-outline" size={13} color={colors.mutedForeground} />
                   <Text style={s.recentAddress} numberOfLines={1}>
                     {shortenAddress(addr, 10)}
                   </Text>
-                  <Ionicons name="chevron-forward" size={13} color={colors.mutedForeground} />
+                  <Icon name="chevron-forward" size={13} color={colors.mutedForeground} />
                 </TouchableOpacity>
               ))}
             </View>
@@ -613,7 +613,7 @@ export default function SendScreen() {
           >
             <LinearGradient colors={["#0EA5E9", "#0284C7"]} style={s.primaryGrad}>
               <Text style={s.primaryBtnText}>Continue</Text>
-              <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
+              <Icon name="arrow-forward" size={18} color="#FFFFFF" />
             </LinearGradient>
           </TouchableOpacity>
         </ScrollView>
