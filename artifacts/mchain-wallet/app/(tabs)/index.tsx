@@ -5,9 +5,10 @@ import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
-import React, { useEffect } from "react";
+import React, { useEffect, useRef } from "react";
 import {
   ActivityIndicator,
+  Animated,
   Platform,
   RefreshControl,
   ScrollView,
@@ -46,6 +47,31 @@ export default function DashboardScreen() {
   const [isRestarting, setIsRestarting] = React.useState(false);
   const [showNewWallet, setShowNewWallet] = React.useState(false);
   const [showSwitcher, setShowSwitcher] = React.useState(false);
+  const [rpcMs, setRpcMs] = React.useState<number | null>(null);
+  const [rpcPinging, setRpcPinging] = React.useState(false);
+  const rpcBadgeOpacity = useRef(new Animated.Value(0)).current;
+  const rpcHideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  async function handlePingRpc() {
+    if (rpcPinging) return;
+    if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setRpcPinging(true);
+    if (rpcHideTimer.current) clearTimeout(rpcHideTimer.current);
+    Animated.timing(rpcBadgeOpacity, { toValue: 0, duration: 100, useNativeDriver: true }).start();
+    try {
+      const start = Date.now();
+      await api.getChainInfo();
+      setRpcMs(Date.now() - start);
+    } catch {
+      setRpcMs(-1);
+    } finally {
+      setRpcPinging(false);
+      Animated.timing(rpcBadgeOpacity, { toValue: 1, duration: 200, useNativeDriver: true }).start();
+      rpcHideTimer.current = setTimeout(() => {
+        Animated.timing(rpcBadgeOpacity, { toValue: 0, duration: 400, useNativeDriver: true }).start();
+      }, 4000);
+    }
+  }
 
   async function handleRestartSession() {
     setIsRestarting(true);
@@ -141,6 +167,30 @@ export default function DashboardScreen() {
       width: 10,
       height: 10,
       borderRadius: 5,
+    },
+    rpcBadge: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 5,
+      paddingHorizontal: 10,
+      paddingVertical: 5,
+      borderRadius: 20,
+      backgroundColor: colors.card,
+      borderWidth: 1,
+      borderColor: colors.border,
+      position: "absolute",
+      left: 20,
+      top: insets.top + (Platform.OS === "web" ? 67 : 8) + 38,
+    },
+    rpcBadgeDot: {
+      width: 7,
+      height: 7,
+      borderRadius: 4,
+    },
+    rpcBadgeText: {
+      fontSize: 12,
+      fontFamily: "Inter_600SemiBold",
+      color: colors.foreground,
     },
     balanceCard: {
       marginHorizontal: 20,
@@ -344,14 +394,36 @@ export default function DashboardScreen() {
         <View style={s.header}>
           <TouchableOpacity style={s.headerLeft} onPress={() => setShowSwitcher(true)} activeOpacity={0.7}>
             <Icon name="menu" size={22} color={colors.foreground} />
-            <View style={[s.statusDot, {
-              backgroundColor:
-                vStatus === "active" ? "#10B981" :
-                vStatus === "pending" ? "#F59E0B" :
-                vStatus === "banned" ? "#EF4444" :
-                colors.mutedForeground,
-            }]} />
+            <TouchableOpacity
+              onPress={handlePingRpc}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              activeOpacity={0.7}
+            >
+              {rpcPinging ? (
+                <ActivityIndicator size={10} color={colors.primary} style={{ width: 10, height: 10 }} />
+              ) : (
+                <View style={[s.statusDot, {
+                  backgroundColor:
+                    vStatus === "active" ? "#10B981" :
+                    vStatus === "pending" ? "#F59E0B" :
+                    vStatus === "banned" ? "#EF4444" :
+                    colors.mutedForeground,
+                }]} />
+              )}
+            </TouchableOpacity>
           </TouchableOpacity>
+          <Animated.View style={[s.rpcBadge, { opacity: rpcBadgeOpacity }]} pointerEvents="none">
+            <View style={[s.rpcBadgeDot, {
+              backgroundColor:
+                rpcMs === null ? colors.mutedForeground :
+                rpcMs < 0 ? "#EF4444" :
+                rpcMs < 300 ? "#10B981" :
+                rpcMs < 700 ? "#F59E0B" : "#EF4444",
+            }]} />
+            <Text style={s.rpcBadgeText}>
+              {rpcMs === null ? "" : rpcMs < 0 ? "RPC error" : `${rpcMs} ms`}
+            </Text>
+          </Animated.View>
           <View style={s.headerRight}>
             <TouchableOpacity style={s.headerIconBtn} onPress={() => setShowNewWallet(true)}>
               <Icon name="wallet" size={18} color={colors.foreground} />
