@@ -342,26 +342,12 @@ export function ProfileModal({ visible, onClose, profile }: Props) {
                     </View>
                     <Text style={[s.kycSub, { marginBottom: 14, marginTop: -8 }]}>Display name cannot be changed after registration</Text>
 
-                    <Text style={s.label}>PHONE NUMBER <Text style={{ color: colors.destructive }}>*</Text></Text>
-                    <View style={[s.phoneRow, !phone.trim() && { borderColor: colors.border }]}>
+                    <Text style={s.label}>PHONE NUMBER</Text>
+                    <View style={[s.input, { flexDirection: "row", alignItems: "center", gap: 10, justifyContent: "flex-start", opacity: 0.7 }]} pointerEvents="none">
                       <Icon name="phone-portrait-outline" size={16} color={colors.mutedForeground} />
-                      <TextInput
-                        style={[s.input, { flex: 1, marginBottom: 0 }]}
-                        value={phone}
-                        onChangeText={setPhone}
-                        placeholder="+1 234 567 890"
-                        placeholderTextColor={colors.mutedForeground}
-                        keyboardType="phone-pad"
-                        maxLength={20}
-                      />
+                      <Text style={{ fontSize: 14, fontFamily: "Inter_400Regular", color: colors.foreground }} selectable={false}>{phone || "—"}</Text>
                     </View>
-                    <Text style={[s.kycSub, { marginBottom: 14 }]}>Required — visible only to your trade counterparty after order is confirmed</Text>
-
-                    <TouchableOpacity style={[s.btn, loading && { opacity: 0.6 }]} onPress={handleSaveProfile} disabled={loading} activeOpacity={0.85}>
-                      <LinearGradient colors={["#0EA5E9", "#0284C7"]} style={s.btnGrad}>
-                        {loading ? <ActivityIndicator color="#FFF" /> : <Text style={s.btnText}>Save Profile</Text>}
-                      </LinearGradient>
-                    </TouchableOpacity>
+                    <Text style={[s.kycSub, { marginBottom: 14, marginTop: -8 }]}>Visible only to your trade counterparty after order is confirmed</Text>
 
                     <View style={s.disconnectSection}>
                       <TouchableOpacity
