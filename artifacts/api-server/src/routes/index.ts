@@ -4,6 +4,7 @@ import chainProxyRouter from "./chain-proxy";
 import rpcRouter from "./rpc";
 import p2pRouter from "./p2p";
 import adminRouter from "./admin";
+import legalRouter from "./legal";
 
 const router: IRouter = Router();
 
@@ -12,5 +13,6 @@ router.use(rpcRouter);
 router.use(chainProxyRouter);
 router.use(p2pRouter);
 router.use(adminRouter);
+router.use(legalRouter);
 
 export default router;

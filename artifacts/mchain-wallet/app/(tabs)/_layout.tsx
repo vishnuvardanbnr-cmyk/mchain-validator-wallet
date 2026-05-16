@@ -77,6 +77,15 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="dapp"
+        options={{
+          title: "dApps",
+          tabBarIcon: ({ color, focused }) => (
+            <Icon name={focused ? "globe" : "globe-outline"} size={22} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="settings"
         options={{
           title: "Settings",

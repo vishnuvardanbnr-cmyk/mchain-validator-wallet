@@ -6,6 +6,7 @@ import {
   ActivityIndicator,
   Animated,
   Easing,
+  KeyboardAvoidingView,
   Modal,
   Platform,
   ScrollView,
@@ -359,6 +360,10 @@ export function NewWalletModal({ visible, onClose }: Props) {
     >
       <Animated.View style={[s.overlay, { opacity: overlayOpacity }]}>
         <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={onClose} />
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          keyboardVerticalOffset={0}
+        >
         <Animated.View style={[s.sheet, { transform: [{ translateY: slideAnim }] }]}>
           <View style={s.handle} />
           <View style={s.sheetHeader}>
@@ -512,6 +517,7 @@ export function NewWalletModal({ visible, onClose }: Props) {
             )}
           </ScrollView>
         </Animated.View>
+        </KeyboardAvoidingView>
       </Animated.View>
     </Modal>
   );

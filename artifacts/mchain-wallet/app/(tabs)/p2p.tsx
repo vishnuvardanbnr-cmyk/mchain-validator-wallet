@@ -1,12 +1,13 @@
 import { Icon } from "@/components/Icon";
 import { useWallet } from "@/context/WalletContext";
 import { useColors } from "@/hooks/useColors";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   KeyboardAvoidingView,
   Platform,
   RefreshControl,
@@ -149,6 +150,7 @@ export default function P2PScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { mxcAddress } = useWallet();
+  const queryClient = useQueryClient();
 
   const [token, setToken] = useState<Token>("MC");
   const [side, setSide] = useState<Side>("buy");
@@ -210,6 +212,29 @@ export default function P2PScreen() {
   const [connectName, setConnectName] = useState("");
   const [connectPhone, setConnectPhone] = useState("");
   const [connectErr, setConnectErr] = useState("");
+
+  function handleDisconnect() {
+    Alert.alert(
+      "Disconnect P2P Wallet",
+      "Your profile will be removed from the P2P market. You can reconnect anytime.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Disconnect",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              if (mxcAddress) await p2pApi.disconnectProfile(mxcAddress);
+            } catch {
+              // ignore — even if server fails, clear locally
+            }
+            queryClient.setQueryData(["p2p_profile", mxcAddress], null);
+            if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          },
+        },
+      ]
+    );
+  }
 
   async function handleActivate() {
     if (!mxcAddress) return;
@@ -378,6 +403,9 @@ export default function P2PScreen() {
           </TouchableOpacity>
           <TouchableOpacity style={s.iconBtn} onPress={() => setShowProfile(true)}>
             <Icon name="person-circle-outline" size={18} color={colors.foreground} />
+          </TouchableOpacity>
+          <TouchableOpacity style={[s.iconBtn, { borderColor: "#EF444440" }]} onPress={handleDisconnect}>
+            <Icon name="log-out-outline" size={18} color="#F87171" />
           </TouchableOpacity>
         </View>
       </View>

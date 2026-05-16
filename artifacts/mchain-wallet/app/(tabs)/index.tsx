@@ -1,11 +1,12 @@
 import { AddTokenModal } from "@/components/AddTokenModal";
+import { AssetDetailModal, type AssetItem } from "@/components/AssetDetailModal";
 import { Icon } from "@/components/Icon";
 import { NewWalletModal } from "@/components/NewWalletModal";
 import { WalletSwitcherModal } from "@/components/WalletSwitcherModal";
 import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import React, { useEffect, useRef } from "react";
 import {
   ActivityIndicator,
@@ -19,6 +20,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { Swipeable } from "react-native-gesture-handler";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQuery } from "@tanstack/react-query";
 import { useWallet } from "@/context/WalletContext";
@@ -35,10 +37,12 @@ function TokenBalanceRow({
   token,
   userEthAddress,
   onRemove,
+  onPress,
 }: {
   token: CustomToken;
   userEthAddress: string | null;
   onRemove: () => void;
+  onPress: () => void;
 }) {
   const colors = useColors();
   const s = StyleSheet.create({
@@ -48,6 +52,7 @@ function TokenBalanceRow({
       paddingHorizontal: 16,
       paddingVertical: 14,
       gap: 12,
+      backgroundColor: colors.background,
     },
     tokenIconWrap: {
       width: 40,
@@ -69,6 +74,13 @@ function TokenBalanceRow({
     tokenLogoImg: { width: 40, height: 40, borderRadius: 20 },
     verifiedBadge: { paddingHorizontal: 5, paddingVertical: 1, borderRadius: 5, backgroundColor: "#10B98115", borderWidth: 1, borderColor: "#10B98140" },
     verifiedText: { fontSize: 9, fontFamily: "Inter_700Bold", color: "#10B981" },
+    deleteAction: {
+      backgroundColor: "#EF4444",
+      justifyContent: "center",
+      alignItems: "center",
+      width: 72,
+    },
+    deleteActionText: { fontSize: 11, fontFamily: "Inter_600SemiBold", color: "#FFFFFF", marginTop: 3 },
   });
 
   const { data: balance, isLoading } = useQuery({
@@ -82,39 +94,49 @@ function TokenBalanceRow({
     staleTime: 15_000,
   });
 
+  function renderRightActions() {
+    return (
+      <TouchableOpacity style={s.deleteAction} onPress={onRemove} activeOpacity={0.85}>
+        <Icon name="trash-outline" size={20} color="#FFFFFF" />
+        <Text style={s.deleteActionText}>Remove</Text>
+      </TouchableOpacity>
+    );
+  }
+
   return (
-    <View style={s.tokenRow}>
-      {token.logoUrl ? (
-        <Image source={{ uri: token.logoUrl }} style={s.tokenLogoImg} />
-      ) : (
-        <View style={s.tokenIconWrap}>
-          <Text style={s.tokenIconText}>{token.symbol.slice(0, 3)}</Text>
-        </View>
-      )}
-      <View style={s.tokenInfo}>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-          <Text style={s.tokenName}>{token.symbol}</Text>
-          {token.verified && (
-            <View style={s.verifiedBadge}>
-              <Text style={s.verifiedText}>✓</Text>
-            </View>
-          )}
-        </View>
-        <Text style={s.tokenSymbol} numberOfLines={1}>{token.name}</Text>
-      </View>
-      <View style={s.tokenAmountCol}>
-        {isLoading ? (
-          <ActivityIndicator size="small" color={colors.primary} style={{ marginBottom: 4 }} />
+    <Swipeable renderRightActions={renderRightActions} overshootRight={false}>
+      <TouchableOpacity style={s.tokenRow} onPress={onPress} activeOpacity={0.8}>
+        {token.logoUrl ? (
+          <Image source={{ uri: token.logoUrl }} style={s.tokenLogoImg} />
         ) : (
-          <Text style={[s.tokenAmount, balance && balance !== "0" ? {} : { color: colors.mutedForeground }]}>
-            {balance ?? "—"}
-          </Text>
+          <View style={s.tokenIconWrap}>
+            <Text style={s.tokenIconText}>{token.symbol.slice(0, 3)}</Text>
+          </View>
         )}
-        <TouchableOpacity onPress={onRemove} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <Icon name="trash-outline" size={14} color={colors.mutedForeground} />
-        </TouchableOpacity>
-      </View>
-    </View>
+        <View style={s.tokenInfo}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+            <Text style={s.tokenName}>{token.symbol}</Text>
+            {token.verified && (
+              <View style={s.verifiedBadge}>
+                <Text style={s.verifiedText}>✓</Text>
+              </View>
+            )}
+          </View>
+          <Text style={s.tokenSymbol} numberOfLines={1}>{token.name}</Text>
+        </View>
+        <View style={s.tokenAmountCol}>
+          {isLoading ? (
+            <ActivityIndicator size="small" color={colors.primary} style={{ marginBottom: 4 }} />
+          ) : (
+            <Text style={[s.tokenAmount, balance && balance !== "0" ? {} : { color: colors.mutedForeground }]}>
+              {balance ?? "—"}
+            </Text>
+          )}
+          <Text style={s.tokenSub}>{token.symbol}</Text>
+        </View>
+        <Icon name="chevron-forward" size={14} color={colors.border} />
+      </TouchableOpacity>
+    </Swipeable>
   );
 }
 
@@ -143,6 +165,7 @@ export default function DashboardScreen() {
   const [rpcMs, setRpcMs] = React.useState<number | null>(null);
   const [rpcPinging, setRpcPinging] = React.useState(false);
   const [showRpcBadge, setShowRpcBadge] = React.useState(false);
+  const [selectedAsset, setSelectedAsset] = React.useState<AssetItem | null>(null);
   const rpcBadgeOpacity = useRef(new Animated.Value(0)).current;
   const rpcHideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -170,13 +193,17 @@ export default function DashboardScreen() {
     }
   }
 
-  // Auto-poll: ping immediately, then every 30 s.
-  // The `cancelled` flag ensures results from a stale effect invocation
-  // (Expo Router remounts) never overwrite state from the live one.
+  // Show ms badge whenever this tab is focused (auto-click the dot)
+  useFocusEffect(
+    React.useCallback(() => {
+      void handlePingRpc();
+    }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  );
+
+  // Silent background poll every 30 s to keep dot colour fresh
   React.useEffect(() => {
     let cancelled = false;
-
-    async function ping() {
+    const id = setInterval(async () => {
       if (cancelled) return;
       try {
         const start = Date.now();
@@ -185,10 +212,7 @@ export default function DashboardScreen() {
       } catch {
         if (!cancelled) setRpcMs(-1);
       }
-    }
-
-    ping();
-    const id = setInterval(ping, 30_000);
+    }, 30_000);
     return () => {
       cancelled = true;
       clearInterval(id);
@@ -778,7 +802,11 @@ export default function DashboardScreen() {
           {activeTab === "assets" && (
             <View style={s.tabPanel}>
               {/* Native MC row */}
-              <View style={s.tokenRow}>
+              <TouchableOpacity
+                style={s.tokenRow}
+                activeOpacity={0.8}
+                onPress={() => setSelectedAsset({ kind: "native", balance, address: mxcAddress ?? "" })}
+              >
                 <View style={s.tokenIconWrap}>
                   <Text style={s.tokenIconText}>MC</Text>
                 </View>
@@ -790,7 +818,8 @@ export default function DashboardScreen() {
                   <Text style={s.tokenAmount}>{balance}</Text>
                   <Text style={s.tokenSub}>MC</Text>
                 </View>
-              </View>
+                <Icon name="chevron-forward" size={14} color={colors.border} style={{ marginLeft: 4 }} />
+              </TouchableOpacity>
 
               {/* Custom tokens */}
               {customTokens.map((token) => (
@@ -802,6 +831,7 @@ export default function DashboardScreen() {
                     await removeCustomToken(token.contractAddress);
                     refetchTokens();
                   }}
+                  onPress={() => setSelectedAsset({ kind: "token", token, balance: "—", address: ethAddress ?? "" })}
                 />
               ))}
 
@@ -858,6 +888,11 @@ export default function DashboardScreen() {
         visible={showAddToken}
         onClose={() => setShowAddToken(false)}
         onAdded={() => { refetchTokens(); }}
+      />
+      <AssetDetailModal
+        asset={selectedAsset}
+        visible={!!selectedAsset}
+        onClose={() => setSelectedAsset(null)}
       />
     </View>
   );
