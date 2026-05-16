@@ -101,14 +101,21 @@ export interface RpcCallResult {
 }
 
 export interface Transaction {
+  id: number;
   hash: string;
-  from: string;
-  to: string;
+  fromAddress: string;
+  toAddress: string;
+  fromEth: string;
+  toEth: string;
+  fromMxc: string;
+  toMxc: string;
   amount: string;
   nonce: number;
-  timestamp: string;
+  createdAt: string;
+  confirmedAt: string | null;
   blockHeight: number;
   status: string;
+  txType: string;
 }
 
 export interface ValidatorInfo {

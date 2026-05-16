@@ -1,12 +1,7 @@
 import { Icon } from "@/components/Icon";
 import { useColors } from "@/hooks/useColors";
 import { api, type Transaction } from "@/services/api";
-import {
-  ethAddressToMxc,
-  mxcAddressToEthAddress,
-  shortenAddress,
-  weiToMc,
-} from "@/services/crypto";
+import { shortenAddress, weiToMc } from "@/services/crypto";
 import type { CustomToken } from "@/services/tokens";
 import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
@@ -32,20 +27,6 @@ export type AssetItem =
 
 type TxFilter = "all" | "send" | "receive";
 
-/** Safely convert a 0x address to mxc bech32. Falls back to the original if conversion fails. */
-function toMxc(addr: string): string {
-  if (!addr) return "";
-  if (addr.startsWith("mxc1")) return addr;
-  try { return ethAddressToMxc(addr); } catch { return addr; }
-}
-
-/** Safely convert an mxc address to 0x ETH format. Falls back to the original if conversion fails. */
-function toEth(addr: string): string {
-  if (!addr) return "";
-  if (addr.startsWith("0x") || addr.startsWith("0X")) return addr.toLowerCase();
-  try { return mxcAddressToEthAddress(addr); } catch { return addr; }
-}
-
 // ── Transaction detail sheet ──────────────────────────────────────────────────
 
 function TxDetailSheet({
@@ -61,18 +42,18 @@ function TxDetailSheet({
   const insets = useSafeAreaInsets();
   const [copied, setCopied] = useState<string | null>(null);
 
-  const isSend = tx.from?.toLowerCase() === myEthAddress?.toLowerCase();
-  const isReceive = tx.to?.toLowerCase() === myEthAddress?.toLowerCase();
+  const isSend = tx.fromEth?.toLowerCase() === myEthAddress?.toLowerCase();
+  const isReceive = tx.toEth?.toLowerCase() === myEthAddress?.toLowerCase();
   const isSelf = isSend && isReceive;
   const label = isSelf ? "Self Transfer" : isSend ? "Sent" : "Received";
   const color = isSelf ? colors.primary : isSend ? "#EF4444" : "#10B981";
   const amount = tx.amount ? weiToMc(tx.amount) : "—";
   const prefix = isSelf ? "" : isSend ? "- " : "+ ";
 
-  const fromMxc = toMxc(tx.from || "");
-  const destMxc = toMxc(tx.to || "");
-  const fromEthAddr = (tx.from || "").toLowerCase();
-  const toEthAddr = (tx.to || "").toLowerCase();
+  const fromMxc = tx.fromMxc || tx.fromAddress || "";
+  const destMxc = tx.toMxc || tx.toAddress || "";
+  const fromEthAddr = tx.fromEth || "";
+  const toEthAddr = tx.toEth || "";
 
   async function copy(text: string, key: string) {
     await Clipboard.setStringAsync(text);
@@ -81,8 +62,8 @@ function TxDetailSheet({
     setTimeout(() => setCopied(null), 1500);
   }
 
-  const date = tx.timestamp
-    ? new Date(tx.timestamp).toLocaleString(undefined, {
+  const date = tx.createdAt
+    ? new Date(tx.createdAt).toLocaleString(undefined, {
         year: "numeric", month: "short", day: "numeric",
         hour: "2-digit", minute: "2-digit", second: "2-digit",
       })
@@ -123,7 +104,7 @@ function TxDetailSheet({
     explorerBtnText: { fontSize: 14, fontFamily: "Inter_600SemiBold", color: colors.primary },
   });
 
-  const statusOk = tx.status === "success";
+  const statusOk = tx.status === "confirmed";
 
   return (
     <Modal visible transparent animationType="slide" onRequestClose={onClose}>
@@ -244,12 +225,12 @@ function TxRow({
   onPress: () => void;
 }) {
   const colors = useColors();
-  const isSend = tx.from?.toLowerCase() === myEthAddress?.toLowerCase();
-  const isReceive = tx.to?.toLowerCase() === myEthAddress?.toLowerCase();
+  const isSend = tx.fromEth?.toLowerCase() === myEthAddress?.toLowerCase();
+  const isReceive = tx.toEth?.toLowerCase() === myEthAddress?.toLowerCase();
   const isSelf = isSend && isReceive;
   const amount = tx.amount ? weiToMc(tx.amount) : "—";
-  const date = tx.timestamp
-    ? new Date(tx.timestamp).toLocaleDateString(undefined, {
+  const date = tx.createdAt
+    ? new Date(tx.createdAt).toLocaleDateString(undefined, {
         month: "short", day: "numeric",
         hour: "2-digit", minute: "2-digit",
       })
@@ -263,8 +244,8 @@ function TxRow({
 
   // Counterparty address shown in mxc format
   const counterparty = isSend && !isSelf
-    ? toMxc(tx.to || "")
-    : toMxc(tx.from || "");
+    ? (tx.toMxc || tx.toAddress || "")
+    : (tx.fromMxc || tx.fromAddress || "");
   const counterpartyLabel = isSend && !isSelf ? "To" : "From";
 
   const s = StyleSheet.create({
@@ -302,8 +283,8 @@ function TxRow({
           {isSelf ? "" : isSend ? "- " : "+ "}{amount} MC
         </Text>
         <Text style={s.date}>{date}</Text>
-        <View style={[s.statusBadge, { backgroundColor: tx.status === "success" ? "#10B98118" : "#EF444418" }]}>
-          <Text style={[s.statusText, { color: tx.status === "success" ? "#10B981" : "#EF4444" }]}>
+        <View style={[s.statusBadge, { backgroundColor: tx.status === "confirmed" ? "#10B98118" : "#EF444418" }]}>
+          <Text style={[s.statusText, { color: tx.status === "confirmed" ? "#10B981" : "#EF4444" }]}>
             {tx.status?.toUpperCase() ?? "UNKNOWN"}
           </Text>
         </View>
@@ -329,14 +310,14 @@ export function AssetDetailModal({
   const [filter, setFilter] = useState<TxFilter>("all");
   const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
 
-  // Derive both address formats from whatever was passed in
   const rawAddress = asset?.address ?? "";
-  const mxcAddr = rawAddress.startsWith("mxc1") ? rawAddress : toMxc(rawAddress);
+  // For the API call we need mxc format; for comparisons we use fromEth/toEth from the response directly
+  const mxcAddr = rawAddress.startsWith("mxc1") ? rawAddress : rawAddress;
+  // ethAddr is only used for the token explorer link and passing to child components
   const ethAddr = rawAddress.startsWith("0x") || rawAddress.startsWith("0X")
     ? rawAddress.toLowerCase()
-    : toEth(rawAddress);
+    : rawAddress;
 
-  // API call uses mxc address (what the server expects)
   const { data, isLoading } = useQuery({
     queryKey: ["assetTxHistory", mxcAddr],
     queryFn: () => api.getTransactions(mxcAddr, 50),
@@ -347,13 +328,22 @@ export function AssetDetailModal({
 
   const txs = data?.transactions ?? [];
 
-  // Filtering uses ETH address because tx.from/tx.to are 0x format
+  // Use fromEth/toEth directly from the API response — no conversion needed
+  const myEthFromTx = txs.find(tx => tx.fromEth || tx.toEth)
+    ? txs.reduce((found, tx) => {
+        if (found) return found;
+        // The mxcAddr is our address; find our eth address from any matching tx
+        if (tx.fromMxc === mxcAddr || tx.fromAddress === mxcAddr) return tx.fromEth;
+        if (tx.toMxc === mxcAddr || tx.toAddress === mxcAddr) return tx.toEth;
+        return found;
+      }, "" as string)
+    : "";
+
   const filtered = txs.filter((tx) => {
-    const from = tx.from?.toLowerCase() ?? "";
-    const to = tx.to?.toLowerCase() ?? "";
-    const me = ethAddr.toLowerCase();
-    if (filter === "send") return from === me && to !== me;
-    if (filter === "receive") return to === me && from !== me;
+    const from = tx.fromMxc || tx.fromAddress || "";
+    const to = tx.toMxc || tx.toAddress || "";
+    if (filter === "send") return from === mxcAddr && to !== mxcAddr;
+    if (filter === "receive") return to === mxcAddr && from !== mxcAddr;
     return true;
   });
 
@@ -469,7 +459,7 @@ export function AssetDetailModal({
                   <TxRow
                     key={tx.hash}
                     tx={tx}
-                    myEthAddress={ethAddr}
+                    myEthAddress={myEthFromTx}
                     onPress={() => setSelectedTx(tx)}
                   />
                 ))}
@@ -482,7 +472,7 @@ export function AssetDetailModal({
       {selectedTx && (
         <TxDetailSheet
           tx={selectedTx}
-          myEthAddress={ethAddr}
+          myEthAddress={myEthFromTx}
           onClose={() => setSelectedTx(null)}
         />
       )}

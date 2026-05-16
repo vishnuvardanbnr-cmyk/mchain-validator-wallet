@@ -417,34 +417,30 @@ export default function SendScreen() {
           <Text style={s.successSub}>{amount} MC → {shortenAddress(recipient, 8)}</Text>
         </Animated.View>
         <Animated.View style={{ opacity: hashOpacity, width: "100%" }}>
-          <View style={s.txHashBox}>
-            <Text style={s.txHashLabel}>TRANSACTION HASH</Text>
-            <Text style={s.txHashText} selectable numberOfLines={3}>{txHash}</Text>
-          </View>
+          <TouchableOpacity
+            style={s.txHashBox}
+            activeOpacity={0.7}
+            onPress={async () => {
+              await Clipboard.setStringAsync(txHash);
+              setToast("TX hash copied");
+            }}
+          >
+            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+              <Text style={s.txHashLabel}>TRANSACTION HASH</Text>
+              <Icon name="copy-outline" size={13} color={colors.mutedForeground} />
+            </View>
+            <Text style={s.txHashText} numberOfLines={3}>{txHash}</Text>
+          </TouchableOpacity>
           <View style={s.successBtnRow}>
-            <TouchableOpacity
-              style={s.secondaryBtn}
-              onPress={async () => {
-                await Clipboard.setStringAsync(txHash);
-                setToast("TX hash copied");
-              }}
-            >
-              <Text style={s.secondaryBtnText}>Copy Hash</Text>
+            <TouchableOpacity style={s.secondaryBtn} onPress={reset}>
+              <Text style={s.secondaryBtnText}>Send Again</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={s.successBtn} onPress={reset}>
+            <TouchableOpacity style={s.successBtn} onPress={() => { reset(); router.replace("/(tabs)"); }}>
               <LinearGradient colors={["#0EA5E9", "#0284C7"]} style={s.successBtnGrad}>
-                <Text style={s.successBtnText}>Send Again</Text>
+                <Text style={s.successBtnText}>Done</Text>
               </LinearGradient>
             </TouchableOpacity>
           </View>
-          <TouchableOpacity
-            style={[s.secondaryBtn, { marginTop: 12, flex: 0, width: "100%", flexDirection: "row", gap: 8 }]}
-            onPress={() => { reset(); router.replace("/(tabs)"); }}
-            activeOpacity={0.8}
-          >
-            <Icon name="home-outline" size={16} color={colors.foreground} />
-            <Text style={s.secondaryBtnText}>Back to Home</Text>
-          </TouchableOpacity>
         </Animated.View>
         <Toast message={toast} visible={!!toast} onHide={() => setToast("")} />
       </View>
