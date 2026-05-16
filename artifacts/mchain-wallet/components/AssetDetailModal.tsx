@@ -300,23 +300,36 @@ function TxRow({
   const counterpartyLabel = isSend && !isSelf ? "To" : "From";
   const amount = formatAmount(entry.amountRaw, entry.decimals);
 
+  const ROW_HEIGHT = 72;
   const s = StyleSheet.create({
     row: {
-      flexDirection: "row", alignItems: "center",
-      paddingHorizontal: 20, paddingVertical: 14, gap: 12,
-      borderBottomWidth: 1, borderBottomColor: colors.border,
+      flexDirection: "row",
+      alignItems: "center",
+      minHeight: ROW_HEIGHT,
+      paddingHorizontal: 20,
+      paddingVertical: 14,
+      gap: 12,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border,
       backgroundColor: colors.background,
     },
-    iconWrap: { width: 42, height: 42, borderRadius: 21, alignItems: "center", justifyContent: "center" },
-    info: { flex: 1, gap: 2 },
-    label: { fontSize: 14, fontFamily: "Inter_600SemiBold", color: colors.foreground },
-    addr: { fontSize: 11, fontFamily: "Inter_400Regular", color: colors.mutedForeground },
-    right: { alignItems: "flex-end", gap: 3 },
-    amount: { fontSize: 14, fontFamily: "Inter_700Bold" },
-    date: { fontSize: 11, fontFamily: "Inter_400Regular", color: colors.mutedForeground },
-    statusBadge: { paddingHorizontal: 5, paddingVertical: 1, borderRadius: 4 },
-    statusText: { fontSize: 9, fontFamily: "Inter_700Bold" },
-    chevron: { opacity: 0.4 },
+    iconWrap: {
+      width: 44,
+      height: 44,
+      borderRadius: 22,
+      alignItems: "center",
+      justifyContent: "center",
+      flexShrink: 0,
+    },
+    info: { flex: 1, justifyContent: "center", gap: 3 },
+    label: { fontSize: 14, fontFamily: "Inter_600SemiBold", color: colors.foreground, lineHeight: 18 },
+    addr: { fontSize: 11, fontFamily: "Inter_400Regular", color: colors.mutedForeground, lineHeight: 15 },
+    right: { alignItems: "flex-end", justifyContent: "center", gap: 3, flexShrink: 0 },
+    amount: { fontSize: 14, fontFamily: "Inter_700Bold", lineHeight: 18 },
+    date: { fontSize: 11, fontFamily: "Inter_400Regular", color: colors.mutedForeground, lineHeight: 15 },
+    statusBadge: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
+    statusText: { fontSize: 9, fontFamily: "Inter_700Bold", lineHeight: 12 },
+    chevron: { opacity: 0.35, flexShrink: 0 },
   });
 
   return (
