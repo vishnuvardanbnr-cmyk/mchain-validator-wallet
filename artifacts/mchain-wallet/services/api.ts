@@ -118,6 +118,15 @@ export interface Transaction {
   txType: string;
 }
 
+export interface TokenTransfer {
+  hash: string;
+  fromEth: string;
+  toEth: string;
+  blockNumber: number;
+  value: string;
+  logIndex: number;
+}
+
 export interface ValidatorInfo {
   id: string;
   address: string;
@@ -415,6 +424,51 @@ export const api = {
     ),
 
   ping: () => request<unknown>("/ping"),
+
+  getTokenTransfers: async (contractAddr: string, userEthAddr: string): Promise<TokenTransfer[]> => {
+    const TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
+    const normalizedUser = userEthAddr.toLowerCase();
+    const padded = "0x" + normalizedUser.replace(/^0x/i, "").padStart(64, "0");
+
+    type RawLog = {
+      transactionHash: string;
+      topics: string[];
+      data: string;
+      blockNumber: string;
+      logIndex: string;
+    };
+
+    const [sentLogs, receivedLogs] = await Promise.all([
+      rpcRequest<RawLog[]>("eth_getLogs", [{
+        fromBlock: "earliest", toBlock: "latest",
+        address: contractAddr,
+        topics: [TRANSFER_TOPIC, padded],
+      }]),
+      rpcRequest<RawLog[]>("eth_getLogs", [{
+        fromBlock: "earliest", toBlock: "latest",
+        address: contractAddr,
+        topics: [TRANSFER_TOPIC, null, padded],
+      }]),
+    ]);
+
+    const seen = new Set<string>();
+    return [...sentLogs, ...receivedLogs]
+      .filter((log) => {
+        const key = `${log.transactionHash}:${log.logIndex}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .map((log) => ({
+        hash: log.transactionHash,
+        fromEth: "0x" + (log.topics[1] ?? "").slice(-40),
+        toEth: "0x" + (log.topics[2] ?? "").slice(-40),
+        blockNumber: parseInt(log.blockNumber, 16),
+        value: BigInt(log.data && log.data !== "0x" ? log.data : "0x0").toString(),
+        logIndex: parseInt(log.logIndex, 16),
+      }))
+      .sort((a, b) => b.blockNumber - a.blockNumber || b.logIndex - a.logIndex);
+  },
 
   rpcCall: (to: string, data: string) =>
     request<RpcCallResult>("/rpc", {

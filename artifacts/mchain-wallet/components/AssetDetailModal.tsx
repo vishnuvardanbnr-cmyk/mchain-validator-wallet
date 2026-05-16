@@ -1,7 +1,7 @@
 import { Icon } from "@/components/Icon";
 import { useColors } from "@/hooks/useColors";
-import { api, type Transaction } from "@/services/api";
-import { shortenAddress, weiToMc } from "@/services/crypto";
+import { api, type TokenTransfer, type Transaction } from "@/services/api";
+import { ethAddressToMxc, shortenAddress } from "@/services/crypto";
 import type { CustomToken } from "@/services/tokens";
 import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
@@ -27,14 +27,89 @@ export type AssetItem =
 
 type TxFilter = "all" | "send" | "receive";
 
+// ── Normalized entry (shared between native and token transfers) ──────────────
+
+interface NormalizedTx {
+  hash: string;
+  fromEth: string;
+  toEth: string;
+  fromMxc: string;
+  toMxc: string;
+  amountRaw: string;
+  symbol: string;
+  decimals: number;
+  dateStr: string;
+  blockHeight: number;
+  nonce?: number;
+  status: string;
+}
+
+function ethToMxcSafe(addr: string): string {
+  if (!addr || addr === "0x") return "";
+  try { return ethAddressToMxc(addr); } catch { return addr; }
+}
+
+function formatAmount(raw: string, decimals: number): string {
+  try {
+    const bn = BigInt(raw);
+    if (bn === 0n) return "0";
+    const divisor = BigInt(10 ** decimals);
+    const whole = bn / divisor;
+    const remainder = bn % divisor;
+    const remStr = remainder.toString().padStart(decimals, "0").replace(/0+$/, "").slice(0, 6);
+    return remStr ? `${whole}.${remStr}` : whole.toString();
+  } catch {
+    return "—";
+  }
+}
+
+function normalizeNative(tx: Transaction): NormalizedTx {
+  return {
+    hash: tx.hash,
+    fromEth: tx.fromEth || "",
+    toEth: tx.toEth || "",
+    fromMxc: tx.fromMxc || tx.fromAddress || "",
+    toMxc: tx.toMxc || tx.toAddress || "",
+    amountRaw: tx.amount || "0",
+    symbol: "MC",
+    decimals: 18,
+    dateStr: tx.createdAt
+      ? new Date(tx.createdAt).toLocaleDateString(undefined, {
+          month: "short", day: "numeric",
+          hour: "2-digit", minute: "2-digit",
+        })
+      : "—",
+    blockHeight: tx.blockHeight,
+    nonce: tx.nonce,
+    status: tx.status,
+  };
+}
+
+function normalizeToken(t: TokenTransfer, symbol: string, decimals: number): NormalizedTx {
+  return {
+    hash: t.hash,
+    fromEth: t.fromEth,
+    toEth: t.toEth,
+    fromMxc: ethToMxcSafe(t.fromEth),
+    toMxc: ethToMxcSafe(t.toEth),
+    amountRaw: t.value || "0",
+    symbol,
+    decimals,
+    dateStr: `Block #${t.blockNumber.toLocaleString()}`,
+    blockHeight: t.blockNumber,
+    nonce: undefined,
+    status: "confirmed",
+  };
+}
+
 // ── Transaction detail sheet ──────────────────────────────────────────────────
 
 function TxDetailSheet({
-  tx,
+  entry,
   myEthAddress,
   onClose,
 }: {
-  tx: Transaction;
+  entry: NormalizedTx;
   myEthAddress: string;
   onClose: () => void;
 }) {
@@ -42,18 +117,13 @@ function TxDetailSheet({
   const insets = useSafeAreaInsets();
   const [copied, setCopied] = useState<string | null>(null);
 
-  const isSend = tx.fromEth?.toLowerCase() === myEthAddress?.toLowerCase();
-  const isReceive = tx.toEth?.toLowerCase() === myEthAddress?.toLowerCase();
+  const isSend = entry.fromEth?.toLowerCase() === myEthAddress?.toLowerCase();
+  const isReceive = entry.toEth?.toLowerCase() === myEthAddress?.toLowerCase();
   const isSelf = isSend && isReceive;
   const label = isSelf ? "Self Transfer" : isSend ? "Sent" : "Received";
   const color = isSelf ? colors.primary : isSend ? "#EF4444" : "#10B981";
-  const amount = tx.amount ? weiToMc(tx.amount) : "—";
+  const amount = formatAmount(entry.amountRaw, entry.decimals);
   const prefix = isSelf ? "" : isSend ? "- " : "+ ";
-
-  const fromMxc = tx.fromMxc || tx.fromAddress || "";
-  const destMxc = tx.toMxc || tx.toAddress || "";
-  const fromEthAddr = tx.fromEth || "";
-  const toEthAddr = tx.toEth || "";
 
   async function copy(text: string, key: string) {
     await Clipboard.setStringAsync(text);
@@ -61,13 +131,6 @@ function TxDetailSheet({
     if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setTimeout(() => setCopied(null), 1500);
   }
-
-  const date = tx.createdAt
-    ? new Date(tx.createdAt).toLocaleString(undefined, {
-        year: "numeric", month: "short", day: "numeric",
-        hour: "2-digit", minute: "2-digit", second: "2-digit",
-      })
-    : "—";
 
   const s = StyleSheet.create({
     overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.65)", justifyContent: "flex-end" },
@@ -81,14 +144,12 @@ function TxDetailSheet({
     sheetHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: colors.border },
     sheetTitle: { fontSize: 16, fontFamily: "Inter_700Bold", color: colors.foreground },
     closeBtn: { width: 30, height: 30, borderRadius: 15, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, alignItems: "center", justifyContent: "center" },
-
     amountBlock: { alignItems: "center", paddingVertical: 24, borderBottomWidth: 1, borderBottomColor: colors.border },
     amountLabel: { fontSize: 11, fontFamily: "Inter_600SemiBold", color: colors.mutedForeground, letterSpacing: 1.5, marginBottom: 8 },
     amountValue: { fontSize: 34, fontFamily: "Inter_700Bold" },
     amountUnit: { fontSize: 18, fontFamily: "Inter_400Regular", color: colors.mutedForeground },
     badge: { marginTop: 8, paddingHorizontal: 12, paddingVertical: 4, borderRadius: 20 },
     badgeText: { fontSize: 12, fontFamily: "Inter_600SemiBold" },
-
     section: { paddingHorizontal: 20, paddingVertical: 4 },
     sectionLabel: { fontSize: 10, fontFamily: "Inter_700Bold", color: colors.mutedForeground, letterSpacing: 1.5, marginTop: 16, marginBottom: 6 },
     card: { backgroundColor: colors.card, borderRadius: 12, borderWidth: 1, borderColor: colors.border, overflow: "hidden" },
@@ -104,7 +165,7 @@ function TxDetailSheet({
     explorerBtnText: { fontSize: 14, fontFamily: "Inter_600SemiBold", color: colors.primary },
   });
 
-  const statusOk = tx.status === "confirmed";
+  const statusOk = entry.status === "confirmed";
 
   return (
     <Modal visible transparent animationType="slide" onRequestClose={onClose}>
@@ -120,15 +181,14 @@ function TxDetailSheet({
           </View>
 
           <ScrollView showsVerticalScrollIndicator={false}>
-            {/* Amount block */}
             <View style={s.amountBlock}>
               <Text style={s.amountLabel}>{label.toUpperCase()}</Text>
               <Text style={[s.amountValue, { color }]}>
-                {prefix}{amount} <Text style={s.amountUnit}>MC</Text>
+                {prefix}{amount} <Text style={s.amountUnit}>{entry.symbol}</Text>
               </Text>
               <View style={[s.badge, { backgroundColor: statusOk ? "#10B98118" : "#EF444418" }]}>
                 <Text style={[s.badgeText, { color: statusOk ? "#10B981" : "#EF4444" }]}>
-                  {tx.status?.toUpperCase() ?? "UNKNOWN"}
+                  {entry.status?.toUpperCase() ?? "UNKNOWN"}
                 </Text>
               </View>
             </View>
@@ -136,29 +196,27 @@ function TxDetailSheet({
             <View style={s.section}>
               <Text style={s.sectionLabel}>ADDRESSES</Text>
               <View style={s.card}>
-                {/* From */}
                 <View style={s.row}>
                   <Text style={s.rowLabel}>From</Text>
                   <View style={s.rowRight}>
                     <View style={{ flex: 1 }}>
-                      <Text style={s.rowValue} numberOfLines={1}>{shortenAddress(fromMxc, 10)}</Text>
-                      <Text style={s.rowValueMono} numberOfLines={1}>{shortenAddress(fromEthAddr, 10)}</Text>
+                      <Text style={s.rowValue} numberOfLines={1}>{shortenAddress(entry.fromMxc, 10)}</Text>
+                      <Text style={s.rowValueMono} numberOfLines={1}>{shortenAddress(entry.fromEth, 10)}</Text>
                     </View>
-                    <TouchableOpacity style={s.copyBtn} onPress={() => copy(fromMxc, "from")}>
+                    <TouchableOpacity style={s.copyBtn} onPress={() => copy(entry.fromMxc || entry.fromEth, "from")}>
                       <Icon name={copied === "from" ? "checkmark" : "copy-outline"} size={12} color={colors.mutedForeground} />
                       <Text style={s.copyBtnText}>{copied === "from" ? "Copied" : "Copy"}</Text>
                     </TouchableOpacity>
                   </View>
                 </View>
-                {/* To */}
                 <View style={[s.row, s.rowLast]}>
                   <Text style={s.rowLabel}>To</Text>
                   <View style={s.rowRight}>
                     <View style={{ flex: 1 }}>
-                      <Text style={s.rowValue} numberOfLines={1}>{shortenAddress(destMxc, 10)}</Text>
-                      <Text style={s.rowValueMono} numberOfLines={1}>{shortenAddress(toEthAddr, 10)}</Text>
+                      <Text style={s.rowValue} numberOfLines={1}>{shortenAddress(entry.toMxc, 10)}</Text>
+                      <Text style={s.rowValueMono} numberOfLines={1}>{shortenAddress(entry.toEth, 10)}</Text>
                     </View>
-                    <TouchableOpacity style={s.copyBtn} onPress={() => copy(destMxc, "to")}>
+                    <TouchableOpacity style={s.copyBtn} onPress={() => copy(entry.toMxc || entry.toEth, "to")}>
                       <Icon name={copied === "to" ? "checkmark" : "copy-outline"} size={12} color={colors.mutedForeground} />
                       <Text style={s.copyBtnText}>{copied === "to" ? "Copied" : "Copy"}</Text>
                     </TouchableOpacity>
@@ -172,9 +230,9 @@ function TxDetailSheet({
                   <Text style={s.rowLabel}>Hash</Text>
                   <View style={s.rowRight}>
                     <Text style={[s.rowValue, { flex: 1, color: colors.primary }]} numberOfLines={1}>
-                      {shortenAddress(tx.hash || "", 10)}
+                      {shortenAddress(entry.hash || "", 10)}
                     </Text>
-                    <TouchableOpacity style={s.copyBtn} onPress={() => copy(tx.hash || "", "hash")}>
+                    <TouchableOpacity style={s.copyBtn} onPress={() => copy(entry.hash || "", "hash")}>
                       <Icon name={copied === "hash" ? "checkmark" : "copy-outline"} size={12} color={colors.mutedForeground} />
                       <Text style={s.copyBtnText}>{copied === "hash" ? "Copied" : "Copy"}</Text>
                     </TouchableOpacity>
@@ -182,23 +240,24 @@ function TxDetailSheet({
                 </View>
                 <View style={s.row}>
                   <Text style={s.rowLabel}>Block</Text>
-                  <Text style={s.rowValue}>#{tx.blockHeight?.toLocaleString() ?? "—"}</Text>
+                  <Text style={s.rowValue}>#{entry.blockHeight?.toLocaleString() ?? "—"}</Text>
                 </View>
-                <View style={s.row}>
-                  <Text style={s.rowLabel}>Nonce</Text>
-                  <Text style={s.rowValue}>{tx.nonce ?? "—"}</Text>
-                </View>
+                {entry.nonce !== undefined && (
+                  <View style={s.row}>
+                    <Text style={s.rowLabel}>Nonce</Text>
+                    <Text style={s.rowValue}>{entry.nonce}</Text>
+                  </View>
+                )}
                 <View style={[s.row, s.rowLast]}>
                   <Text style={s.rowLabel}>Date</Text>
-                  <Text style={s.rowValue}>{date}</Text>
+                  <Text style={s.rowValue}>{entry.dateStr}</Text>
                 </View>
               </View>
             </View>
 
-            {/* Explorer link */}
             <TouchableOpacity
               style={s.explorerBtn}
-              onPress={() => Linking.openURL(`https://explorer.mvault.pro/tx/${tx.hash}`).catch(() => null)}
+              onPress={() => Linking.openURL(`https://explorer.mvault.pro/tx/${entry.hash}`).catch(() => null)}
               activeOpacity={0.8}
             >
               <Icon name="open-outline" size={15} color={colors.primary} />
@@ -216,25 +275,18 @@ function TxDetailSheet({
 // ── Transaction row ───────────────────────────────────────────────────────────
 
 function TxRow({
-  tx,
+  entry,
   myEthAddress,
   onPress,
 }: {
-  tx: Transaction;
+  entry: NormalizedTx;
   myEthAddress: string;
   onPress: () => void;
 }) {
   const colors = useColors();
-  const isSend = tx.fromEth?.toLowerCase() === myEthAddress?.toLowerCase();
-  const isReceive = tx.toEth?.toLowerCase() === myEthAddress?.toLowerCase();
+  const isSend = entry.fromEth?.toLowerCase() === myEthAddress?.toLowerCase();
+  const isReceive = entry.toEth?.toLowerCase() === myEthAddress?.toLowerCase();
   const isSelf = isSend && isReceive;
-  const amount = tx.amount ? weiToMc(tx.amount) : "—";
-  const date = tx.createdAt
-    ? new Date(tx.createdAt).toLocaleDateString(undefined, {
-        month: "short", day: "numeric",
-        hour: "2-digit", minute: "2-digit",
-      })
-    : "—";
 
   const label = isSelf ? "Self" : isSend ? "Sent" : "Received";
   const color = isSelf ? colors.primary : isSend ? "#EF4444" : "#10B981";
@@ -242,11 +294,11 @@ function TxRow({
     ? "swap-horizontal-outline"
     : isSend ? "arrow-up-circle-outline" : "arrow-down-circle-outline";
 
-  // Counterparty address shown in mxc format
   const counterparty = isSend && !isSelf
-    ? (tx.toMxc || tx.toAddress || "")
-    : (tx.fromMxc || tx.fromAddress || "");
+    ? (entry.toMxc || entry.toEth)
+    : (entry.fromMxc || entry.fromEth);
   const counterpartyLabel = isSend && !isSelf ? "To" : "From";
+  const amount = formatAmount(entry.amountRaw, entry.decimals);
 
   const s = StyleSheet.create({
     row: {
@@ -280,12 +332,12 @@ function TxRow({
       </View>
       <View style={s.right}>
         <Text style={[s.amount, { color }]}>
-          {isSelf ? "" : isSend ? "- " : "+ "}{amount} MC
+          {isSelf ? "" : isSend ? "- " : "+ "}{amount} {entry.symbol}
         </Text>
-        <Text style={s.date}>{date}</Text>
-        <View style={[s.statusBadge, { backgroundColor: tx.status === "confirmed" ? "#10B98118" : "#EF444418" }]}>
-          <Text style={[s.statusText, { color: tx.status === "confirmed" ? "#10B981" : "#EF4444" }]}>
-            {tx.status?.toUpperCase() ?? "UNKNOWN"}
+        <Text style={s.date}>{entry.dateStr}</Text>
+        <View style={[s.statusBadge, { backgroundColor: entry.status === "confirmed" ? "#10B98118" : "#EF444418" }]}>
+          <Text style={[s.statusText, { color: entry.status === "confirmed" ? "#10B981" : "#EF4444" }]}>
+            {entry.status?.toUpperCase() ?? "UNKNOWN"}
           </Text>
         </View>
       </View>
@@ -308,42 +360,57 @@ export function AssetDetailModal({
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const [filter, setFilter] = useState<TxFilter>("all");
-  const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
+  const [selectedEntry, setSelectedEntry] = useState<NormalizedTx | null>(null);
 
-  const rawAddress = asset?.address ?? "";
-  // For the API call we need mxc format; for comparisons we use fromEth/toEth from the response directly
-  const mxcAddr = rawAddress.startsWith("mxc1") ? rawAddress : rawAddress;
-  // ethAddr is only used for the token explorer link and passing to child components
-  const ethAddr = rawAddress.startsWith("0x") || rawAddress.startsWith("0X")
-    ? rawAddress.toLowerCase()
-    : rawAddress;
+  const isToken = asset?.kind === "token";
+  const mxcAddr = asset?.address ?? "";           // native: mxc address; token: user's eth address
+  const ethAddr = asset?.address ?? "";            // token: already eth address
+  const contractAddr = isToken ? (asset as Extract<AssetItem, { kind: "token" }>).token.contractAddress : "";
+  const tokenSymbol = isToken ? (asset as Extract<AssetItem, { kind: "token" }>).token.symbol : "MC";
+  const tokenDecimals = isToken ? (asset as Extract<AssetItem, { kind: "token" }>).token.decimals : 18;
 
-  const { data, isLoading } = useQuery({
+  // Native MC transaction history
+  const { data: nativeData, isLoading: nativeLoading } = useQuery({
     queryKey: ["assetTxHistory", mxcAddr],
     queryFn: () => api.getTransactions(mxcAddr, 50),
-    enabled: !!mxcAddr && visible && asset?.kind === "native",
+    enabled: !!mxcAddr && visible && !isToken,
     staleTime: 20_000,
     refetchInterval: 30_000,
   });
 
-  const txs = data?.transactions ?? [];
+  // Token transfer history via eth_getLogs
+  const { data: tokenData, isLoading: tokenLoading } = useQuery({
+    queryKey: ["tokenTxHistory", contractAddr, ethAddr],
+    queryFn: () => api.getTokenTransfers(contractAddr, ethAddr),
+    enabled: !!contractAddr && !!ethAddr && visible && isToken,
+    staleTime: 20_000,
+    refetchInterval: 30_000,
+  });
 
-  // Use fromEth/toEth directly from the API response — no conversion needed
-  const myEthFromTx = txs.find(tx => tx.fromEth || tx.toEth)
-    ? txs.reduce((found, tx) => {
-        if (found) return found;
-        // The mxcAddr is our address; find our eth address from any matching tx
-        if (tx.fromMxc === mxcAddr || tx.fromAddress === mxcAddr) return tx.fromEth;
-        if (tx.toMxc === mxcAddr || tx.toAddress === mxcAddr) return tx.toEth;
-        return found;
-      }, "" as string)
-    : "";
+  const isLoading = isToken ? tokenLoading : nativeLoading;
 
-  const filtered = txs.filter((tx) => {
-    const from = tx.fromMxc || tx.fromAddress || "";
-    const to = tx.toMxc || tx.toAddress || "";
-    if (filter === "send") return from === mxcAddr && to !== mxcAddr;
-    if (filter === "receive") return to === mxcAddr && from !== mxcAddr;
+  // Normalize all entries to the same display format
+  const allEntries: NormalizedTx[] = isToken
+    ? (tokenData ?? []).map((t) => normalizeToken(t, tokenSymbol, tokenDecimals))
+    : (nativeData?.transactions ?? []).map(normalizeNative);
+
+  // Derive the user's ETH address used for send/receive detection
+  // For native: find it from the first tx that matches our mxc address
+  // For token: it's directly asset.address
+  const myEthAddress = isToken
+    ? ethAddr.toLowerCase()
+    : allEntries.find(e => e.fromMxc === mxcAddr || e.toMxc === mxcAddr)
+        ? allEntries.reduce((found, e) => {
+            if (found) return found;
+            if (e.fromMxc === mxcAddr) return e.fromEth.toLowerCase();
+            if (e.toMxc === mxcAddr) return e.toEth.toLowerCase();
+            return found;
+          }, "")
+        : "";
+
+  const filtered = allEntries.filter((e) => {
+    if (filter === "send") return e.fromEth.toLowerCase() === myEthAddress && e.toEth.toLowerCase() !== myEthAddress;
+    if (filter === "receive") return e.toEth.toLowerCase() === myEthAddress && e.fromEth.toLowerCase() !== myEthAddress;
     return true;
   });
 
@@ -372,15 +439,13 @@ export function AssetDetailModal({
     empty: { alignItems: "center", paddingVertical: 60, gap: 10 },
     emptyText: { fontSize: 15, fontFamily: "Inter_600SemiBold", color: colors.foreground },
     emptyDesc: { fontSize: 13, fontFamily: "Inter_400Regular", color: colors.mutedForeground, textAlign: "center", paddingHorizontal: 32 },
-    tokenNotice: { margin: 20, padding: 16, borderRadius: 12, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, alignItems: "center", gap: 8 },
-    tokenNoticeText: { fontSize: 13, fontFamily: "Inter_400Regular", color: colors.mutedForeground, textAlign: "center" },
   });
 
   if (!asset) return null;
 
-  const displayName = asset.kind === "native" ? "MChain" : asset.token.symbol;
-  const displayBalance = `${asset.balance} ${asset.kind === "native" ? "MC" : asset.token.symbol}`;
-  const logoUrl = asset.kind === "token" ? asset.token.logoUrl : null;
+  const displayName = isToken ? tokenSymbol : "MChain";
+  const displayBalance = `${asset.balance} ${isToken ? tokenSymbol : "MC"}`;
+  const logoUrl = isToken ? (asset as Extract<AssetItem, { kind: "token" }>).token.logoUrl : null;
 
   return (
     <>
@@ -408,7 +473,6 @@ export function AssetDetailModal({
               </TouchableOpacity>
             </View>
 
-            {/* Filter tabs */}
             <View style={s.tabs}>
               {(["all", "send", "receive"] as TxFilter[]).map((f) => (
                 <TouchableOpacity
@@ -424,24 +488,7 @@ export function AssetDetailModal({
               ))}
             </View>
 
-            {asset.kind === "token" ? (
-              <View style={s.tokenNotice}>
-                <Icon name="information-circle-outline" size={28} color={colors.mutedForeground} />
-                <Text style={s.tokenNoticeText}>
-                  On-chain ERC-20 transfer history is not yet indexed.{"\n"}
-                  Use a block explorer to view token transfer history.
-                </Text>
-                <TouchableOpacity
-                  onPress={() => Linking.openURL(`https://explorer.mvault.pro/address/${ethAddr}`).catch(() => null)}
-                  style={{ flexDirection: "row", alignItems: "center", gap: 5, marginTop: 4 }}
-                >
-                  <Icon name="open-outline" size={13} color={colors.primary} />
-                  <Text style={{ fontSize: 13, fontFamily: "Inter_600SemiBold", color: colors.primary }}>
-                    View on Explorer
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            ) : isLoading ? (
+            {isLoading ? (
               <ActivityIndicator color={colors.primary} style={{ marginTop: 40 }} />
             ) : filtered.length === 0 ? (
               <View style={s.empty}>
@@ -449,18 +496,18 @@ export function AssetDetailModal({
                 <Text style={s.emptyText}>No transactions</Text>
                 <Text style={s.emptyDesc}>
                   {filter === "all"
-                    ? "This wallet has no recorded transactions yet."
-                    : `No ${filter} transactions found.`}
+                    ? `No ${isToken ? tokenSymbol + " transfer" : ""} history found for this wallet.`
+                    : `No ${filter === "send" ? "sent" : "received"} transactions found.`}
                 </Text>
               </View>
             ) : (
               <ScrollView showsVerticalScrollIndicator={false}>
-                {filtered.map((tx) => (
+                {filtered.map((entry, i) => (
                   <TxRow
-                    key={tx.hash}
-                    tx={tx}
-                    myEthAddress={myEthFromTx}
-                    onPress={() => setSelectedTx(tx)}
+                    key={`${entry.hash}-${i}`}
+                    entry={entry}
+                    myEthAddress={myEthAddress}
+                    onPress={() => setSelectedEntry(entry)}
                   />
                 ))}
               </ScrollView>
@@ -469,11 +516,11 @@ export function AssetDetailModal({
         </View>
       </Modal>
 
-      {selectedTx && (
+      {selectedEntry && (
         <TxDetailSheet
-          tx={selectedTx}
-          myEthAddress={myEthFromTx}
-          onClose={() => setSelectedTx(null)}
+          entry={selectedEntry}
+          myEthAddress={myEthAddress}
+          onClose={() => setSelectedEntry(null)}
         />
       )}
     </>
