@@ -17,6 +17,7 @@ interface PinRequest {
 }
 
 interface PinContextType {
+  isReady: boolean;
   isAppLocked: boolean;
   lockApp: () => void;
   unlockApp: () => void;
@@ -28,15 +29,17 @@ interface PinContextType {
 const PinContext = createContext<PinContextType | null>(null);
 
 export function PinProvider({ children }: { children: React.ReactNode }) {
+  const [isReady, setIsReady] = useState(false);
   const [isAppLocked, setIsAppLocked] = useState(false);
   const [pinRequest, setPinRequest] = useState<PinRequest | null>(null);
   const appState = useRef<AppStateStatus>(AppState.currentState);
   const backgroundedAt = useRef<number | null>(null);
 
-  // On mount: lock app if PIN is configured
+  // On mount: lock app if PIN is configured, then signal ready
   useEffect(() => {
     hasPin().then((exists) => {
       if (exists) setIsAppLocked(true);
+      setIsReady(true);
     });
   }, []);
 
@@ -87,7 +90,7 @@ export function PinProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <PinContext.Provider
-      value={{ isAppLocked, lockApp, unlockApp, pinRequest, requestPin, dismissPin }}
+      value={{ isReady, isAppLocked, lockApp, unlockApp, pinRequest, requestPin, dismissPin }}
     >
       {children}
     </PinContext.Provider>

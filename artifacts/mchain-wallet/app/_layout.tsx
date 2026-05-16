@@ -17,7 +17,7 @@ import { PinModal } from "@/components/PinModal";
 import { PinProvider, usePinContext } from "@/context/PinContext";
 import { WalletProvider, useWallet } from "@/context/WalletContext";
 import "@/services/backgroundTasks";
-import "@/services/node"; // initializes cached node URL from storage on startup
+import "@/services/node";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -29,6 +29,33 @@ const queryClient = new QueryClient({
     },
   },
 });
+
+/**
+ * Sits inside PinProvider so it can read isReady from context.
+ * Keeps the splash screen alive until BOTH fonts are loaded AND the
+ * initial PIN check has completed — preventing any flash of the home
+ * screen before the PIN modal appears.
+ */
+function AppReadyGate({
+  fontsLoaded,
+  fontError,
+  children,
+}: {
+  fontsLoaded: boolean;
+  fontError: Error | null;
+  children: React.ReactNode;
+}) {
+  const { isReady } = usePinContext();
+  const ready = (fontsLoaded || !!fontError) && isReady;
+
+  useEffect(() => {
+    if (ready) SplashScreen.hideAsync();
+  }, [ready]);
+
+  if (!ready) return null;
+
+  return <>{children}</>;
+}
 
 function PinGate({ children }: { children: React.ReactNode }) {
   const { isAppLocked, unlockApp, pinRequest, dismissPin } = usePinContext();
@@ -87,25 +114,19 @@ export default function RootLayout() {
     Inter_700Bold,
   });
 
-  useEffect(() => {
-    if (fontsLoaded || fontError) {
-      SplashScreen.hideAsync();
-    }
-  }, [fontsLoaded, fontError]);
-
-  if (!fontsLoaded && !fontError) return null;
-
   return (
     <SafeAreaProvider>
       <ErrorBoundary>
         <QueryClientProvider client={queryClient}>
           <GestureHandlerRootView style={{ flex: 1 }}>
             <PinProvider>
-              <PinGate>
-                <WalletProvider>
-                  <RootLayoutNav />
-                </WalletProvider>
-              </PinGate>
+              <AppReadyGate fontsLoaded={fontsLoaded} fontError={fontError}>
+                <PinGate>
+                  <WalletProvider>
+                    <RootLayoutNav />
+                  </WalletProvider>
+                </PinGate>
+              </AppReadyGate>
             </PinProvider>
           </GestureHandlerRootView>
         </QueryClientProvider>
