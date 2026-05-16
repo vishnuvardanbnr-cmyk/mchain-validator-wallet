@@ -1,0 +1,117 @@
+import { Switch, Route, Router as WouterRouter, useLocation } from "wouter";
+import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
+import { Toaster } from "@/components/ui/toaster";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { useState, useEffect } from "react";
+import Login from "@/pages/Login";
+import Dashboard from "@/pages/Dashboard";
+import KYC from "@/pages/KYC";
+import Merchants from "@/pages/Merchants";
+import Disputes from "@/pages/Disputes";
+import { Shield, LayoutDashboard, BadgeCheck, Store, AlertTriangle, LogOut } from "lucide-react";
+
+const queryClient = new QueryClient({
+  defaultOptions: { queries: { retry: false, staleTime: 30_000 } },
+});
+
+function Nav({ onLogout }: { onLogout: () => void }) {
+  const [location, navigate] = useLocation();
+
+  const links = [
+    { href: "/", label: "Dashboard", Icon: LayoutDashboard },
+    { href: "/kyc", label: "KYC", Icon: BadgeCheck },
+    { href: "/merchants", label: "Merchants", Icon: Store },
+    { href: "/disputes", label: "Disputes", Icon: AlertTriangle },
+  ];
+
+  return (
+    <aside className="w-56 min-h-screen bg-sidebar border-r border-sidebar-border flex flex-col">
+      <div className="px-5 py-5 flex items-center gap-2.5 border-b border-sidebar-border">
+        <Shield className="text-primary" size={22} />
+        <span className="font-semibold text-sidebar-foreground tracking-tight text-sm">MChain Admin</span>
+      </div>
+
+      <nav className="flex-1 p-3 space-y-0.5">
+        {links.map(({ href, label, Icon }) => {
+          const active = location === href;
+          return (
+            <button
+              key={href}
+              onClick={() => navigate(href)}
+              className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-sm transition-colors text-left
+                ${active
+                  ? "bg-primary/15 text-primary font-medium"
+                  : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                }`}
+            >
+              <Icon size={16} />
+              {label}
+            </button>
+          );
+        })}
+      </nav>
+
+      <div className="p-3 border-t border-sidebar-border">
+        <button
+          onClick={onLogout}
+          className="w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-sm text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+        >
+          <LogOut size={16} />
+          Sign out
+        </button>
+      </div>
+    </aside>
+  );
+}
+
+function AppShell() {
+  const qc = useQueryClient();
+  const [authed, setAuthed] = useState(() => !!localStorage.getItem("adminKey"));
+
+  function handleLogin(key: string) {
+    localStorage.setItem("adminKey", key);
+    setAuthed(true);
+  }
+
+  function handleLogout() {
+    localStorage.removeItem("adminKey");
+    qc.clear();
+    setAuthed(false);
+  }
+
+  if (!authed) {
+    return <Login onLogin={handleLogin} />;
+  }
+
+  return (
+    <div className="flex min-h-screen bg-background">
+      <Nav onLogout={handleLogout} />
+      <main className="flex-1 overflow-auto">
+        <Switch>
+          <Route path="/" component={Dashboard} />
+          <Route path="/kyc" component={KYC} />
+          <Route path="/merchants" component={Merchants} />
+          <Route path="/disputes" component={Disputes} />
+          <Route>
+            <div className="p-8 text-muted-foreground">Page not found</div>
+          </Route>
+        </Switch>
+      </main>
+    </div>
+  );
+}
+
+function App() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <TooltipProvider>
+        <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+          <AppShell />
+        </WouterRouter>
+        <Toaster />
+      </TooltipProvider>
+    </QueryClientProvider>
+  );
+}
+
+export default App;
