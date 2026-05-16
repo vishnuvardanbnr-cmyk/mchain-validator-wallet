@@ -47,6 +47,7 @@ export const p2pProfiles = pgTable("p2p_profiles", {
   kycSubmittedAt: timestamp("kyc_submitted_at"),
   kycVerifiedAt: timestamp("kyc_verified_at"),
   isMerchant: boolean("is_merchant").notNull().default(false),
+  isPinned: boolean("is_pinned").notNull().default(false),
   onlineSince: timestamp("online_since"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),

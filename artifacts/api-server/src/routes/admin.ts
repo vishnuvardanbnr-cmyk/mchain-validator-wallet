@@ -137,6 +137,24 @@ router.post("/admin/merchant/:address/verify", async (req, res) => {
   res.json(updated);
 });
 
+router.post("/admin/merchant/:address/pin", async (req, res) => {
+  const address = toEth(req.params.address);
+  const [profile] = await db.select().from(p2pProfiles)
+    .where(eq(p2pProfiles.mxcAddress, address)).limit(1);
+
+  if (!profile) {
+    res.status(404).json({ error: "Profile not found" });
+    return;
+  }
+
+  const [updated] = await db.update(p2pProfiles)
+    .set({ isPinned: !profile.isPinned, updatedAt: new Date() })
+    .where(eq(p2pProfiles.mxcAddress, address))
+    .returning();
+
+  res.json(updated);
+});
+
 // ── Disputes ──────────────────────────────────────────────────────────────────
 
 router.get("/admin/disputes", async (req, res) => {

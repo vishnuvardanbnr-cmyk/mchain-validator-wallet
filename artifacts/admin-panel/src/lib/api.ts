@@ -92,6 +92,7 @@ export interface Profile {
   kycSubmittedAt: string | null;
   kycVerifiedAt: string | null;
   isMerchant: boolean;
+  isPinned: boolean;
   createdAt: string;
   updatedAt: string;
 }

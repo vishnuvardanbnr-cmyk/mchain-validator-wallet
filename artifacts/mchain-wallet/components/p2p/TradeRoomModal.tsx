@@ -213,23 +213,15 @@ export function TradeRoomModal({ visible, orderId, onClose }: Props) {
 
   function handleLockEscrow() {
     if (!order) return;
-    void requestPin({
-      title: "Confirm Lock Escrow",
-      subtitle: "Enter your PIN to lock funds into escrow.",
-      onSuccess: () => {
-        if (!order) return;
-        if (order.token === "MC") {
-          Alert.alert(
-            "Lock Funds in Escrow",
-            `This will send ${order.cryptoAmount} MC from your wallet to the platform escrow address. The funds will be released to the buyer once you confirm receipt of payment.`,
-            [{ text: "Cancel", style: "cancel" }, { text: "Lock Now", onPress: () => lockEscrowMc.mutate() }]
-          );
-        } else {
-          setShowUsdtEscrow(true);
-        }
-      },
-      onCancel: () => {},
-    });
+    if (order.token === "MC") {
+      Alert.alert(
+        "Lock Funds in Escrow",
+        `This will send ${order.cryptoAmount} MC from your wallet to the platform escrow address. The funds will be released to the buyer once you confirm receipt of payment.`,
+        [{ text: "Cancel", style: "cancel" }, { text: "Lock Now", onPress: () => lockEscrowMc.mutate() }]
+      );
+    } else {
+      setShowUsdtEscrow(true);
+    }
   }
 
   const isTerminal = ["released", "cancelled", "resolved"].includes(order?.status ?? "");

@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { get, post, type Profile, type PagedProfiles } from "@/lib/api";
-import { Store, User, Clock, Search } from "lucide-react";
+import { Store, User, Clock, Search, Pin, PinOff } from "lucide-react";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { BadgeRow } from "@/lib/badges";
@@ -33,6 +33,18 @@ export default function Merchants() {
     onError: (e) => toast({ title: "Error", description: e instanceof Error ? e.message : "Failed", variant: "destructive" }),
   });
 
+  const pinMut = useMutation({
+    mutationFn: (address: string) => post<Profile>(`/merchant/${address}/pin`),
+    onSuccess: (updated) => {
+      qc.invalidateQueries({ queryKey: ["admin"] });
+      toast({
+        title: updated.isPinned ? "Merchant pinned" : "Merchant unpinned",
+        description: `${updated.displayName} will ${updated.isPinned ? "now appear at the top of the ads list" : "no longer be pinned to the top"}.`,
+      });
+    },
+    onError: (e) => toast({ title: "Error", description: e instanceof Error ? e.message : "Failed", variant: "destructive" }),
+  });
+
   function handleSearch(val: string) {
     setSearch(val);
     setPage(1);
@@ -44,7 +56,9 @@ export default function Merchants() {
     return p.displayName.toLowerCase().includes(q) || p.mxcAddress.toLowerCase().includes(q);
   });
 
-  const merchants = profiles.filter(p => p.isMerchant);
+  const merchants = profiles
+    .filter(p => p.isMerchant)
+    .sort((a, b) => (b.isPinned ? 1 : 0) - (a.isPinned ? 1 : 0));
   const nonMerchants = profiles.filter(p => !p.isMerchant);
 
   return (
@@ -82,14 +96,17 @@ export default function Merchants() {
               title={`Verified Merchants (${merchants.length}${search ? " on this page" : ""})`}
               profiles={merchants}
               onToggle={addr => toggleMut.mutate(addr)}
-              pending={toggleMut.isPending}
+              onPin={addr => pinMut.mutate(addr)}
+              pending={toggleMut.isPending || pinMut.isPending}
               emptyMsg="No verified merchants on this page"
+              showPin
             />
             <Section
               title={`Other Users (${nonMerchants.length}${search ? " on this page" : ""})`}
               profiles={nonMerchants}
               onToggle={addr => toggleMut.mutate(addr)}
-              pending={toggleMut.isPending}
+              onPin={addr => pinMut.mutate(addr)}
+              pending={toggleMut.isPending || pinMut.isPending}
               emptyMsg="No users found"
             />
           </div>
@@ -108,12 +125,14 @@ export default function Merchants() {
   );
 }
 
-function Section({ title, profiles, onToggle, pending, emptyMsg }: {
+function Section({ title, profiles, onToggle, onPin, pending, emptyMsg, showPin }: {
   title: string;
   profiles: Profile[];
   onToggle: (addr: string) => void;
+  onPin: (addr: string) => void;
   pending: boolean;
   emptyMsg: string;
+  showPin?: boolean;
 }) {
   return (
     <div>
@@ -123,13 +142,23 @@ function Section({ title, profiles, onToggle, pending, emptyMsg }: {
       ) : (
         <div className="space-y-2">
           {profiles.map(profile => (
-            <div key={profile.id} className="bg-card border border-card-border rounded-xl px-5 py-4 flex items-center justify-between gap-4">
+            <div key={profile.id} className={`bg-card border rounded-xl px-5 py-4 flex items-center justify-between gap-4 ${profile.isPinned ? "border-amber-500/40 ring-1 ring-amber-500/20" : "border-card-border"}`}>
               <div className="flex items-center gap-3 min-w-0">
-                <div className="w-9 h-9 rounded-full bg-primary/15 flex items-center justify-center flex-shrink-0">
+                <div className="w-9 h-9 rounded-full bg-primary/15 flex items-center justify-center flex-shrink-0 relative">
                   <User size={16} className="text-primary" />
+                  {profile.isPinned && (
+                    <span className="absolute -top-1 -right-1 w-4 h-4 bg-amber-500 rounded-full flex items-center justify-center">
+                      <Pin size={8} className="text-white" />
+                    </span>
+                  )}
                 </div>
                 <div className="min-w-0">
-                  <span className="font-medium text-foreground text-sm">{profile.displayName}</span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-medium text-foreground text-sm">{profile.displayName}</span>
+                    {profile.isPinned && (
+                      <span className="text-xs text-amber-500 font-semibold">Pinned</span>
+                    )}
+                  </div>
                   <p className="text-xs text-muted-foreground font-mono mb-0.5">{shortAddr(profile.mxcAddress)}</p>
                   <BadgeRow
                     kycVerified={profile.kycStatus === "verified"}
@@ -148,6 +177,22 @@ function Section({ title, profiles, onToggle, pending, emptyMsg }: {
                   <p className="text-xs text-muted-foreground">Rating</p>
                   <p className="text-sm text-foreground">{Number(profile.avgRating).toFixed(1)} ★</p>
                 </div>
+
+                {showPin && (
+                  <button
+                    onClick={() => onPin(profile.mxcAddress)}
+                    disabled={pending}
+                    title={profile.isPinned ? "Unpin merchant" : "Pin to top of ads"}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-50
+                      ${profile.isPinned
+                        ? "bg-amber-500/15 text-amber-500 hover:bg-amber-500/25"
+                        : "bg-muted text-muted-foreground hover:bg-muted/80"
+                      }`}
+                  >
+                    {profile.isPinned ? <PinOff size={13} /> : <Pin size={13} />}
+                    {profile.isPinned ? "Unpin" : "Pin"}
+                  </button>
+                )}
 
                 <button
                   onClick={() => onToggle(profile.mxcAddress)}

@@ -45,7 +45,7 @@ async function enrichAds(ads: (typeof p2pAds.$inferSelect)[]) {
     sql`${p2pProfiles.mxcAddress} = ANY(${sql`ARRAY[${sql.join(addresses.map(a => sql`${a}`), sql`, `)}]::text[]`})`
   );
   const profileMap = new Map(profiles.map(p => [p.mxcAddress, p]));
-  return ads.map(ad => {
+  const enriched = ads.map(ad => {
     const profile = profileMap.get(ad.ownerAddress);
     const completion = profile && profile.totalTrades > 0
       ? ((profile.completedTrades / profile.totalTrades) * 100).toFixed(1)
@@ -55,9 +55,12 @@ async function enrichAds(ads: (typeof p2pAds.$inferSelect)[]) {
       displayName: profile?.displayName,
       kycVerified: profile?.kycStatus === "verified",
       isMerchant: profile?.isMerchant ?? false,
+      isPinned: profile?.isPinned ?? false,
       completionRate: completion,
     };
   });
+  enriched.sort((a, b) => (b.isPinned ? 1 : 0) - (a.isPinned ? 1 : 0));
+  return enriched;
 }
 
 // ── Profiles ─────────────────────────────────────────────────────────────────
