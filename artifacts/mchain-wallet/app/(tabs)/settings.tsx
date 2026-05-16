@@ -48,6 +48,13 @@ export default function SettingsScreen() {
   const [nodeTestMs, setNodeTestMs] = useState<number | null>(null);
   const [nodeTestError, setNodeTestError] = useState<string | null>(null);
 
+  const FALLBACK_NODES = [
+    { label: "Primary", url: "https://api.mxc.org/api" },
+    { label: "Node 1", url: "https://5.189.144.115/api" },
+    { label: "Node 2", url: "https://62.169.31.67/api" },
+    { label: "Node 3", url: "https://217.76.51.75/api" },
+  ];
+
   const { data: chainInfo } = useQuery({
     queryKey: ["chainInfo"],
     queryFn: () => api.getChainInfo(),
@@ -395,6 +402,30 @@ export default function SettingsScreen() {
                 </>
               ) : (
                 <>
+                  <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
+                    {FALLBACK_NODES.map((n) => {
+                      const isActive = nodeInput.trim().replace(/\/$/, "") === n.url;
+                      return (
+                        <TouchableOpacity
+                          key={n.url}
+                          onPress={() => { setNodeInput(n.url); setNodeTestMs(null); setNodeTestError(null); }}
+                          style={{
+                            paddingHorizontal: 10,
+                            paddingVertical: 5,
+                            borderRadius: 8,
+                            borderWidth: 1,
+                            borderColor: isActive ? colors.primary : colors.border,
+                            backgroundColor: isActive ? colors.primary + "18" : colors.secondary,
+                          }}
+                        >
+                          <Text style={{ fontSize: 11, fontFamily: "Inter_600SemiBold", color: isActive ? colors.primary : colors.mutedForeground }}>
+                            {n.label}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+
                   <TextInput
                     style={s.nodeInput}
                     value={nodeInput}
