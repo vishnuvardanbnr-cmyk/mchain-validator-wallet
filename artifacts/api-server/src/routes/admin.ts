@@ -52,8 +52,8 @@ router.get("/admin/stats", async (req, res) => {
 // ── Profiles ──────────────────────────────────────────────────────────────────
 
 router.get("/admin/profiles", async (req, res) => {
-  const page = Number(req.query["page"] ?? 1);
-  const limit = 50;
+  const page = Math.max(1, Number(req.query["page"] ?? 1));
+  const limit = 20;
   const offset = (page - 1) * limit;
 
   const profiles = await db.select().from(p2pProfiles)
@@ -134,6 +134,13 @@ router.post("/admin/merchant/:address/verify", async (req, res) => {
 
 router.get("/admin/disputes", async (req, res) => {
   const status = (req.query["status"] as string) ?? "open";
+  const page = Math.max(1, Number(req.query["page"] ?? 1));
+  const limit = 20;
+  const offset = (page - 1) * limit;
+
+  const whereClause = status === "all"
+    ? sql`true`
+    : eq(p2pDisputes.status, status as "open" | "resolved_buyer" | "resolved_seller");
 
   const disputes = await db
     .select({
@@ -152,14 +159,17 @@ router.get("/admin/disputes", async (req, res) => {
     })
     .from(p2pDisputes)
     .innerJoin(p2pOrders, eq(p2pDisputes.orderId, p2pOrders.id))
-    .where(
-      status === "all"
-        ? sql`true`
-        : eq(p2pDisputes.status, status as "open" | "resolved_buyer" | "resolved_seller"),
-    )
-    .orderBy(desc(p2pDisputes.createdAt));
+    .where(whereClause)
+    .orderBy(desc(p2pDisputes.createdAt))
+    .limit(limit)
+    .offset(offset);
 
-  res.json(disputes);
+  const [totalRow] = await db
+    .select({ count: count() })
+    .from(p2pDisputes)
+    .where(whereClause);
+
+  res.json({ disputes, total: Number(totalRow?.count ?? 0), page, limit });
 });
 
 router.post("/admin/disputes/:id/resolve", async (req, res) => {

@@ -105,7 +105,7 @@ export interface Message {
   createdAt: string;
 }
 
-export interface Dispute {
+export interface DisputeItem {
   dispute: {
     id: string;
     orderId: string;
@@ -130,4 +130,18 @@ export interface Dispute {
     status: string;
     createdAt: string;
   };
+}
+
+export interface Dispute {
+  disputes: DisputeItem[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+export interface PagedProfiles {
+  profiles: Profile[];
+  total: number;
+  page: number;
+  limit: number;
 }

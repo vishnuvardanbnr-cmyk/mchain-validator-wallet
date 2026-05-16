@@ -1,9 +1,10 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { get, post, type Profile } from "@/lib/api";
+import { get, post, type Profile, type PagedProfiles } from "@/lib/api";
 import { Store, User, Clock, Search } from "lucide-react";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { BadgeRow } from "@/lib/badges";
+import { Paginator } from "@/components/Paginator";
 
 function shortAddr(addr: string) {
   return `${addr.slice(0, 10)}…${addr.slice(-6)}`;
@@ -13,10 +14,11 @@ export default function Merchants() {
   const qc = useQueryClient();
   const { toast } = useToast();
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
 
-  const { data, isLoading } = useQuery<{ profiles: Profile[]; total: number }>({
-    queryKey: ["admin", "profiles"],
-    queryFn: () => get<{ profiles: Profile[]; total: number }>("/profiles"),
+  const { data, isLoading } = useQuery<PagedProfiles>({
+    queryKey: ["admin", "profiles", page],
+    queryFn: () => get<PagedProfiles>(`/profiles?page=${page}`),
   });
 
   const toggleMut = useMutation({
@@ -30,6 +32,11 @@ export default function Merchants() {
     },
     onError: (e) => toast({ title: "Error", description: e instanceof Error ? e.message : "Failed", variant: "destructive" }),
   });
+
+  function handleSearch(val: string) {
+    setSearch(val);
+    setPage(1);
+  }
 
   const profiles = (data?.profiles ?? []).filter(p => {
     if (!search) return true;
@@ -46,13 +53,18 @@ export default function Merchants() {
         <div className="flex items-center gap-2.5">
           <Store size={20} className="text-primary" />
           <h1 className="text-lg font-semibold text-foreground">Merchants</h1>
+          {data && (
+            <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
+              {data.total} total
+            </span>
+          )}
         </div>
         <div className="relative">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <input
             type="text"
             value={search}
-            onChange={e => setSearch(e.target.value)}
+            onChange={e => handleSearch(e.target.value)}
             placeholder="Search by name or address…"
             className="pl-8 pr-4 py-2 bg-card border border-card-border rounded-lg text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 w-64"
           />
@@ -64,22 +76,33 @@ export default function Merchants() {
           <Clock size={14} className="animate-spin" /> Loading…
         </div>
       ) : (
-        <div className="space-y-8">
-          <Section
-            title={`Verified Merchants (${merchants.length})`}
-            profiles={merchants}
-            onToggle={addr => toggleMut.mutate(addr)}
-            pending={toggleMut.isPending}
-            emptyMsg="No verified merchants yet"
-          />
-          <Section
-            title={`Other Users (${nonMerchants.length})`}
-            profiles={nonMerchants}
-            onToggle={addr => toggleMut.mutate(addr)}
-            pending={toggleMut.isPending}
-            emptyMsg="No users found"
-          />
-        </div>
+        <>
+          <div className="space-y-8">
+            <Section
+              title={`Verified Merchants (${merchants.length}${search ? " on this page" : ""})`}
+              profiles={merchants}
+              onToggle={addr => toggleMut.mutate(addr)}
+              pending={toggleMut.isPending}
+              emptyMsg="No verified merchants on this page"
+            />
+            <Section
+              title={`Other Users (${nonMerchants.length}${search ? " on this page" : ""})`}
+              profiles={nonMerchants}
+              onToggle={addr => toggleMut.mutate(addr)}
+              pending={toggleMut.isPending}
+              emptyMsg="No users found"
+            />
+          </div>
+
+          {data && !search && (
+            <Paginator
+              page={data.page}
+              total={data.total}
+              limit={data.limit}
+              onChange={p => setPage(p)}
+            />
+          )}
+        </>
       )}
     </div>
   );
