@@ -219,6 +219,28 @@ export function signEvmTransaction(
   return "0x" + bytesToHex(result);
 }
 
+// ── Ethereum personal_sign ────────────────────────────────────────────────────
+// Signs a message with the standard "\x19Ethereum Signed Message:\n<len>" prefix.
+// message: hex string ("0x...") decoded to bytes, or plain UTF-8 string
+// Returns 65-byte signature as "0x<r><s><v>" where v = recovery + 27
+export function signPersonalMessage(message: string, privateKeyHex: string): string {
+  const msgBytes = message.startsWith("0x")
+    ? hexToBytes(message.slice(2))
+    : new TextEncoder().encode(message);
+  const prefix = `\x19Ethereum Signed Message:\n${msgBytes.length}`;
+  const prefixBytes = new TextEncoder().encode(prefix);
+  const payload = new Uint8Array(prefixBytes.length + msgBytes.length);
+  payload.set(prefixBytes);
+  payload.set(msgBytes, prefixBytes.length);
+  const hash = keccak_256(payload);
+  const privBytes = hexToBytes(privateKeyHex);
+  const sig = secp256k1.sign(hash, privBytes);
+  const r = sig.r.toString(16).padStart(64, "0");
+  const s = sig.s.toString(16).padStart(64, "0");
+  const v = ((sig.recovery ?? 0) + 27).toString(16).padStart(2, "0");
+  return "0x" + r + s + v;
+}
+
 export function mcToWei(mc: string): string {
   const trimmed = mc.trim();
   const [intPart, decPart = ""] = trimmed.split(".");
