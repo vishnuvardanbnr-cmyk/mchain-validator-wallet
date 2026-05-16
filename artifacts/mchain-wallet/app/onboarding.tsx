@@ -145,10 +145,12 @@ export default function OnboardingScreen() {
       });
       setRegistrationDone(true);
       setStep("done");
-    } catch {
+    } catch (err: unknown) {
+      const msg =
+        err instanceof Error ? err.message : "Could not connect to the chain.";
       Alert.alert(
         "Registration Failed",
-        "Could not connect to the chain. You can retry or continue — registration can be retried from Settings."
+        `${msg}\n\nYou can retry or continue — registration can be retried from Settings.`
       );
     } finally {
       setLoading(false);

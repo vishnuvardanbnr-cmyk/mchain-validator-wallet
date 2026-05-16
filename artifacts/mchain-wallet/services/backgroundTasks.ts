@@ -7,7 +7,7 @@ import { signEpochBlockHash } from "./crypto";
 
 export const HEARTBEAT_TASK = "mchain-validator-heartbeat";
 
-const CHAIN_BASE = "https://api.mxc.org/api";
+const CHAIN_BASE = "https://chain.mvault.pro/api";
 const VALIDATOR_ADDRESS_KEY = "mchain_validator_address";
 const VALIDATOR_STATUS_KEY = "validatorStatus";
 const VALIDATOR_WALLET_ID_KEY = "mchain_validator_wallet_id";
