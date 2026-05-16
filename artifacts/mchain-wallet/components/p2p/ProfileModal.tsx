@@ -3,7 +3,9 @@ import { Toast } from "@/components/Toast";
 import { useWallet } from "@/context/WalletContext";
 import { useColors } from "@/hooks/useColors";
 import { p2pApi, type P2pProfile } from "@/services/p2pApi";
-import { useQueryClient } from "@tanstack/react-query";
+import { formatDetailsSingleLine, PAYMENT_METHODS as PM_LIST } from "@/services/paymentMethods";
+import { useQueryClient, useQuery } from "@tanstack/react-query";
+import { PaymentDetailSheet } from "./PaymentDetailSheet";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import React, { useState } from "react";
@@ -43,12 +45,20 @@ export function ProfileModal({ visible, onClose, profile }: Props) {
   const { mxcAddress } = useWallet();
   const queryClient = useQueryClient();
 
-  const [tab, setTab] = useState<"overview" | "kyc">("overview");
+  const [tab, setTab] = useState<"overview" | "kyc" | "payment">("overview");
+  const [pmSheet, setPmSheet] = useState<{ method: string } | null>(null);
   const [displayName, setDisplayName] = useState(profile?.displayName ?? "");
   const [kycName, setKycName] = useState("");
   const [kycDoc, setKycDoc] = useState("passport");
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState("");
+
+  const { data: savedDetails = [], refetch: refetchPaymentDetails } = useQuery({
+    queryKey: ["payment-details", mxcAddress],
+    queryFn: () => p2pApi.getPaymentDetails(mxcAddress!),
+    enabled: !!mxcAddress && tab === "payment",
+  });
+  const detailsByMethod = new Map(savedDetails.map(d => [d.paymentMethod, d]));
 
   const completionRate = profile
     ? profile.totalTrades > 0
@@ -136,7 +146,12 @@ export function ProfileModal({ visible, onClose, profile }: Props) {
     btnGrad: { paddingVertical: 16, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 8 },
     btnText: { fontSize: 15, fontFamily: "Inter_700Bold", color: "#FFF" },
     infoBox: { backgroundColor: "#0EA5E910", borderRadius: 10, borderWidth: 1, borderColor: "#0EA5E930", padding: 12, marginBottom: 18 },
-    infoText: { fontSize: 12, fontFamily: "Inter_400Regular", color: colors.mutedForeground, lineHeight: 18 },
+    infoText: { fontSize: 12, fontFamily: "Inter_400Regular", color: colors.mutedForeground, lineHeight: 18, marginBottom: 16 },
+    pmCard: { flexDirection: "row", alignItems: "center", backgroundColor: colors.card, borderRadius: 12, borderWidth: 1, borderColor: colors.border, padding: 14, marginBottom: 10 },
+    pmCardSaved: { borderColor: colors.primary + "50" },
+    pmCardLabel: { fontSize: 14, fontFamily: "Inter_600SemiBold", color: colors.foreground, marginBottom: 3 },
+    pmCardDetail: { fontSize: 12, fontFamily: "Inter_400Regular", color: colors.primary },
+    pmCardAdd: { fontSize: 12, fontFamily: "Inter_400Regular", color: colors.mutedForeground, fontStyle: "italic" },
   });
 
   const initial = (profile?.displayName ?? mxcAddress ?? "?").slice(0, 2).toUpperCase();
@@ -156,15 +171,35 @@ export function ProfileModal({ visible, onClose, profile }: Props) {
 
               {/* Tabs */}
               <View style={s.tabBar}>
-                {(["overview", "kyc"] as const).map(t => (
+                {(["overview", "payment", "kyc"] as const).map(t => (
                   <TouchableOpacity key={t} style={[s.tabBtn, tab === t && s.tabBtnActive]} onPress={() => setTab(t)}>
-                    <Text style={[s.tabText, tab === t && s.tabTextActive]}>{t === "overview" ? "Overview" : "KYC Verification"}</Text>
+                    <Text style={[s.tabText, tab === t && s.tabTextActive]}>
+                      {t === "overview" ? "Overview" : t === "payment" ? "Payment" : "KYC"}
+                    </Text>
                   </TouchableOpacity>
                 ))}
               </View>
 
               <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled">
-                {tab === "overview" ? (
+                {tab === "payment" ? (
+                  <>
+                    <Text style={s.infoText}>Save your payment details for each method. Buyers will see them when placing orders.</Text>
+                    {PM_LIST.map(pm => {
+                      const saved = detailsByMethod.get(pm.id);
+                      return (
+                        <TouchableOpacity key={pm.id} style={[s.pmCard, saved && s.pmCardSaved]} onPress={() => setPmSheet({ method: pm.id })} activeOpacity={0.75}>
+                          <View style={{ flex: 1 }}>
+                            <Text style={s.pmCardLabel}>{pm.label}</Text>
+                            {saved
+                              ? <Text style={s.pmCardDetail} numberOfLines={1}>{formatDetailsSingleLine(pm.id, saved.details)}</Text>
+                              : <Text style={s.pmCardAdd}>Tap to add details</Text>}
+                          </View>
+                          <Icon name={saved ? "create-outline" : "add-circle-outline"} size={18} color={saved ? colors.primary : colors.mutedForeground} />
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </>
+                ) : tab === "overview" ? (
                   <>
                     <View style={s.avatarWrap}>
                       <Text style={s.avatarText}>{initial}</Text>
@@ -272,6 +307,17 @@ export function ProfileModal({ visible, onClose, profile }: Props) {
         </View>
       </KeyboardAvoidingView>
       <Toast message={toast} visible={!!toast} onHide={() => setToast("")} />
+      {pmSheet && (
+        <PaymentDetailSheet
+          visible={!!pmSheet}
+          onClose={() => setPmSheet(null)}
+          onSaved={() => { void refetchPaymentDetails(); setPmSheet(null); }}
+          onDeleted={() => { void refetchPaymentDetails(); setPmSheet(null); }}
+          ownerAddress={mxcAddress ?? ""}
+          paymentMethod={pmSheet.method}
+          existing={detailsByMethod.get(pmSheet.method)}
+        />
+      )}
     </Modal>
   );
 }

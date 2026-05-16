@@ -3,9 +3,11 @@ import { Toast } from "@/components/Toast";
 import { useWallet } from "@/context/WalletContext";
 import { useColors } from "@/hooks/useColors";
 import { p2pApi, type P2pAd } from "@/services/p2pApi";
+import { METHOD_FIELDS, METHOD_LABELS } from "@/services/paymentMethods";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import React, { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   ActivityIndicator, KeyboardAvoidingView, Modal, Platform,
   Pressable, ScrollView, StyleSheet, Text, TextInput,
@@ -39,6 +41,14 @@ export function OrderModal({ visible, ad, onClose, onOrderPlaced }: Props) {
   const available = parseFloat(ad.availableAmount);
 
   const isBuyOrder = ad.side === "sell"; // ad is sell → I'm buying
+
+  const { data: sellerDetailRows } = useQuery({
+    queryKey: ["seller-payment-detail", ad.ownerAddress, selectedPm],
+    queryFn: () => p2pApi.getPaymentDetailForMethod(ad.ownerAddress, selectedPm),
+    enabled: !!selectedPm && !!ad.ownerAddress && isBuyOrder,
+    staleTime: 30000,
+  });
+  const sellerDetail = sellerDetailRows?.[0];
 
   async function handlePlace() {
     if (!mxcAddress) return;
@@ -92,6 +102,12 @@ export function OrderModal({ visible, ad, onClose, onOrderPlaced }: Props) {
     pmText: { fontSize: 12, fontFamily: "Inter_500Medium", color: colors.mutedForeground },
     pmTextActive: { color: colors.primary, fontFamily: "Inter_600SemiBold" },
     detailInput: { backgroundColor: colors.card, borderRadius: 10, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 14, paddingVertical: 12, fontSize: 13, fontFamily: "Inter_400Regular", color: colors.foreground, marginBottom: 18 },
+    sellerCard: { backgroundColor: colors.card, borderRadius: 12, borderWidth: 1.5, borderColor: colors.primary + "40", padding: 14, marginBottom: 18 },
+    sellerCardTitle: { fontSize: 11, fontFamily: "Inter_600SemiBold", color: colors.primary, letterSpacing: 1.1, marginBottom: 10 },
+    sellerDetailRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6, gap: 12 },
+    sellerDetailLabel: { fontSize: 12, fontFamily: "Inter_400Regular", color: colors.mutedForeground, flex: 1 },
+    sellerDetailValue: { fontSize: 13, fontFamily: "Inter_600SemiBold", color: colors.foreground, flex: 2, textAlign: "right" as const },
+    sellerNoDetail: { fontSize: 12, fontFamily: "Inter_400Regular", color: colors.mutedForeground, fontStyle: "italic" as const, lineHeight: 18 },
     termsBox: { backgroundColor: colors.card, borderRadius: 10, borderWidth: 1, borderColor: colors.border, padding: 12, marginBottom: 20 },
     termsText: { fontSize: 12, fontFamily: "Inter_400Regular", color: colors.mutedForeground, lineHeight: 18 },
     btn: { borderRadius: 14, overflow: "hidden", marginHorizontal: 20, marginTop: 4 },
@@ -152,15 +168,32 @@ export function OrderModal({ visible, ad, onClose, onOrderPlaced }: Props) {
                   {ad.paymentMethods.map(pm => (
                     <TouchableOpacity key={pm} style={[s.pmChip, selectedPm === pm && s.pmChipActive]} onPress={() => setSelectedPm(pm)}>
                       <Text style={[s.pmText, selectedPm === pm && s.pmTextActive]}>
-                        {pm.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())}
+                        {METHOD_LABELS[pm] ?? pm.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())}
                       </Text>
                     </TouchableOpacity>
                   ))}
                 </View>
 
-                {/* Payment details */}
-                <Text style={s.label}>YOUR PAYMENT DETAILS (OPTIONAL)</Text>
-                <TextInput style={s.detailInput} value={paymentDetails} onChangeText={setPaymentDetails} placeholder="Account number, PayPal email, etc." placeholderTextColor={colors.mutedForeground} />
+                {/* Seller's payment details */}
+                {isBuyOrder && (
+                  <>
+                    <Text style={s.label}>WHERE TO SEND PAYMENT</Text>
+                    <View style={s.sellerCard}>
+                      {sellerDetail && (METHOD_FIELDS[selectedPm] ?? []).some(f => sellerDetail.details[f.key]) ? (
+                        (METHOD_FIELDS[selectedPm] ?? []).map(f =>
+                          sellerDetail.details[f.key] ? (
+                            <View key={f.key} style={s.sellerDetailRow}>
+                              <Text style={s.sellerDetailLabel}>{f.label}</Text>
+                              <Text style={s.sellerDetailValue}>{sellerDetail.details[f.key]}</Text>
+                            </View>
+                          ) : null
+                        )
+                      ) : (
+                        <Text style={s.sellerNoDetail}>The seller hasn't added payment details for this method yet. Message them once the order is placed for payment info.</Text>
+                      )}
+                    </View>
+                  </>
+                )}
 
                 {/* Terms */}
                 {ad.terms && (

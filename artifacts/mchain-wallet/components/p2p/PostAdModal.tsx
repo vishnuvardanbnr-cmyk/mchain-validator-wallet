@@ -3,28 +3,17 @@ import { Toast } from "@/components/Toast";
 import { useWallet } from "@/context/WalletContext";
 import { useColors } from "@/hooks/useColors";
 import { p2pApi } from "@/services/p2pApi";
+import { PAYMENT_METHODS } from "@/services/paymentMethods";
+import { useQuery } from "@tanstack/react-query";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import React, { useState } from "react";
 import {
   ActivityIndicator, KeyboardAvoidingView, Modal, Platform,
-  Pressable, ScrollView, StyleSheet, Switch, Text, TextInput,
+  Pressable, ScrollView, StyleSheet, Text, TextInput,
   TouchableOpacity, View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-
-const PAYMENT_METHODS = [
-  { id: "bank_transfer",  label: "Bank Transfer" },
-  { id: "upi",           label: "UPI" },
-  { id: "phonepe",       label: "PhonePe" },
-  { id: "google_pay",    label: "Google Pay" },
-  { id: "paytm",         label: "Paytm" },
-  { id: "paypal",        label: "PayPal" },
-  { id: "revolut",       label: "Revolut" },
-  { id: "wise",          label: "Wise" },
-  { id: "cash",          label: "Cash" },
-  { id: "crypto_transfer", label: "Crypto Transfer" },
-];
 
 interface Props {
   visible: boolean;
@@ -43,6 +32,14 @@ export function PostAdModal({ visible, onClose, onPosted }: Props) {
   const [minAmount, setMinAmount] = useState("");
   const [maxAmount, setMaxAmount] = useState("");
   const [availableAmount, setAvailableAmount] = useState("");
+  const { data: savedPaymentDetails = [] } = useQuery({
+    queryKey: ["payment-details", mxcAddress],
+    queryFn: () => p2pApi.getPaymentDetails(mxcAddress!),
+    enabled: !!mxcAddress,
+    staleTime: 30000,
+  });
+  const savedMethodIds = new Set(savedPaymentDetails.map((d: { paymentMethod: string }) => d.paymentMethod));
+
   const [paymentMethods, setPaymentMethods] = useState<string[]>(["bank_transfer"]);
   const [paymentWindow, setPaymentWindow] = useState("15");
   const [terms, setTerms] = useState("");
@@ -124,6 +121,7 @@ export function PostAdModal({ visible, onClose, onPosted }: Props) {
     sideSellText: { color: "#0EA5E9" },
     sideBuy: { borderColor: "#10B981", backgroundColor: "#10B98115" },
     sideBuyText: { color: "#10B981" },
+    pmHint: { fontSize: 11, fontFamily: "Inter_400Regular", color: "#F59E0B", marginTop: -10, marginBottom: 14, lineHeight: 16 },
   });
 
   return (
@@ -193,12 +191,24 @@ export function PostAdModal({ visible, onClose, onPosted }: Props) {
                 {/* Payment methods */}
                 <Text style={[s.label, { marginTop: 4 }]}>PAYMENT METHODS</Text>
                 <View style={s.pmGrid}>
-                  {PAYMENT_METHODS.map(pm => (
-                    <TouchableOpacity key={pm.id} style={[s.pmChip, paymentMethods.includes(pm.id) && s.pmChipActive]} onPress={() => togglePm(pm.id)}>
-                      <Text style={[s.pmText, paymentMethods.includes(pm.id) && s.pmTextActive]}>{pm.label}</Text>
-                    </TouchableOpacity>
-                  ))}
+                  {PAYMENT_METHODS.map(pm => {
+                    const isActive = paymentMethods.includes(pm.id);
+                    const hasSaved = savedMethodIds.has(pm.id);
+                    return (
+                      <TouchableOpacity key={pm.id} style={[s.pmChip, isActive && s.pmChipActive]} onPress={() => togglePm(pm.id)}>
+                        <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                          <Text style={[s.pmText, isActive && s.pmTextActive]}>{pm.label}</Text>
+                          {isActive && (hasSaved
+                            ? <Icon name="checkmark-circle" size={11} color={colors.primary} />
+                            : <Icon name="alert-circle-outline" size={11} color="#F59E0B" />)}
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })}
                 </View>
+                {paymentMethods.some(m => !savedMethodIds.has(m)) && (
+                  <Text style={s.pmHint}>Set up payment details in your Profile so buyers know how to pay you.</Text>
+                )}
 
                 {/* Terms */}
                 <Text style={s.label}>TERMS (OPTIONAL)</Text>

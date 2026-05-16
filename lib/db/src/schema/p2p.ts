@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, integer, numeric, boolean, pgEnum, uuid, index } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, integer, numeric, boolean, pgEnum, uuid, index, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -195,6 +195,20 @@ export const kycSubmitRequestSchema = z.object({
   kycName: z.string().min(2).max(100),
   kycDocType: z.enum(["passport", "national_id", "drivers_license"]),
 });
+
+// ─── Payment Details ──────────────────────────────────────────────────────────
+
+export const p2pPaymentDetails = pgTable("p2p_payment_details", {
+  id:            uuid("id").primaryKey().defaultRandom(),
+  ownerAddress:  text("owner_address").notNull(),
+  paymentMethod: text("payment_method").notNull(),
+  label:         text("label").notNull().default(""),
+  details:       jsonb("details").$type<Record<string, string>>().notNull().default({}),
+  createdAt:     timestamp("created_at").defaultNow().notNull(),
+  updatedAt:     timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  index("p2p_pmt_details_owner_idx").on(table.ownerAddress),
+]);
 
 // ─── App Settings ─────────────────────────────────────────────────────────────
 

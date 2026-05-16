@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import {
-  p2pAds, p2pOrders, p2pMessages, p2pDisputes, p2pRatings, p2pProfiles,
+  p2pAds, p2pOrders, p2pMessages, p2pDisputes, p2pRatings, p2pProfiles, p2pPaymentDetails,
   createAdRequestSchema, createOrderRequestSchema, createDisputeRequestSchema,
   sendMessageRequestSchema, rateOrderRequestSchema, kycSubmitRequestSchema,
 } from "@workspace/db";
@@ -163,7 +163,11 @@ router.get("/p2p/orders/:id", async (req, res) => {
   const [order] = await db.select().from(p2pOrders).where(eq(p2pOrders.id, id)).limit(1);
   if (!order) { res.status(404).json({ error: "Order not found" }); return; }
   const [ad] = await db.select().from(p2pAds).where(eq(p2pAds.id, order.adId)).limit(1);
-  res.json({ ...order, ad });
+  const [sellerPaymentDetail] = await db.select().from(p2pPaymentDetails).where(and(
+    eq(p2pPaymentDetails.ownerAddress, order.sellerAddress),
+    eq(p2pPaymentDetails.paymentMethod, order.paymentMethod),
+  )).limit(1);
+  res.json({ ...order, ad, sellerPaymentDetail: sellerPaymentDetail ?? null });
 });
 
 router.post("/p2p/orders", async (req, res) => {
@@ -342,6 +346,64 @@ router.post("/p2p/orders/:id/dispute", async (req, res) => {
   await db.update(p2pOrders).set({ status: "disputed", updatedAt: new Date() }).where(eq(p2pOrders.id, id));
   await db.insert(p2pMessages).values({ orderId: id, senderAddress: "system", content: `A dispute has been opened by ${openedBy.slice(0, 8)}…. Our team will review and resolve within 24 hours.`, isSystem: true });
   res.status(201).json(dispute);
+});
+
+// ── Payment Details ───────────────────────────────────────────────────────────
+
+router.get("/p2p/payment-details/:address", async (req, res) => {
+  const { address } = req.params;
+  const rows = await db.select().from(p2pPaymentDetails)
+    .where(eq(p2pPaymentDetails.ownerAddress, address))
+    .orderBy(p2pPaymentDetails.paymentMethod, p2pPaymentDetails.createdAt);
+  res.json(rows);
+});
+
+router.get("/p2p/payment-details/:address/:method", async (req, res) => {
+  const { address, method } = req.params;
+  const rows = await db.select().from(p2pPaymentDetails)
+    .where(and(
+      eq(p2pPaymentDetails.ownerAddress, address),
+      eq(p2pPaymentDetails.paymentMethod, method),
+    ))
+    .orderBy(p2pPaymentDetails.createdAt);
+  res.json(rows);
+});
+
+router.post("/p2p/payment-details", async (req, res) => {
+  const { ownerAddress, paymentMethod, label, details } = req.body as {
+    ownerAddress?: string; paymentMethod?: string; label?: string; details?: Record<string, string>;
+  };
+  if (!ownerAddress || !paymentMethod || !details) {
+    res.status(400).json({ error: "ownerAddress, paymentMethod and details required" }); return;
+  }
+  const existing = await db.select().from(p2pPaymentDetails).where(and(
+    eq(p2pPaymentDetails.ownerAddress, ownerAddress),
+    eq(p2pPaymentDetails.paymentMethod, paymentMethod),
+  )).limit(1);
+
+  if (existing.length > 0) {
+    const [updated] = await db.update(p2pPaymentDetails)
+      .set({ label: label ?? existing[0].label, details, updatedAt: new Date() })
+      .where(eq(p2pPaymentDetails.id, existing[0].id))
+      .returning();
+    res.json(updated);
+  } else {
+    const [created] = await db.insert(p2pPaymentDetails)
+      .values({ ownerAddress, paymentMethod, label: label ?? "", details })
+      .returning();
+    res.status(201).json(created);
+  }
+});
+
+router.delete("/p2p/payment-details/:id", async (req, res) => {
+  const { id } = req.params;
+  const { ownerAddress } = req.body as { ownerAddress?: string };
+  if (!ownerAddress) { res.status(400).json({ error: "ownerAddress required" }); return; }
+  const [deleted] = await db.delete(p2pPaymentDetails)
+    .where(and(eq(p2pPaymentDetails.id, id), eq(p2pPaymentDetails.ownerAddress, ownerAddress)))
+    .returning();
+  if (!deleted) { res.status(404).json({ error: "Not found" }); return; }
+  res.json({ ok: true });
 });
 
 // ── Ratings ───────────────────────────────────────────────────────────────────

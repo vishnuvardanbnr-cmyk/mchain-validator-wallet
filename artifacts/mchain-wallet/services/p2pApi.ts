@@ -37,6 +37,16 @@ export interface P2pAd {
   createdAt: string;
 }
 
+export interface PaymentDetail {
+  id: string;
+  ownerAddress: string;
+  paymentMethod: string;
+  label: string;
+  details: Record<string, string>;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface P2pOrder {
   id: string;
   adId: string;
@@ -49,6 +59,7 @@ export interface P2pOrder {
   price: string;
   paymentMethod: string;
   paymentDetails?: string;
+  sellerPaymentDetail?: PaymentDetail | null;
   status: "pending" | "paid" | "released" | "cancelled" | "disputed" | "resolved";
   escrowTxHash?: string;
   releaseTxHash?: string;
@@ -159,4 +170,14 @@ export const p2pApi = {
   // ── Ratings ──────────────────────────────────────────────────────────────
   rateOrder: (orderId: string, body: { raterAddress: string; ratedAddress: string; score: number; comment?: string }) =>
     req<{ ok: boolean }>(`/orders/${orderId}/rate`, { method: "POST", body: JSON.stringify(body) }),
+
+  // ── Payment Details ───────────────────────────────────────────────────────
+  getPaymentDetails: (address: string) =>
+    req<PaymentDetail[]>(`/payment-details/${address}`),
+  getPaymentDetailForMethod: (address: string, method: string) =>
+    req<PaymentDetail[]>(`/payment-details/${address}/${encodeURIComponent(method)}`),
+  savePaymentDetail: (body: { ownerAddress: string; paymentMethod: string; label?: string; details: Record<string, string> }) =>
+    req<PaymentDetail>("/payment-details", { method: "POST", body: JSON.stringify(body) }),
+  deletePaymentDetail: (id: string, ownerAddress: string) =>
+    req<{ ok: boolean }>(`/payment-details/${id}`, { method: "DELETE", body: JSON.stringify({ ownerAddress }) }),
 };
