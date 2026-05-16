@@ -41,6 +41,7 @@ export const p2pProfiles = pgTable("p2p_profiles", {
   kycStatus: p2pKycStatusEnum("kyc_status").notNull().default("none"),
   kycName: text("kyc_name"),
   kycDocType: text("kyc_doc_type"),
+  phone: text("phone"),
   kycDocImage: text("kyc_doc_image"),
   kycSubmittedAt: timestamp("kyc_submitted_at"),
   kycVerifiedAt: timestamp("kyc_verified_at"),

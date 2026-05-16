@@ -6,6 +6,7 @@ export interface P2pProfile {
   id: string;
   mxcAddress: string;
   displayName: string;
+  phone?: string | null;
   totalTrades: number;
   completedTrades: number;
   disputesLost: number;
@@ -135,10 +136,12 @@ async function req<T>(path: string, options?: RequestInit): Promise<T> {
 export const p2pApi = {
   // ── Profile ──────────────────────────────────────────────────────────────
   getProfile: (address: string) => req<P2pProfile>(`/profiles/${address}`),
-  upsertProfile: (body: { mxcAddress: string; displayName: string }) =>
+  upsertProfile: (body: { mxcAddress: string; displayName: string; phone?: string }) =>
     req<P2pProfile>("/profiles", { method: "POST", body: JSON.stringify(body) }),
   submitKyc: (body: { mxcAddress: string; kycName: string; kycDocType: string; displayName: string; kycDocImage?: string }) =>
     req<P2pProfile>("/profiles/kyc", { method: "POST", body: JSON.stringify(body) }),
+  disconnectProfile: (address: string) =>
+    req<{ ok: boolean }>(`/profiles/${address}`, { method: "DELETE" }),
 
   // ── Ads ──────────────────────────────────────────────────────────────────
   getAds: (params: { token?: string; side?: string; offset?: number }) => {

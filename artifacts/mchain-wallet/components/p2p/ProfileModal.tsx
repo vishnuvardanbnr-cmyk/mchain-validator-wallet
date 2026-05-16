@@ -50,10 +50,13 @@ export function ProfileModal({ visible, onClose, profile }: Props) {
   const [tab, setTab] = useState<"overview" | "kyc" | "payment">("overview");
   const [pmSheet, setPmSheet] = useState<{ method: string } | null>(null);
   const [displayName, setDisplayName] = useState(profile?.displayName ?? "");
+  const [phone, setPhone] = useState(profile?.phone ?? "");
   const [kycName, setKycName] = useState("");
   const [kycDoc, setKycDoc] = useState("passport");
   const [kycDocImage, setKycDocImage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [disconnecting, setDisconnecting] = useState(false);
+  const [confirmDisconnect, setConfirmDisconnect] = useState(false);
   const [toast, setToast] = useState("");
 
   const { data: savedDetails = [], refetch: refetchPaymentDetails } = useQuery({
@@ -69,12 +72,27 @@ export function ProfileModal({ visible, onClose, profile }: Props) {
       : "100.0"
     : "—";
 
+  async function handleDisconnect() {
+    if (!mxcAddress) return;
+    setDisconnecting(true);
+    try {
+      await p2pApi.disconnectProfile(mxcAddress);
+      queryClient.invalidateQueries({ queryKey: ["p2p_profile"] });
+      onClose();
+    } catch (e) {
+      setToast(e instanceof Error ? e.message : "Failed to disconnect");
+    } finally {
+      setDisconnecting(false);
+      setConfirmDisconnect(false);
+    }
+  }
+
   async function handleSaveProfile() {
     if (!mxcAddress) return;
     if (!displayName.trim()) { setToast("Enter a display name"); return; }
     setLoading(true);
     try {
-      await p2pApi.upsertProfile({ mxcAddress, displayName: displayName.trim() });
+      await p2pApi.upsertProfile({ mxcAddress, displayName: displayName.trim(), phone: phone.trim() || undefined });
       queryClient.invalidateQueries({ queryKey: ["p2p_profile"] });
       if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setToast("Profile saved");
@@ -174,6 +192,17 @@ export function ProfileModal({ visible, onClose, profile }: Props) {
     docPreview: { width: "100%", height: 160 },
     uploadOverlay: { position: "absolute", bottom: 0, left: 0, right: 0, backgroundColor: "rgba(0,0,0,0.55)", flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, paddingVertical: 6 },
     uploadChangeText: { fontSize: 12, fontFamily: "Inter_600SemiBold", color: "#FFF" },
+    phoneRow: { flexDirection: "row", alignItems: "center", gap: 10, borderRadius: 10, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.card, paddingHorizontal: 14, marginBottom: 6 },
+    disconnectSection: { marginTop: 28, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 20 },
+    disconnectBtn: { borderRadius: 12, borderWidth: 1.5, borderColor: "#EF444450", backgroundColor: "#EF444408", paddingVertical: 13, alignItems: "center", flexDirection: "row", justifyContent: "center", gap: 7 },
+    disconnectText: { fontSize: 14, fontFamily: "Inter_600SemiBold", color: "#EF4444" },
+    confirmBox: { backgroundColor: "#EF444410", borderRadius: 12, borderWidth: 1, borderColor: "#EF444430", padding: 14, marginTop: 10 },
+    confirmMsg: { fontSize: 13, fontFamily: "Inter_400Regular", color: colors.foreground, marginBottom: 12, lineHeight: 20 },
+    confirmRow: { flexDirection: "row", gap: 8 },
+    confirmCancel: { flex: 1, paddingVertical: 11, borderRadius: 10, borderWidth: 1, borderColor: colors.border, alignItems: "center" },
+    confirmCancelText: { fontSize: 13, fontFamily: "Inter_600SemiBold", color: colors.foreground },
+    confirmDel: { flex: 1, paddingVertical: 11, borderRadius: 10, backgroundColor: "#EF4444", alignItems: "center", flexDirection: "row", justifyContent: "center", gap: 5 },
+    confirmDelText: { fontSize: 13, fontFamily: "Inter_700Bold", color: "#FFF" },
     btn: { borderRadius: 14, overflow: "hidden", marginTop: 4 },
     btnGrad: { paddingVertical: 16, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 8 },
     btnText: { fontSize: 15, fontFamily: "Inter_700Bold", color: "#FFF" },
@@ -301,11 +330,60 @@ export function ProfileModal({ visible, onClose, profile }: Props) {
                     <Text style={s.label}>DISPLAY NAME</Text>
                     <TextInput style={s.input} value={displayName} onChangeText={setDisplayName} placeholder="Your trader name" placeholderTextColor={colors.mutedForeground} maxLength={50} />
 
+                    <Text style={s.label}>PHONE NUMBER (optional)</Text>
+                    <View style={s.phoneRow}>
+                      <Icon name="phone-portrait-outline" size={16} color={colors.mutedForeground} />
+                      <TextInput
+                        style={[s.input, { flex: 1, marginBottom: 0 }]}
+                        value={phone}
+                        onChangeText={setPhone}
+                        placeholder="+1 234 567 890"
+                        placeholderTextColor={colors.mutedForeground}
+                        keyboardType="phone-pad"
+                        maxLength={20}
+                      />
+                    </View>
+                    <Text style={[s.kycSub, { marginBottom: 14 }]}>Visible only to your trade counterparty after order is confirmed</Text>
+
                     <TouchableOpacity style={[s.btn, loading && { opacity: 0.6 }]} onPress={handleSaveProfile} disabled={loading} activeOpacity={0.85}>
                       <LinearGradient colors={["#0EA5E9", "#0284C7"]} style={s.btnGrad}>
                         {loading ? <ActivityIndicator color="#FFF" /> : <Text style={s.btnText}>Save Profile</Text>}
                       </LinearGradient>
                     </TouchableOpacity>
+
+                    <View style={s.disconnectSection}>
+                      <TouchableOpacity
+                        style={s.disconnectBtn}
+                        onPress={() => setConfirmDisconnect(v => !v)}
+                        activeOpacity={0.8}
+                      >
+                        <Icon name="unlink-outline" size={16} color="#EF4444" />
+                        <Text style={s.disconnectText}>Disconnect from P2P</Text>
+                      </TouchableOpacity>
+
+                      {confirmDisconnect && (
+                        <View style={s.confirmBox}>
+                          <Text style={s.confirmMsg}>
+                            This will delete your P2P profile and remove your trading history. You can reconnect any time using the same wallet address.
+                          </Text>
+                          <View style={s.confirmRow}>
+                            <TouchableOpacity style={s.confirmCancel} onPress={() => setConfirmDisconnect(false)}>
+                              <Text style={s.confirmCancelText}>Cancel</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              style={[s.confirmDel, disconnecting && { opacity: 0.6 }]}
+                              onPress={handleDisconnect}
+                              disabled={disconnecting}
+                            >
+                              {disconnecting
+                                ? <ActivityIndicator color="#FFF" size="small" />
+                                : <><Icon name="trash-outline" size={14} color="#FFF" /><Text style={s.confirmDelText}>Yes, Disconnect</Text></>
+                              }
+                            </TouchableOpacity>
+                          </View>
+                        </View>
+                      )}
+                    </View>
                   </>
                 ) : (
                   <>

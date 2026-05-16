@@ -63,12 +63,15 @@ router.get("/p2p/profiles/:address", async (req, res) => {
 });
 
 router.post("/p2p/profiles", async (req, res) => {
-  const body = req.body as { mxcAddress?: string; displayName?: string };
+  const body = req.body as { mxcAddress?: string; displayName?: string; phone?: string };
   if (!body.mxcAddress) { res.status(400).json({ error: "mxcAddress required" }); return; }
   const existing = await db.select().from(p2pProfiles).where(eq(p2pProfiles.mxcAddress, body.mxcAddress)).limit(1);
   if (existing.length > 0) {
+    const updateData: Record<string, unknown> = { updatedAt: new Date() };
+    if (body.displayName) updateData.displayName = body.displayName;
+    if (body.phone !== undefined) updateData.phone = body.phone;
     const [updated] = await db.update(p2pProfiles)
-      .set({ displayName: body.displayName ?? existing[0].displayName, updatedAt: new Date() })
+      .set(updateData)
       .where(eq(p2pProfiles.mxcAddress, body.mxcAddress))
       .returning();
     res.json(updated);
@@ -77,8 +80,21 @@ router.post("/p2p/profiles", async (req, res) => {
   const [created] = await db.insert(p2pProfiles).values({
     mxcAddress: body.mxcAddress,
     displayName: body.displayName ?? body.mxcAddress.slice(0, 10) + "…",
+    phone: body.phone,
   }).returning();
   res.status(201).json(created);
+});
+
+router.delete("/p2p/profiles/:address", async (req, res) => {
+  const { address } = req.params;
+  const existing = await db.select().from(p2pProfiles).where(eq(p2pProfiles.mxcAddress, address)).limit(1);
+  if (!existing.length) { res.status(404).json({ error: "Profile not found" }); return; }
+  if ((existing[0].completedTrades ?? 0) > 0) {
+    res.status(409).json({ error: "Cannot disconnect — you have completed trades. Contact support." });
+    return;
+  }
+  await db.delete(p2pProfiles).where(eq(p2pProfiles.mxcAddress, address));
+  res.json({ ok: true });
 });
 
 router.post("/p2p/profiles/kyc", async (req, res) => {

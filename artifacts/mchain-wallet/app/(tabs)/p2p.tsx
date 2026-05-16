@@ -7,11 +7,13 @@ import { LinearGradient } from "expo-linear-gradient";
 import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  KeyboardAvoidingView,
   Platform,
   RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
@@ -205,14 +207,27 @@ export default function P2PScreen() {
   });
 
   const [activating, setActivating] = useState(false);
+  const [connectName, setConnectName] = useState("");
+  const [connectPhone, setConnectPhone] = useState("");
+  const [connectErr, setConnectErr] = useState("");
+
   async function handleActivate() {
     if (!mxcAddress) return;
+    if (!connectName.trim() || connectName.trim().length < 2) {
+      setConnectErr("Enter a display name (at least 2 characters)");
+      return;
+    }
+    setConnectErr("");
     setActivating(true);
     try {
-      await p2pApi.upsertProfile({ mxcAddress, displayName: mxcAddress.slice(0, 10) + "…" });
+      await p2pApi.upsertProfile({
+        mxcAddress,
+        displayName: connectName.trim(),
+        phone: connectPhone.trim() || undefined,
+      });
       void refetchProfile();
-    } catch {
-      // ignore
+    } catch (e) {
+      setConnectErr(e instanceof Error ? e.message : "Failed to connect");
     } finally {
       setActivating(false);
     }
@@ -273,7 +288,12 @@ export default function P2PScreen() {
     pageBtnDisabled: { opacity: 0.3 },
     pageBtnText: { fontSize: 13, fontFamily: "Inter_600SemiBold", color: colors.primary },
     pageInfo: { fontSize: 13, fontFamily: "Inter_400Regular", color: colors.mutedForeground },
-    connectWrap: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 32, gap: 0 },
+    connectWrap: { alignItems: "center", justifyContent: "center", paddingHorizontal: 32, paddingVertical: 40 },
+    connectFieldLabel: { fontSize: 11, fontFamily: "Inter_600SemiBold", color: colors.mutedForeground, letterSpacing: 1.2, marginBottom: 8, alignSelf: "stretch" },
+    connectInput: { backgroundColor: colors.card, borderRadius: 10, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, fontFamily: "Inter_400Regular", color: colors.foreground, marginBottom: 14, alignSelf: "stretch" },
+    connectInputErr: { borderColor: "#EF4444" },
+    connectErrBox: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "#EF444410", borderRadius: 8, padding: 10, marginBottom: 14, alignSelf: "stretch" },
+    connectErrText: { fontSize: 13, fontFamily: "Inter_400Regular", color: "#EF4444", flex: 1 },
     connectIconWrap: { width: 80, height: 80, borderRadius: 40, backgroundColor: colors.primary + "15", borderWidth: 2, borderColor: colors.primary + "40", alignItems: "center", justifyContent: "center", marginBottom: 20 },
     connectTitle: { fontSize: 22, fontFamily: "Inter_700Bold", color: colors.foreground, textAlign: "center", marginBottom: 10 },
     connectDesc: { fontSize: 14, fontFamily: "Inter_400Regular", color: colors.mutedForeground, textAlign: "center", lineHeight: 22, marginBottom: 24 },
@@ -287,26 +307,64 @@ export default function P2PScreen() {
 
   if (profileReady && !hasProfile) {
     return (
-      <View style={[s.container, { paddingTop: insets.top + (Platform.OS === "web" ? 67 : 8) }]}>
-        <View style={s.connectWrap}>
+      <KeyboardAvoidingView
+        style={[s.container, { paddingTop: insets.top + (Platform.OS === "web" ? 67 : 8) }]}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+      >
+        <ScrollView contentContainerStyle={s.connectWrap} keyboardShouldPersistTaps="handled">
           <View style={s.connectIconWrap}>
             <Icon name="storefront-outline" size={38} color={colors.primary} />
           </View>
           <Text style={s.connectTitle}>Activate P2P Trading</Text>
           <Text style={s.connectDesc}>
-            Your wallet address will be used as your P2P identity. No password needed — you trade pseudonymously using your on-chain address.
+            Your wallet address is your P2P identity — no password needed. Set a display name so other traders can recognise you.
           </Text>
+
           <View style={s.connectAddrBox}>
-            <Text style={s.connectAddr}>{mxcAddress ? `${mxcAddress.slice(0, 16)}…${mxcAddress.slice(-8)}` : "—"}</Text>
+            <Text style={[s.connectAddr, { fontSize: 10, marginBottom: 2, letterSpacing: 0.5 }]}>WALLET ADDRESS</Text>
+            <Text style={s.connectAddr}>{mxcAddress ? `${mxcAddress.slice(0, 18)}…${mxcAddress.slice(-8)}` : "—"}</Text>
           </View>
+
+          <Text style={s.connectFieldLabel}>DISPLAY NAME *</Text>
+          <TextInput
+            style={[s.connectInput, connectErr && connectErr.includes("name") ? s.connectInputErr : null]}
+            value={connectName}
+            onChangeText={setConnectName}
+            placeholder="Your trader name (visible to others)"
+            placeholderTextColor={colors.mutedForeground}
+            maxLength={50}
+            autoCorrect={false}
+          />
+
+          <Text style={s.connectFieldLabel}>PHONE NUMBER (optional)</Text>
+          <TextInput
+            style={s.connectInput}
+            value={connectPhone}
+            onChangeText={setConnectPhone}
+            placeholder="+1 234 567 890"
+            placeholderTextColor={colors.mutedForeground}
+            keyboardType="phone-pad"
+            maxLength={20}
+          />
+
+          {!!connectErr && (
+            <View style={s.connectErrBox}>
+              <Icon name="alert-circle-outline" size={14} color="#EF4444" />
+              <Text style={s.connectErrText}>{connectErr}</Text>
+            </View>
+          )}
+
           <TouchableOpacity style={[s.connectBtn, activating && { opacity: 0.6 }]} onPress={handleActivate} disabled={activating} activeOpacity={0.85}>
             <LinearGradient colors={["#0EA5E9", "#0284C7"]} style={s.connectBtnGrad}>
-              {activating ? <ActivityIndicator color="#FFF" /> : <><Icon name="flash-outline" size={18} color="#FFF" /><Text style={s.connectBtnText}>Connect Wallet to P2P</Text></>}
+              {activating
+                ? <ActivityIndicator color="#FFF" />
+                : <><Icon name="flash-outline" size={18} color="#FFF" /><Text style={s.connectBtnText}>Connect Wallet to P2P</Text></>
+              }
             </LinearGradient>
           </TouchableOpacity>
-          <Text style={s.connectNote}>Your private keys stay on your device at all times. The P2P market only stores your address and trade history.</Text>
-        </View>
-      </View>
+          <Text style={s.connectNote}>Your private keys stay on your device at all times. Only your address and trade history are stored on the platform.</Text>
+        </ScrollView>
+      </KeyboardAvoidingView>
     );
   }
 
