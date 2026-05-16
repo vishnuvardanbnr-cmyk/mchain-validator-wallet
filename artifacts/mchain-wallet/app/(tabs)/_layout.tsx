@@ -68,6 +68,15 @@ export default function TabLayout() {
       />
       <Tabs.Screen name="earnings" options={{ href: null }} />
       <Tabs.Screen
+        name="p2p"
+        options={{
+          title: "P2P",
+          tabBarIcon: ({ color, focused }) => (
+            <Icon name={focused ? "swap-horizontal" : "swap-horizontal-outline"} size={22} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="settings"
         options={{
           title: "Settings",
