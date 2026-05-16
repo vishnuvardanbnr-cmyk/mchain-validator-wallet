@@ -49,7 +49,7 @@ outputType = "webview"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "PORT=3000 BASE_PATH=/admin/ pnpm --filter @workspace/admin-panel run dev"
+args = "PORT=3000 BASE_PATH=/ pnpm --filter @workspace/admin-panel run dev"
 
 [[workflows.workflow]]
 name = "MChain Wallet"
