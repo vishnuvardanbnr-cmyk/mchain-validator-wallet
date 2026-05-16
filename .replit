@@ -60,7 +60,7 @@ outputType = "webview"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "PORT=3001 pnpm --filter @workspace/mchain-wallet run dev"
+args = "PORT=20130 pnpm --filter @workspace/mchain-wallet run dev"
 
 [agent]
 stack = "PNPM_WORKSPACE"
