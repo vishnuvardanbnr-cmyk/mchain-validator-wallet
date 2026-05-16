@@ -7,7 +7,7 @@ import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useFocusEffect } from "expo-router";
-import React, { useEffect, useRef } from "react";
+import React, { useCallback, useEffect, useRef } from "react";
 import {
   ActivityIndicator,
   Animated,
@@ -171,6 +171,7 @@ export default function DashboardScreen() {
   const [selectedAsset, setSelectedAsset] = React.useState<AssetItem | null>(null);
   const rpcBadgeOpacity = useRef(new Animated.Value(0)).current;
   const rpcHideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scrollRef = useRef<ScrollView>(null);
 
   // On-tap ping — updates dot colour AND shows ms badge
   async function handlePingRpc() {
@@ -196,9 +197,10 @@ export default function DashboardScreen() {
     }
   }
 
-  // Show ms badge whenever this tab is focused (auto-click the dot)
+  // Scroll to top + ping RPC whenever this tab is focused
   useFocusEffect(
-    React.useCallback(() => {
+    useCallback(() => {
+      scrollRef.current?.scrollTo({ y: 0, animated: false });
       void handlePingRpc();
     }, []) // eslint-disable-line react-hooks/exhaustive-deps
   );
@@ -692,6 +694,7 @@ export default function DashboardScreen() {
   return (
     <View style={s.container}>
       <ScrollView
+        ref={scrollRef}
         contentContainerStyle={s.scroll}
         refreshControl={
           <RefreshControl

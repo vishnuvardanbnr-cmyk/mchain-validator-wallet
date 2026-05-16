@@ -2,6 +2,7 @@ import { Icon } from "@/components/Icon";
 import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
+import { useFocusEffect } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -88,6 +89,13 @@ export default function ValidatorScreen() {
   } = useWallet();
 
   const { openEpoch } = useHeartbeat();
+  const flatListRef = useRef<FlatList>(null);
+
+  useFocusEffect(
+    useCallback(() => {
+      flatListRef.current?.scrollToOffset({ offset: 0, animated: false });
+    }, [])
+  );
 
   const mxcAddress = validatorWallet?.mxcAddress ?? null;
   const ethAddress = validatorWallet?.ethAddress ?? null;
@@ -1125,6 +1133,7 @@ export default function ValidatorScreen() {
   return (
     <View style={{ flex: 1 }}>
       <FlatList
+        ref={flatListRef}
         style={s.container}
         contentContainerStyle={{ paddingBottom: 110 }}
         refreshControl={

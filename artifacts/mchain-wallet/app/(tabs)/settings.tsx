@@ -1,7 +1,7 @@
 import { Icon } from "@/components/Icon";
 import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
-import React, { useState, useEffect } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -14,6 +14,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useWallet } from "@/context/WalletContext";
@@ -46,6 +47,13 @@ export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
   const { mxcAddress, ethAddress, publicKey, moniker, updateMoniker, getPrivateKey } = useWallet();
+  const scrollRef = useRef<ScrollView>(null);
+
+  useFocusEffect(
+    useCallback(() => {
+      scrollRef.current?.scrollTo({ y: 0, animated: false });
+    }, [])
+  );
 
   const [editingMoniker, setEditingMoniker] = useState(false);
   const [monikerInput, setMonikerInput] = useState(moniker);
@@ -272,7 +280,7 @@ export default function SettingsScreen() {
 
   return (
     <View style={s.container}>
-      <ScrollView contentContainerStyle={s.scroll}>
+      <ScrollView ref={scrollRef} contentContainerStyle={s.scroll}>
 
         {/* ── Header ──────────────────────────────────────────── */}
         <View style={s.header}>

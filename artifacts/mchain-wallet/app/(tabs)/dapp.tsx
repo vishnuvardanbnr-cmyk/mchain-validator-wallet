@@ -10,7 +10,7 @@ import {
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
-import { useNavigation } from "expo-router";
+import { useFocusEffect, useNavigation } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -228,6 +228,8 @@ export default function DAppScreen() {
   const navigation = useNavigation();
   const { ethAddress, getPrivateKey } = useWallet();
 
+  const dappScrollRef = useRef<ScrollView>(null);
+
   // ── Browser state ────────────────────────────────────────────────────────────
   const [activeUrl, setActiveUrl] = useState<string | null>(null);
   const [displayUrl, setDisplayUrl] = useState("");
@@ -235,6 +237,15 @@ export default function DAppScreen() {
   const [canGoBack, setCanGoBack] = useState(false);
   const [canGoForward, setCanGoForward] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  // Scroll the dApp home page to top whenever the tab is focused and no URL is open
+  useFocusEffect(
+    useCallback(() => {
+      if (!activeUrl) {
+        dappScrollRef.current?.scrollTo({ y: 0, animated: false });
+      }
+    }, [activeUrl])
+  );
 
   // ── History state ────────────────────────────────────────────────────────────
   const [history, setHistory] = useState<HistoryEntry[]>([]);
@@ -840,7 +851,7 @@ export default function DAppScreen() {
   // ── Home / dApp grid ──────────────────────────────────────────────────────────
   return (
     <View style={s.container}>
-      <ScrollView keyboardShouldPersistTaps="handled">
+      <ScrollView ref={dappScrollRef} keyboardShouldPersistTaps="handled">
         <View style={s.header}>
           <Text style={s.title}>dApp Browser</Text>
           <Text style={s.subtitle}>Explore the MChain ecosystem</Text>

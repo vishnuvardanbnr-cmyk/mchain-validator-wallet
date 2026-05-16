@@ -2,7 +2,7 @@ import { Icon } from "@/components/Icon";
 import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
 import {
   Animated,
@@ -38,6 +38,13 @@ export default function ReceiveScreen() {
   const copyScale = useRef(new Animated.Value(1)).current;
   const qrScale = useRef(new Animated.Value(0.92)).current;
   const amountHeight = useRef(new Animated.Value(0)).current;
+  const scrollRef = useRef<ScrollView>(null);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      scrollRef.current?.scrollTo({ y: 0, animated: false });
+    }, [])
+  );
 
   useEffect(() => {
     Animated.loop(
@@ -222,7 +229,7 @@ export default function ReceiveScreen() {
 
   return (
     <View style={s.container}>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
+      <ScrollView ref={scrollRef} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
         <View style={s.header}>
           <TouchableOpacity style={s.backBtn} onPress={() => router.back()}>
             <Icon name="close" size={18} color={colors.foreground} />

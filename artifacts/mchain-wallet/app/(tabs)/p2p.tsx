@@ -5,7 +5,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -20,6 +20,7 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useFocusEffect } from "expo-router";
 import { p2pApi, type P2pAd } from "@/services/p2pApi";
 import { PostAdModal } from "@/components/p2p/PostAdModal";
 import { OrderModal } from "@/components/p2p/OrderModal";
@@ -152,6 +153,13 @@ export default function P2PScreen() {
   const insets = useSafeAreaInsets();
   const { mxcAddress } = useWallet();
   const queryClient = useQueryClient();
+  const scrollRef = useRef<ScrollView>(null);
+
+  useFocusEffect(
+    useCallback(() => {
+      scrollRef.current?.scrollTo({ y: 0, animated: false });
+    }, [])
+  );
 
   const [token, setToken] = useState<Token>("MC");
   const [side, setSide] = useState<Side>("buy");
@@ -441,6 +449,7 @@ export default function P2PScreen() {
       </View>
 
       <ScrollView
+        ref={scrollRef}
         style={{ flex: 1 }}
         contentContainerStyle={s.scroll}
         refreshControl={<RefreshControl refreshing={adLoading} onRefresh={() => { void loadAds(adPage); }} tintColor={colors.primary} />}
