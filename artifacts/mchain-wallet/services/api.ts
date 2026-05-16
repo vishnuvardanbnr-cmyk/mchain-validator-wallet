@@ -14,6 +14,33 @@ function getBaseUrl(): string {
   return getNodeUrl();
 }
 
+function getRpcUrl(): string {
+  if (Platform.OS === "web") {
+    const domain =
+      typeof process !== "undefined" ? process.env.EXPO_PUBLIC_DOMAIN : undefined;
+    if (domain) return `https://${domain}/api/rpc`;
+    return "/api/rpc";
+  }
+  return `${getNodeUrl()}/rpc`;
+}
+
+async function rpcRequest<T>(method: string, params: unknown[]): Promise<T> {
+  const url = getRpcUrl();
+  const nodeUrl = getNodeUrl();
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (Platform.OS === "web" && !isDefaultNode()) {
+    headers["X-MChain-Node"] = nodeUrl;
+  }
+  const res = await fetch(url, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ jsonrpc: "2.0", method, params, id: 1 }),
+  });
+  const data = await res.json() as { result?: T; error?: { message: string; code: number } };
+  if (data.error) throw new Error(data.error.message ?? "RPC error");
+  return data.result as T;
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const base = getBaseUrl();
 
@@ -298,17 +325,9 @@ export const api = {
       `/transactions?address=${encodeURIComponent(address)}&limit=${limit}`
     ),
 
-  sendTransaction: (tx: {
-    from: string;
-    to: string;
-    amount: string;
-    nonce: number;
-    signature: string;
-  }) =>
-    request<{ txHash: string }>("/transactions", {
-      method: "POST",
-      body: JSON.stringify(tx),
-    }),
+  sendRawTransaction: (signedTx: string) =>
+    rpcRequest<string>("eth_sendRawTransaction", [signedTx])
+      .then(hash => ({ txHash: hash as string })),
 
   registerValidator: (data: {
     address: string;

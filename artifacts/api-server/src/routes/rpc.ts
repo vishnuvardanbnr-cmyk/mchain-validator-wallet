@@ -22,8 +22,9 @@ function resolveRpcUrl(req: { headers: Record<string, string | string[] | undefi
 router.post("/rpc", async (req, res) => {
   const body = req.body as Record<string, unknown>;
 
-  if (!body || body.jsonrpc !== "2.0" || body.method !== "eth_call") {
-    res.status(400).json({ error: "Only eth_call JSON-RPC requests are supported" });
+  const ALLOWED_METHODS = ["eth_call", "eth_sendRawTransaction", "eth_getTransactionReceipt", "eth_getTransactionCount", "eth_gasPrice", "eth_chainId"];
+  if (!body || body.jsonrpc !== "2.0" || !ALLOWED_METHODS.includes(body.method as string)) {
+    res.status(400).json({ error: `Unsupported method. Allowed: ${ALLOWED_METHODS.join(", ")}` });
     return;
   }
 

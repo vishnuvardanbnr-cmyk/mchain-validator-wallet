@@ -85,19 +85,103 @@ export function signEpochBlockHash(blockHash: string, privateKeyHex: string): st
   return bytesToHex(sig.toCompactRawBytes());
 }
 
-export function signTransaction(
-  from: string,
-  to: string,
-  amount: string,
+// ── MXC address → EVM hex address ────────────────────────────────────────────
+
+export function mxcAddressToEthAddress(mxcAddress: string): string {
+  const decoded = bech32.decode(mxcAddress);
+  const bytes = Uint8Array.from(bech32.fromWords(decoded.words));
+  return "0x" + bytesToHex(bytes);
+}
+
+// ── Minimal RLP encoder (for EVM transaction signing) ────────────────────────
+
+function bigintToMinimalBytes(n: bigint): Uint8Array {
+  if (n === 0n) return new Uint8Array(0);
+  const hex = n.toString(16);
+  const padded = hex.length % 2 === 0 ? hex : "0" + hex;
+  const b = new Uint8Array(padded.length / 2);
+  for (let i = 0; i < padded.length; i += 2) b[i / 2] = parseInt(padded.slice(i, i + 2), 16);
+  return b;
+}
+
+function rlpLengthPrefix(len: number, base: number): Uint8Array {
+  if (len < 56) return new Uint8Array([base + len]);
+  const lb = bigintToMinimalBytes(BigInt(len));
+  const out = new Uint8Array(1 + lb.length);
+  out[0] = base + 55 + lb.length;
+  out.set(lb, 1);
+  return out;
+}
+
+function rlpItem(data: Uint8Array): Uint8Array {
+  if (data.length === 0) return new Uint8Array([0x80]);
+  if (data.length === 1 && data[0] < 0x80) return data;
+  const prefix = rlpLengthPrefix(data.length, 0x80);
+  const out = new Uint8Array(prefix.length + data.length);
+  out.set(prefix);
+  out.set(data, prefix.length);
+  return out;
+}
+
+function rlpList(items: Uint8Array[]): Uint8Array {
+  let total = 0;
+  for (const item of items) total += item.length;
+  const prefix = rlpLengthPrefix(total, 0xc0);
+  const out = new Uint8Array(prefix.length + total);
+  out.set(prefix);
+  let offset = prefix.length;
+  for (const item of items) { out.set(item, offset); offset += item.length; }
+  return out;
+}
+
+// ── EVM transaction signer (EIP-155, Type 0) ─────────────────────────────────
+
+export function signEvmTransaction(
+  toEthAddress: string,   // 0x-prefixed hex ETH address
+  valueWei: bigint,
   nonce: number,
-  privateKeyHex: string
+  privateKeyHex: string,
+  options?: { gasPrice?: bigint; gasLimit?: bigint; chainId?: number }
 ): string {
-  const message = from + to + amount + String(nonce);
-  const msgBytes = new TextEncoder().encode(message);
-  const hash = keccak_256(msgBytes);
-  const privKeyBytes = hexToBytes(privateKeyHex);
-  const sig = secp256k1.sign(hash, privKeyBytes);
-  return bytesToHex(sig.toCompactRawBytes());
+  const {
+    gasPrice = 1_000_000_000n,
+    gasLimit = 21_000n,
+    chainId = 1888,
+  } = options ?? {};
+
+  const toBytes = hexToBytes(toEthAddress.startsWith("0x") ? toEthAddress.slice(2) : toEthAddress);
+  const privBytes = hexToBytes(privateKeyHex);
+
+  const unsignedFields = [
+    rlpItem(bigintToMinimalBytes(BigInt(nonce))),
+    rlpItem(bigintToMinimalBytes(gasPrice)),
+    rlpItem(bigintToMinimalBytes(gasLimit)),
+    rlpItem(toBytes),
+    rlpItem(bigintToMinimalBytes(valueWei)),
+    rlpItem(new Uint8Array(0)),
+    rlpItem(bigintToMinimalBytes(BigInt(chainId))),
+    rlpItem(new Uint8Array(0)),
+    rlpItem(new Uint8Array(0)),
+  ];
+  const unsigned = rlpList(unsignedFields);
+  const hash = keccak_256(unsigned);
+
+  const sig = secp256k1.sign(hash, privBytes);
+  const v = BigInt(chainId) * 2n + 35n + BigInt(sig.recovery ?? 0);
+
+  const signedFields = [
+    rlpItem(bigintToMinimalBytes(BigInt(nonce))),
+    rlpItem(bigintToMinimalBytes(gasPrice)),
+    rlpItem(bigintToMinimalBytes(gasLimit)),
+    rlpItem(toBytes),
+    rlpItem(bigintToMinimalBytes(valueWei)),
+    rlpItem(new Uint8Array(0)),
+    rlpItem(bigintToMinimalBytes(v)),
+    rlpItem(bigintToMinimalBytes(sig.r)),
+    rlpItem(bigintToMinimalBytes(sig.s)),
+  ];
+  const signed = rlpList(signedFields);
+  return "0x" + bytesToHex(signed);
 }
 
 export function mcToWei(mc: string): string {

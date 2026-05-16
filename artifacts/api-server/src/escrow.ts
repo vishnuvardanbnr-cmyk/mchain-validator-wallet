@@ -1,5 +1,3 @@
-import { secp256k1 } from "@noble/curves/secp256k1";
-import { keccak_256 } from "@noble/hashes/sha3";
 import { bech32 } from "bech32";
 import {
   createWalletClient, http, parseUnits,
@@ -70,22 +68,6 @@ const USDT_ABI = [
   },
 ] as const;
 
-// ── MC native transaction signing ─────────────────────────────────────────────
-
-export function signTransaction(
-  from: string,
-  to: string,
-  amount: string,
-  nonce: number,
-  privateKeyHex: string,
-): string {
-  const message = from + to + amount + String(nonce);
-  const msgBytes = new TextEncoder().encode(message);
-  const hash = keccak_256(msgBytes);
-  const sig = secp256k1.sign(hash, hexToBytes(privateKeyHex));
-  return bytesToHex(sig.toCompactRawBytes());
-}
-
 // ── Amount conversion ─────────────────────────────────────────────────────────
 
 export function mcToWei(mc: string): string {
@@ -94,40 +76,29 @@ export function mcToWei(mc: string): string {
   return BigInt((intPart || "0") + paddedDec).toString();
 }
 
-// ── Chain API helpers ─────────────────────────────────────────────────────────
-
-export async function getChainAccount(address: string): Promise<{ nonce: number; balance: string }> {
-  const res = await fetch(`${CHAIN_URL}/accounts/${encodeURIComponent(address)}`);
-  if (!res.ok) throw new Error(`Failed to fetch account ${address}: ${res.status}`);
-  const data = await res.json() as { nonce?: number; balance?: string };
-  return { nonce: data.nonce ?? 0, balance: data.balance ?? "0" };
-}
-
-// ── Broadcast MC (native token) ───────────────────────────────────────────────
+// ── Broadcast MC (native token via eth_sendRawTransaction) ───────────────────
 
 export async function broadcastMcTransaction(
-  from: string,
+  _from: string,
   to: string,
   amountWei: string,
   privateKeyHex: string,
 ): Promise<string> {
-  const { nonce } = await getChainAccount(from);
-  const signature = signTransaction(from, to, amountWei, nonce, privateKeyHex);
+  const toEthAddr = mxcAddressToEthAddress(to);
+  const privKey = `0x${privateKeyHex}` as `0x${string}`;
+  const account = privateKeyToAccount(privKey);
 
-  const res = await fetch(`${CHAIN_URL}/transactions`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ from, to, amount: amountWei, nonce, signature }),
+  const client: WalletClient = createWalletClient({
+    account,
+    chain: mchain,
+    transport: http(CHAIN_RPC_URL),
   });
 
-  if (!res.ok) {
-    const text = await res.text().catch(() => "unknown error");
-    throw new Error(`MC broadcast failed: ${text}`);
-  }
+  const txHash = await client.sendTransaction({
+    to: toEthAddr,
+    value: BigInt(amountWei),
+  });
 
-  const data = await res.json() as { txHash?: string; hash?: string };
-  const txHash = data.txHash ?? data.hash;
-  if (!txHash) throw new Error("No txHash in chain response");
   return txHash;
 }
 

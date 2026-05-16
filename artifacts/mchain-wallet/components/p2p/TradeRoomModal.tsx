@@ -4,7 +4,7 @@ import { useWallet } from "@/context/WalletContext";
 import { useColors } from "@/hooks/useColors";
 import { p2pApi, type P2pDispute, type P2pMessage, type P2pOrder, type EscrowInfo } from "@/services/p2pApi";
 import { api } from "@/services/api";
-import { mcToWei, signTransaction } from "@/services/crypto";
+import { mcToWei, signEvmTransaction, mxcAddressToEthAddress } from "@/services/crypto";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
@@ -144,8 +144,9 @@ export function TradeRoomModal({ visible, orderId, onClose }: Props) {
 
       const account = await api.getAccount(mxcAddress);
       const amountWei = mcToWei(order.cryptoAmount);
-      const signature = signTransaction(mxcAddress, escrowInfo.escrowAddress, amountWei, account.nonce, pk);
-      const result = await api.sendTransaction({ from: mxcAddress, to: escrowInfo.escrowAddress, amount: amountWei, nonce: account.nonce, signature });
+      const ethTo = mxcAddressToEthAddress(escrowInfo.escrowAddress);
+      const signedTx = signEvmTransaction(ethTo, BigInt(amountWei), account.nonce, pk);
+      const result = await api.sendRawTransaction(signedTx);
       await p2pApi.lockEscrow(orderId, mxcAddress, result.txHash);
       return result.txHash;
     },
