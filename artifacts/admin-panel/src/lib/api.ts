@@ -41,6 +41,26 @@ export function put<T>(path: string, body?: unknown) {
   });
 }
 
+export interface PlatformSettings {
+  platformName: string;
+  maintenanceMode: boolean;
+  tradingEnabled: boolean;
+}
+
+export interface TradeSettings {
+  maxOpenOrdersPerUser: number;
+  disputePeriodHours: number;
+  minTradeAmountUsd: number;
+  maxTradeAmountUsd: number;
+}
+
+export interface KycSettings {
+  kycRequiredForAds: boolean;
+  kycRequiredForOrders: boolean;
+  autoRejectAfterDays: number;
+  allowMerchantWithoutKyc: boolean;
+}
+
 export interface VolumeTiers {
   bronze: number;
   silver: number;

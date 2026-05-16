@@ -233,6 +233,49 @@ router.post("/admin/orders/:orderId/message", async (req, res) => {
 
 // ── Settings ──────────────────────────────────────────────────────────────────
 
+interface PlatformSettings { platformName: string; maintenanceMode: boolean; tradingEnabled: boolean; }
+interface TradeSettings { maxOpenOrdersPerUser: number; disputePeriodHours: number; minTradeAmountUsd: number; maxTradeAmountUsd: number; }
+interface KycSettings { kycRequiredForAds: boolean; kycRequiredForOrders: boolean; autoRejectAfterDays: number; allowMerchantWithoutKyc: boolean; }
+
+const DEFAULT_PLATFORM: PlatformSettings = { platformName: "MChain P2P", maintenanceMode: false, tradingEnabled: true };
+const DEFAULT_TRADE: TradeSettings = { maxOpenOrdersPerUser: 5, disputePeriodHours: 24, minTradeAmountUsd: 1, maxTradeAmountUsd: 10000 };
+const DEFAULT_KYC: KycSettings = { kycRequiredForAds: false, kycRequiredForOrders: false, autoRejectAfterDays: 30, allowMerchantWithoutKyc: false };
+
+async function getSetting<T>(key: string, def: T): Promise<T> {
+  const [row] = await db.select().from(appSettings).where(eq(appSettings.key, key)).limit(1);
+  if (!row) return def;
+  try { return JSON.parse(row.value) as T; } catch { return def; }
+}
+async function putSetting(key: string, value: unknown) {
+  const v = JSON.stringify(value);
+  await db.insert(appSettings).values({ key, value: v }).onConflictDoUpdate({ target: appSettings.key, set: { value: v, updatedAt: new Date() } });
+}
+
+router.get("/admin/settings/platform", async (_req, res) => res.json(await getSetting("platform_settings", DEFAULT_PLATFORM)));
+router.put("/admin/settings/platform", async (req, res) => {
+  const b = req.body as Partial<PlatformSettings>;
+  const s: PlatformSettings = { platformName: String(b.platformName ?? DEFAULT_PLATFORM.platformName).slice(0, 80), maintenanceMode: !!b.maintenanceMode, tradingEnabled: b.tradingEnabled !== false };
+  await putSetting("platform_settings", s);
+  res.json(s);
+});
+
+router.get("/admin/settings/trade", async (_req, res) => res.json(await getSetting("trade_settings", DEFAULT_TRADE)));
+router.put("/admin/settings/trade", async (req, res) => {
+  const b = req.body as Partial<TradeSettings>;
+  const s: TradeSettings = { maxOpenOrdersPerUser: Math.max(1, Math.min(50, Number(b.maxOpenOrdersPerUser) || 5)), disputePeriodHours: Math.max(1, Math.min(168, Number(b.disputePeriodHours) || 24)), minTradeAmountUsd: Math.max(1, Number(b.minTradeAmountUsd) || 1), maxTradeAmountUsd: Math.max(100, Number(b.maxTradeAmountUsd) || 10000) };
+  if (s.minTradeAmountUsd >= s.maxTradeAmountUsd) { res.status(400).json({ error: "Min must be less than max trade amount" }); return; }
+  await putSetting("trade_settings", s);
+  res.json(s);
+});
+
+router.get("/admin/settings/kyc", async (_req, res) => res.json(await getSetting("kyc_settings", DEFAULT_KYC)));
+router.put("/admin/settings/kyc", async (req, res) => {
+  const b = req.body as Partial<KycSettings>;
+  const s: KycSettings = { kycRequiredForAds: !!b.kycRequiredForAds, kycRequiredForOrders: !!b.kycRequiredForOrders, autoRejectAfterDays: Math.max(1, Math.min(365, Number(b.autoRejectAfterDays) || 30)), allowMerchantWithoutKyc: !!b.allowMerchantWithoutKyc };
+  await putSetting("kyc_settings", s);
+  res.json(s);
+});
+
 const VOLUME_TIERS_KEY = "volume_tiers";
 
 async function getVolumeTiers(): Promise<VolumeTiers> {
