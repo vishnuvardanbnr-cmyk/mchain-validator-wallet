@@ -2,31 +2,49 @@ import {
   Activity,
   AlertCircle,
   AlertTriangle,
+  ArrowDown,
   ArrowLeft,
   ArrowLeftRight,
   ArrowRight,
+  ArrowUp,
+  AtSign,
+  Award,
   BarChart2,
   Box,
   Camera,
   Check,
   CheckCircle,
+  ChevronDown,
   ChevronRight,
   ChevronUp,
+  CircleArrowDown,
+  CircleArrowUp,
+  CircleX,
   Clipboard,
   Clock,
   CloudUpload,
   Copy,
   Cpu,
+  Diamond,
   Download,
   Edit2,
+  ExternalLink,
   Eye,
   EyeOff,
+  FileText,
+  FingerprintPattern,
+  GitBranch,
+  Globe,
   Home,
+  Images,
+  Info,
+  Key,
   Link,
   Lock,
   LockOpen,
+  LogOut,
+  MapPin,
   Menu,
-  MessageCircle,
   PauseCircle,
   Pencil,
   Phone,
@@ -35,7 +53,9 @@ import {
   RefreshCw,
   Repeat,
   ScanLine,
+  Search,
   Send,
+  Server,
   Settings,
   Share2,
   Shield,
@@ -47,6 +67,7 @@ import {
   Trophy,
   Unlink,
   User,
+  Users,
   Wallet,
   Wifi,
   X,
@@ -58,85 +79,214 @@ import { type LucideProps } from "lucide-react-native";
 type LucideIcon = React.ComponentType<LucideProps>;
 
 const MAP: Record<string, LucideIcon> = {
+  // activity / status
   "activity": Activity,
-  "add-circle-outline": PlusCircle,
-  "camera-outline": Camera,
-  "cloud-upload-outline": CloudUpload,
-  "create-outline": Edit2,
-  "link-outline": Link,
-  "phone-portrait-outline": Phone,
-  "unlink-outline": Unlink,
-  "wifi-outline": Wifi,
+  "pulse-outline": Activity,
+
+  // alerts
   "alert-circle": AlertCircle,
   "alert-circle-outline": AlertCircle,
   "alert-triangle": AlertTriangle,
+  "warning-outline": AlertTriangle,
+
+  // arrows / navigation
   "arrow-back": ArrowLeft,
   "arrow-forward": ArrowRight,
-  "bar-chart": BarChart2,
-  "bar-chart-outline": BarChart2,
-  "box": Box,
-  "checkmark": Check,
-  "checkmark-circle": CheckCircle,
-  "checkmark-circle-outline": CheckCircle,
+  "arrow-up": ArrowUp,
+  "arrow-down": ArrowDown,
+  "arrow-up-circle-outline": CircleArrowUp,
+  "arrow-down-circle-outline": CircleArrowDown,
   "chevron-forward": ChevronRight,
   "chevron-right": ChevronRight,
   "chevron-up": ChevronUp,
+  "chevron-down": ChevronDown,
+
+  // at / identity
+  "at-circle-outline": AtSign,
+
+  // award / medal
+  "medal-outline": Award,
+  "trophy-outline": Trophy,
+
+  // camera
+  "camera-outline": Camera,
+
+  // check / close
+  "checkmark": Check,
+  "checkmark-circle": CheckCircle,
+  "checkmark-circle-outline": CheckCircle,
+  "close": X,
+  "close-circle": CircleX,
+  "x": X,
+
+  // clipboard / copy
   "clipboard": Clipboard,
   "clipboard-outline": Clipboard,
-  "clock": Clock,
-  "close": X,
   "copy": Copy,
   "copy-outline": Copy,
+
+  // clock / time
+  "clock": Clock,
+  "time-outline": Clock,
+
+  // cloud
+  "cloud-upload-outline": CloudUpload,
+
+  // cpu / hardware
   "cpu": Cpu,
-  "cube-outline": Box,
+  "hardware-chip-outline": Cpu,
+
+  // data
+  "bar-chart": BarChart2,
+  "bar-chart-outline": BarChart2,
+
+  // diamond / gem
+  "diamond-outline": Diamond,
+
+  // document / file
+  "document-outline": FileText,
+  "document-text-outline": FileText,
+
+  // download
   "download": Download,
   "download-outline": Download,
+
+  // edit / pencil
+  "create-outline": Edit2,
   "edit-2": Edit2,
+  "pencil-outline": Pencil,
+
+  // eye
   "eye": Eye,
+  "eye-outline": Eye,
   "eye-off": EyeOff,
   "eye-off-outline": EyeOff,
-  "eye-outline": Eye,
+
+  // fingerprint
+  "finger-print-outline": FingerprintPattern,
+
+  // flash / zap
   "flash-outline": Zap,
-  "hardware-chip-outline": Cpu,
+  "zap": Zap,
+
+  // geo / location
+  "location-outline": MapPin,
+
+  // git
+  "git-branch-outline": GitBranch,
+  "git-compare-outline": GitBranch,
+
+  // globe / network
+  "globe": Globe,
+  "globe-outline": Globe,
+
+  // home
   "home": Home,
   "home-outline": Home,
+
+  // images
+  "images-outline": Images,
+
+  // info
+  "information-circle-outline": Info,
+
+  // key
+  "key-outline": Key,
+
+  // link
+  "link-outline": Link,
+
+  // lock
   "lock": Lock,
   "lock-closed-outline": Lock,
   "lock-open-outline": LockOpen,
+
+  // log out / disconnect
+  "log-out-outline": LogOut,
+
+  // menu
   "menu": Menu,
+
+  // cube/box
+  "box": Box,
+  "cube-outline": Box,
+
+  // open / external link
+  "open-outline": ExternalLink,
+
+  // paper plane / send
   "paper-plane-outline": Send,
+  "send": Send,
+
+  // pause
   "pause-circle-outline": PauseCircle,
-  "pencil-outline": Pencil,
+
+  // people / users
+  "people-outline": Users,
   "person-circle-outline": User,
+
+  // phone
+  "phone-portrait-outline": Phone,
+
+  // plus
+  "add-circle-outline": PlusCircle,
   "plus-circle": PlusCircle,
-  "pulse-outline": Activity,
+
+  // receipt
   "receipt-outline": Receipt,
+
+  // refresh / repeat
   "refresh-outline": RefreshCw,
   "refresh-cw": RefreshCw,
   "repeat": Repeat,
   "repeat-outline": Repeat,
-  "send": Send,
+
+  // scan
+  "scan": ScanLine,
+
+  // search
+  "search": Search,
+  "search-outline": Search,
+
+  // server
+  "server-outline": Server,
+
+  // settings
   "settings": Settings,
   "settings-outline": Settings,
+
+  // share
   "share-social-outline": Share2,
+
+  // shield
   "shield": Shield,
+  "shield-outline": Shield,
   "shield-checkmark-outline": ShieldCheck,
   "shield-half-outline": ShieldOff,
-  "shield-outline": Shield,
+
+  // star
   "star": Star,
   "star-outline": Star,
+
+  // store / storefront
   "storefront-outline": Store,
+
+  // swap
   "swap-horizontal": ArrowLeftRight,
   "swap-horizontal-outline": ArrowLeftRight,
-  "time-outline": Clock,
+
+  // trash
   "trash-outline": Trash2,
-  "trophy-outline": Trophy,
-  "scan": ScanLine,
-  "search": MessageCircle,
+
+  // unlink
+  "unlink-outline": Unlink,
+
+  // wallet
   "wallet": Wallet,
-  "warning-outline": AlertTriangle,
-  "x": X,
-  "zap": Zap,
+  "wallet-outline": Wallet,
+
+  // wifi
+  "wifi-outline": Wifi,
 };
 
 type Props = {

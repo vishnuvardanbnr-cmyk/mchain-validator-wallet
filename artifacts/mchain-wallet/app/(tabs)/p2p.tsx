@@ -4,6 +4,7 @@ import { useColors } from "@/hooks/useColors";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -213,6 +214,14 @@ export default function P2PScreen() {
   const [connectPhone, setConnectPhone] = useState("");
   const [connectErr, setConnectErr] = useState("");
 
+  // Pre-fill display name from last-used value stored locally
+  useEffect(() => {
+    if (!mxcAddress) return;
+    AsyncStorage.getItem(`p2p_displayname_${mxcAddress}`)
+      .then((saved) => { if (saved) setConnectName(saved); })
+      .catch(() => {});
+  }, [mxcAddress]);
+
   function handleDisconnect() {
     Alert.alert(
       "Disconnect P2P Wallet",
@@ -250,6 +259,8 @@ export default function P2PScreen() {
         displayName: connectName.trim(),
         phone: connectPhone.trim() || undefined,
       });
+      // Persist display name so it pre-fills if user reconnects later
+      AsyncStorage.setItem(`p2p_displayname_${mxcAddress}`, connectName.trim()).catch(() => {});
       void refetchProfile();
     } catch (e) {
       setConnectErr(e instanceof Error ? e.message : "Failed to connect");
