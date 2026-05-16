@@ -40,6 +40,7 @@ export default function OnboardingScreen() {
 
   const [step, setStep] = useState<Step>("welcome");
   const [mode, setMode] = useState<Mode>("create");
+  const [creating, setCreating] = useState(false);
 
   // Create flow state
   const [mnemonic, setMnemonic] = useState("");
@@ -57,13 +58,21 @@ export default function OnboardingScreen() {
   const [registrationDone, setRegistrationDone] = useState(false);
 
   function handleCreateWallet() {
-    const words = generateMnemonic();
-    const kp = mnemonicToKeyPair(words);
-    setMnemonic(words);
-    setKeyPair(kp);
-    setMode("create");
-    setBackedUp(false);
-    setStep("backup");
+    setCreating(true);
+    // Defer heavy BIP32 derivation to next tick so the loading UI renders first
+    setTimeout(() => {
+      try {
+        const words = generateMnemonic();
+        const kp = mnemonicToKeyPair(words);
+        setMnemonic(words);
+        setKeyPair(kp);
+        setMode("create");
+        setBackedUp(false);
+        setStep("backup");
+      } finally {
+        setCreating(false);
+      }
+    }, 50);
   }
 
   function handleImportWallet() {
@@ -502,9 +511,20 @@ export default function OnboardingScreen() {
                 </Text>
               </View>
 
-              <TouchableOpacity style={s.primaryBtn} onPress={handleCreateWallet}>
+              <TouchableOpacity
+                style={[s.primaryBtn, creating && { opacity: 0.85 }]}
+                onPress={handleCreateWallet}
+                disabled={creating}
+              >
                 <LinearGradient colors={["#0EA5E9", "#0284C7"]} style={s.primaryGrad}>
-                  <Text style={s.primaryBtnText}>Create New Wallet</Text>
+                  {creating ? (
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                      <ActivityIndicator color="#FFFFFF" size="small" />
+                      <Text style={s.primaryBtnText}>Generating Wallet…</Text>
+                    </View>
+                  ) : (
+                    <Text style={s.primaryBtnText}>Create New Wallet</Text>
+                  )}
                 </LinearGradient>
               </TouchableOpacity>
 
