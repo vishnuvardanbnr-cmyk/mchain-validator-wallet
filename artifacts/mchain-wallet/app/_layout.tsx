@@ -74,6 +74,7 @@ function PinGate({ children }: { children: React.ReactNode }) {
         subtitle={modalSubtitle}
         onSuccess={modalOnSuccess}
         onCancel={modalOnCancel}
+        animationType={isAppLocked ? "none" : "fade"}
       />
     </>
   );

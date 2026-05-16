@@ -22,9 +22,10 @@ interface Props {
   subtitle?: string;
   onSuccess: () => void;
   onCancel?: () => void;
+  animationType?: "none" | "slide" | "fade";
 }
 
-export function PinModal({ visible, title, subtitle, onSuccess, onCancel }: Props) {
+export function PinModal({ visible, title, subtitle, onSuccess, onCancel, animationType = "fade" }: Props) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const [digits, setDigits] = useState("");
@@ -160,7 +161,7 @@ export function PinModal({ visible, title, subtitle, onSuccess, onCancel }: Prop
   const hasError = !!error;
 
   return (
-    <Modal visible={visible} animationType="fade" statusBarTranslucent>
+    <Modal visible={visible} animationType={animationType} statusBarTranslucent>
       <View style={s.overlay}>
         <View style={s.inner}>
           {/* Top */}
