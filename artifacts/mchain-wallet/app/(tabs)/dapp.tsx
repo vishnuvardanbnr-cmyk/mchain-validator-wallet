@@ -261,15 +261,12 @@ export default function DAppScreen() {
   }, []);
 
   // ── Hide tab bar while browser is active ─────────────────────────────────────
+  // navigation.setOptions() targets THIS screen's options within the Tabs navigator,
+  // which is exactly where tabBarStyle per-screen overrides live.
   useEffect(() => {
-    const parent = navigation.getParent();
-    if (!parent) return;
-    if (activeUrl) {
-      parent.setOptions({ tabBarStyle: { display: "none" } });
-    } else {
-      // Restore default tab bar style defined in _layout.tsx
-      parent.setOptions({ tabBarStyle: undefined });
-    }
+    navigation.setOptions({
+      tabBarStyle: activeUrl ? { display: "none" } : undefined,
+    });
   }, [activeUrl, navigation]);
 
   // ── History helpers ──────────────────────────────────────────────────────────
@@ -417,7 +414,8 @@ export default function DAppScreen() {
   const signReqRaw = useRef<string>("");
 
   // ── Navigation ───────────────────────────────────────────────────────────────
-  function openDApp(url: string, knownTitle?: string) {
+  // saveHistory=true only when the user typed a URL themselves in the address bar
+  function openDApp(url: string, options?: { saveHistory?: boolean; title?: string }) {
     const target = normalizeUrl(url);
     if (!target) return;
     Keyboard.dismiss();
@@ -429,20 +427,17 @@ export default function DAppScreen() {
     setActiveUrl(target);
     setCanGoBack(false);
     setCanGoForward(false);
-    setIsConnected(false); // reset connection per site
-    // Optimistically save with domain as title; updated on page load
-    const domain = (() => { try { return new URL(target).hostname; } catch { return target; } })();
-    saveToHistory(target, knownTitle ?? domain);
+    setIsConnected(false);
+    if (options?.saveHistory) {
+      const domain = (() => { try { return new URL(target).hostname; } catch { return target; } })();
+      saveToHistory(target, options.title ?? domain);
+    }
   }
 
   function handleNavStateChange(nav: WebViewNavigation) {
     setCanGoBack(nav.canGoBack);
     setCanGoForward(nav.canGoForward);
     if (nav.url) setDisplayUrl(nav.url);
-    // Update history title when page title becomes available
-    if (nav.url && nav.title && nav.title !== nav.url) {
-      saveToHistory(nav.url, nav.title);
-    }
   }
 
   function handleClose() {
@@ -845,10 +840,10 @@ export default function DAppScreen() {
             autoCorrect={false}
             keyboardType="url"
             returnKeyType="go"
-            onSubmitEditing={() => openDApp(urlInput)}
+            onSubmitEditing={() => openDApp(urlInput, { saveHistory: true })}
           />
           {urlInput.trim().length > 0 && (
-            <TouchableOpacity style={s.goBtn} onPress={() => openDApp(urlInput)} activeOpacity={0.85}>
+            <TouchableOpacity style={s.goBtn} onPress={() => openDApp(urlInput, { saveHistory: true })} activeOpacity={0.85}>
               <LinearGradient colors={["#0EA5E9", "#0284C7"]} style={s.goBtnGrad}>
                 <Icon name="arrow-forward" size={16} color="#FFF" />
               </LinearGradient>
@@ -874,7 +869,7 @@ export default function DAppScreen() {
                   <TouchableOpacity
                     key={entry.url + entry.visitedAt}
                     style={s.historyItem}
-                    onPress={() => openDApp(entry.url, entry.title)}
+                    onPress={() => openDApp(entry.url)}
                     activeOpacity={0.75}
                   >
                     <View style={s.historyIconWrap}>
@@ -890,7 +885,7 @@ export default function DAppScreen() {
                       hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                       activeOpacity={0.7}
                     >
-                      <Icon name="close-outline" size={15} color={colors.mutedForeground} />
+                      <Icon name="close" size={15} color={colors.mutedForeground} />
                     </TouchableOpacity>
                   </TouchableOpacity>
                 );
