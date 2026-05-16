@@ -82,6 +82,20 @@ export interface P2pMessage {
   createdAt: string;
 }
 
+export interface P2pAdsPage {
+  ads: P2pAd[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface P2pOrdersPage {
+  orders: P2pOrder[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
 export interface P2pDispute {
   id: string;
   orderId: string;
@@ -128,13 +142,14 @@ export const p2pApi = {
     req<P2pProfile>("/profiles/kyc", { method: "POST", body: JSON.stringify(body) }),
 
   // ── Ads ──────────────────────────────────────────────────────────────────
-  getAds: (params: { token?: string; side?: string }) => {
+  getAds: (params: { token?: string; side?: string; offset?: number }) => {
     const qs = new URLSearchParams();
     if (params.token) qs.set("token", params.token);
     if (params.side) qs.set("side", params.side);
-    return req<P2pAd[]>(`/ads?${qs.toString()}`);
+    if (params.offset) qs.set("offset", String(params.offset));
+    return req<P2pAdsPage>(`/ads?${qs.toString()}`);
   },
-  getMyAds: (address: string) => req<P2pAd[]>(`/ads?owner=${address}`),
+  getMyAds: (address: string) => req<P2pAdsPage>(`/ads?owner=${address}`),
   postAd: (body: {
     ownerAddress: string; token: string; side: string; price: string;
     minAmount: string; maxAmount: string; availableAmount: string;
@@ -144,7 +159,8 @@ export const p2pApi = {
     req<P2pAd>(`/ads/${id}/status`, { method: "PATCH", body: JSON.stringify({ status }) }),
 
   // ── Orders ───────────────────────────────────────────────────────────────
-  getMyOrders: (address: string) => req<P2pOrder[]>(`/orders?address=${address}`),
+  getMyOrders: (address: string, offset = 0) =>
+    req<P2pOrdersPage>(`/orders?address=${encodeURIComponent(address)}&offset=${offset}`),
   getOrder: (id: string) => req<P2pOrder>(`/orders/${id}`),
   createOrder: (body: {
     adId: string; buyerAddress: string; cryptoAmount: string;

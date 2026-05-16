@@ -5,7 +5,7 @@ import {
   createAdRequestSchema, createOrderRequestSchema, createDisputeRequestSchema,
   sendMessageRequestSchema, rateOrderRequestSchema, kycSubmitRequestSchema,
 } from "@workspace/db";
-import { eq, and, or, desc, sql } from "drizzle-orm";
+import { eq, and, or, desc, sql, count } from "drizzle-orm";
 import { z } from "zod";
 
 const router = Router();
@@ -97,18 +97,26 @@ router.post("/p2p/profiles/kyc", async (req, res) => {
 
 router.get("/p2p/ads", async (req, res) => {
   const { token, side, owner } = req.query as { token?: string; side?: string; owner?: string };
+  const offset = Math.max(0, Number(req.query["offset"] ?? 0));
+  const limit = owner ? 100 : 20;
+
   const conditions = [];
   if (token) conditions.push(eq(p2pAds.token, token as "MC" | "USDT"));
   if (side) conditions.push(eq(p2pAds.side, side as "buy" | "sell"));
   if (owner) conditions.push(eq(p2pAds.ownerAddress, owner));
   if (!owner) conditions.push(eq(p2pAds.status, "active"));
 
-  const ads = await db.select().from(p2pAds)
-    .where(conditions.length > 0 ? and(...conditions) : undefined)
-    .orderBy(desc(p2pAds.createdAt))
-    .limit(50);
+  const where = conditions.length > 0 ? and(...conditions) : undefined;
 
-  res.json(await enrichAds(ads));
+  const ads = await db.select().from(p2pAds)
+    .where(where)
+    .orderBy(desc(p2pAds.createdAt))
+    .limit(limit)
+    .offset(offset);
+
+  const [totalRow] = await db.select({ count: count() }).from(p2pAds).where(where);
+
+  res.json({ ads: await enrichAds(ads), total: Number(totalRow?.count ?? 0), limit, offset });
 });
 
 router.post("/p2p/ads", async (req, res) => {
@@ -151,11 +159,20 @@ router.patch("/p2p/ads/:id/status", async (req, res) => {
 router.get("/p2p/orders", async (req, res) => {
   const { address } = req.query as { address?: string };
   if (!address) { res.status(400).json({ error: "address required" }); return; }
+  const offset = Math.max(0, Number(req.query["offset"] ?? 0));
+  const limit = 20;
+
+  const where = or(eq(p2pOrders.buyerAddress, address), eq(p2pOrders.sellerAddress, address));
+
   const orders = await db.select().from(p2pOrders)
-    .where(or(eq(p2pOrders.buyerAddress, address), eq(p2pOrders.sellerAddress, address)))
+    .where(where)
     .orderBy(desc(p2pOrders.createdAt))
-    .limit(50);
-  res.json(orders);
+    .limit(limit)
+    .offset(offset);
+
+  const [totalRow] = await db.select({ count: count() }).from(p2pOrders).where(where);
+
+  res.json({ orders, total: Number(totalRow?.count ?? 0), limit, offset });
 });
 
 router.get("/p2p/orders/:id", async (req, res) => {

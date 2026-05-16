@@ -1,11 +1,10 @@
 import { Icon } from "@/components/Icon";
 import { useWallet } from "@/context/WalletContext";
 import { useColors } from "@/hooks/useColors";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
-import { router } from "expo-router";
-import React, { useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Platform,
@@ -147,7 +146,6 @@ export default function P2PScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { mxcAddress } = useWallet();
-  const queryClient = useQueryClient();
 
   const [token, setToken] = useState<Token>("MC");
   const [side, setSide] = useState<Side>("buy");
@@ -156,11 +154,49 @@ export default function P2PScreen() {
   const [showMyOrders, setShowMyOrders] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
 
-  const { data: ads = [], isLoading, refetch } = useQuery({
-    queryKey: ["p2p_ads", token, side],
-    queryFn: () => p2pApi.getAds({ token, side }),
-    refetchInterval: 15_000,
-  });
+  // ── Paginated ads state ──────────────────────────────────────────────────
+  const [adItems, setAdItems] = useState<P2pAd[]>([]);
+  const [adTotal, setAdTotal] = useState(0);
+  const [adOffset, setAdOffset] = useState(0);
+  const [adInitLoading, setAdInitLoading] = useState(false);
+  const [adLoadingMore, setAdLoadingMore] = useState(false);
+  const [adRefreshing, setAdRefreshing] = useState(false);
+
+  const loadAds = useCallback(async (offset: number, append: boolean) => {
+    if (offset === 0 && !append) setAdInitLoading(true);
+    else setAdLoadingMore(true);
+    try {
+      const res = await p2pApi.getAds({ token, side, offset });
+      setAdItems(prev => append ? [...prev, ...res.ads] : res.ads);
+      setAdTotal(res.total);
+      setAdOffset(offset + res.ads.length);
+    } catch {
+      // silently ignore refresh errors
+    } finally {
+      setAdInitLoading(false);
+      setAdLoadingMore(false);
+      setAdRefreshing(false);
+    }
+  }, [token, side]);
+
+  // Reset and reload when token or side changes (loadAds identity changes)
+  useEffect(() => {
+    setAdItems([]);
+    setAdTotal(0);
+    setAdOffset(0);
+    void loadAds(0, false);
+  }, [loadAds]);
+
+  // Auto-refresh first page every 15 s
+  useEffect(() => {
+    const id = setInterval(() => { void loadAds(0, false); }, 15_000);
+    return () => clearInterval(id);
+  }, [loadAds]);
+
+  const handleRefresh = useCallback(() => {
+    setAdRefreshing(true);
+    void loadAds(0, false);
+  }, [loadAds]);
 
   const { data: profile } = useQuery({
     queryKey: ["p2p_profile", mxcAddress],
@@ -209,6 +245,14 @@ export default function P2PScreen() {
     },
     postBtnGrad: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 18, paddingVertical: 14 },
     postBtnText: { fontSize: 14, fontFamily: "Inter_700Bold", color: "#FFF" },
+    loadMoreBtn: {
+      marginVertical: 16,
+      paddingVertical: 13, borderRadius: 12,
+      borderWidth: 1, borderColor: colors.border,
+      alignItems: "center",
+    },
+    loadMoreText: { fontSize: 13, fontFamily: "Inter_600SemiBold", color: colors.primary },
+    totalText: { fontSize: 11, fontFamily: "Inter_400Regular", color: colors.mutedForeground, textAlign: "center", marginBottom: 10 },
   });
 
   return (
@@ -247,25 +291,43 @@ export default function P2PScreen() {
       <ScrollView
         style={{ flex: 1 }}
         contentContainerStyle={s.scroll}
-        refreshControl={<RefreshControl refreshing={isLoading} onRefresh={refetch} tintColor={colors.primary} />}
+        refreshControl={<RefreshControl refreshing={adRefreshing} onRefresh={handleRefresh} tintColor={colors.primary} />}
       >
-        {isLoading ? (
+        {adInitLoading ? (
           <ActivityIndicator color={colors.primary} style={{ marginTop: 40 }} />
-        ) : ads.length === 0 ? (
+        ) : adItems.length === 0 ? (
           <View style={s.empty}>
             <Icon name="storefront-outline" size={48} color={colors.border} />
             <Text style={s.emptyText}>No ads available</Text>
             <Text style={s.emptyDesc}>Be the first to post a {side} ad for {token}</Text>
           </View>
         ) : (
-          ads.map((ad) => (
-            <AdRow
-              key={ad.id}
-              ad={ad}
-              myAddress={mxcAddress ?? ""}
-              onPress={() => { setSelectedAd(ad); if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
-            />
-          ))
+          <>
+            {adTotal > adItems.length && (
+              <Text style={s.totalText}>{adItems.length} of {adTotal} ads</Text>
+            )}
+            {adItems.map((ad) => (
+              <AdRow
+                key={ad.id}
+                ad={ad}
+                myAddress={mxcAddress ?? ""}
+                onPress={() => { setSelectedAd(ad); if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
+              />
+            ))}
+            {adItems.length < adTotal && (
+              adLoadingMore ? (
+                <ActivityIndicator color={colors.primary} style={{ marginVertical: 16 }} />
+              ) : (
+                <TouchableOpacity
+                  style={s.loadMoreBtn}
+                  onPress={() => { void loadAds(adOffset, true); }}
+                  activeOpacity={0.75}
+                >
+                  <Text style={s.loadMoreText}>Load More ({adTotal - adItems.length} remaining)</Text>
+                </TouchableOpacity>
+              )
+            )}
+          </>
         )}
       </ScrollView>
 
@@ -279,14 +341,14 @@ export default function P2PScreen() {
       <PostAdModal
         visible={showPostAd}
         onClose={() => setShowPostAd(false)}
-        onPosted={() => { queryClient.invalidateQueries({ queryKey: ["p2p_ads"] }); }}
+        onPosted={() => { void loadAds(0, false); }}
       />
       {selectedAd && (
         <OrderModal
           ad={selectedAd}
           visible={!!selectedAd}
           onClose={() => setSelectedAd(null)}
-          onOrderPlaced={() => { setSelectedAd(null); queryClient.invalidateQueries({ queryKey: ["p2p_ads"] }); setShowMyOrders(true); }}
+          onOrderPlaced={() => { setSelectedAd(null); void loadAds(0, false); setShowMyOrders(true); }}
         />
       )}
       <MyOrdersModal visible={showMyOrders} onClose={() => setShowMyOrders(false)} />
