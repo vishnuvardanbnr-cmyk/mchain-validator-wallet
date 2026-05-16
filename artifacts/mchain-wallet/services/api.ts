@@ -1,6 +1,5 @@
 import { Platform } from "react-native";
-
-const CHAIN_BASE = "https://chain.mvault.pro/api";
+import { getNodeUrl, isDefaultNode } from "./node";
 
 function getBaseUrl(): string {
   if (Platform.OS === "web") {
@@ -11,14 +10,24 @@ function getBaseUrl(): string {
     }
     return "/api/chain-proxy";
   }
-  return CHAIN_BASE;
+  // Native: use the user-configured node URL directly
+  return getNodeUrl();
 }
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const base = getBaseUrl();
+
+  // On web with a custom node, pass the target URL as a header so the proxy
+  // can forward to it instead of the hardcoded default.
+  const extraHeaders: Record<string, string> =
+    Platform.OS === "web" && !isDefaultNode()
+      ? { "X-MChain-Node": getNodeUrl() }
+      : {};
+
   const response = await fetch(`${base}${path}`, {
     headers: {
       "Content-Type": "application/json",
+      ...extraHeaders,
       ...(options?.headers ?? {}),
     },
     ...options,

@@ -15,6 +15,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { WalletProvider, useWallet } from "@/context/WalletContext";
 import "@/services/backgroundTasks";
+import "@/services/node"; // initializes cached node URL from storage on startup
 
 SplashScreen.preventAutoHideAsync();
 

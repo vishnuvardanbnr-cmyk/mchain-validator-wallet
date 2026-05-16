@@ -2,7 +2,22 @@ import { Router } from "express";
 
 const router = Router();
 
-const CHAIN_BASE = "https://chain.mvault.pro/api";
+const DEFAULT_CHAIN_BASE = "https://chain.mvault.pro/api";
+
+function resolveChainBase(req: { headers: Record<string, string | string[] | undefined> }): string {
+  const custom = req.headers["x-mchain-node"];
+  if (typeof custom === "string" && custom.length > 0) {
+    try {
+      const u = new URL(custom);
+      if (u.protocol === "http:" || u.protocol === "https:") {
+        return custom.replace(/\/$/, "");
+      }
+    } catch {
+      // fall through to default
+    }
+  }
+  return DEFAULT_CHAIN_BASE;
+}
 
 router.all("/chain-proxy/*splat", async (req, res) => {
   const splatParam = req.params["splat" as keyof typeof req.params];
@@ -10,10 +25,11 @@ router.all("/chain-proxy/*splat", async (req, res) => {
     ? splatParam.join("/")
     : String(splatParam ?? "").replace(/,/g, "/");
 
+  const chainBase = resolveChainBase(req);
   const search = req.originalUrl.includes("?")
     ? req.originalUrl.slice(req.originalUrl.indexOf("?"))
     : "";
-  const upstream = `${CHAIN_BASE}/${subpath}${search}`;
+  const upstream = `${chainBase}/${subpath}${search}`;
 
   req.log.info({ upstream, method: req.method }, "chain-proxy →");
 

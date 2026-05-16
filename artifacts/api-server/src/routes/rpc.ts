@@ -2,7 +2,22 @@ import { Router } from "express";
 
 const router = Router();
 
-const CHAIN_RPC_URL = "https://chain.mvault.pro/api/rpc";
+const DEFAULT_CHAIN_BASE = "https://chain.mvault.pro/api";
+
+function resolveRpcUrl(req: { headers: Record<string, string | string[] | undefined> }): string {
+  const custom = req.headers["x-mchain-node"];
+  if (typeof custom === "string" && custom.length > 0) {
+    try {
+      const u = new URL(custom);
+      if (u.protocol === "http:" || u.protocol === "https:") {
+        return `${custom.replace(/\/$/, "")}/rpc`;
+      }
+    } catch {
+      // fall through
+    }
+  }
+  return `${DEFAULT_CHAIN_BASE}/rpc`;
+}
 
 router.post("/rpc", async (req, res) => {
   const body = req.body as Record<string, unknown>;
@@ -13,7 +28,7 @@ router.post("/rpc", async (req, res) => {
   }
 
   try {
-    const upstream = await fetch(CHAIN_RPC_URL, {
+    const upstream = await fetch(resolveRpcUrl(req), {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
       body: JSON.stringify(body),

@@ -14,15 +14,24 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useWallet } from "@/context/WalletContext";
 import { api } from "@/services/api";
 import { shortenAddress } from "@/services/crypto";
+import {
+  DEFAULT_NODE_URL,
+  getNodeUrl,
+  isDefaultNode,
+  resetNodeUrl,
+  setNodeUrl,
+  testNodeConnection,
+} from "@/services/node";
 import { useColors } from "@/hooks/useColors";
 
 export default function SettingsScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const queryClient = useQueryClient();
   const { mxcAddress, ethAddress, publicKey, moniker, updateMoniker, getPrivateKey } = useWallet();
 
   const [editingMoniker, setEditingMoniker] = useState(false);
@@ -30,6 +39,14 @@ export default function SettingsScreen() {
   const [keyVisible, setKeyVisible] = useState(false);
   const [privateKey, setPrivateKey] = useState<string | null>(null);
   const [loadingKey, setLoadingKey] = useState(false);
+
+  // Node URL state
+  const [currentNode, setCurrentNode] = useState(() => getNodeUrl());
+  const [editingNode, setEditingNode] = useState(false);
+  const [nodeInput, setNodeInput] = useState(getNodeUrl());
+  const [testingNode, setTestingNode] = useState(false);
+  const [nodeTestMs, setNodeTestMs] = useState<number | null>(null);
+  const [nodeTestError, setNodeTestError] = useState<string | null>(null);
 
   const { data: chainInfo } = useQuery({
     queryKey: ["chainInfo"],
@@ -41,6 +58,63 @@ export default function SettingsScreen() {
     await updateMoniker(monikerInput.trim() || moniker);
     setEditingMoniker(false);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  }
+
+  async function handleTestNode(url: string) {
+    setTestingNode(true);
+    setNodeTestMs(null);
+    setNodeTestError(null);
+    try {
+      const ms = await testNodeConnection(url);
+      setNodeTestMs(ms);
+      if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (err) {
+      setNodeTestError(err instanceof Error ? err.message : "Connection failed");
+      if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    } finally {
+      setTestingNode(false);
+    }
+  }
+
+  async function handleSaveNode() {
+    const url = nodeInput.trim().replace(/\/$/, "");
+    if (!url) return;
+    try {
+      new URL(url);
+    } catch {
+      Alert.alert("Invalid URL", "Please enter a valid URL starting with http:// or https://");
+      return;
+    }
+    await setNodeUrl(url);
+    setCurrentNode(url);
+    setEditingNode(false);
+    setNodeTestMs(null);
+    setNodeTestError(null);
+    queryClient.clear();
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+  }
+
+  async function handleResetNode() {
+    Alert.alert(
+      "Reset to Default",
+      `Switch back to the official MChain node?\n\n${DEFAULT_NODE_URL}`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Reset",
+          onPress: async () => {
+            await resetNodeUrl();
+            setCurrentNode(DEFAULT_NODE_URL);
+            setNodeInput(DEFAULT_NODE_URL);
+            setEditingNode(false);
+            setNodeTestMs(null);
+            setNodeTestError(null);
+            queryClient.clear();
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          },
+        },
+      ]
+    );
   }
 
   async function handleRevealKey() {
@@ -134,6 +208,93 @@ export default function SettingsScreen() {
     chainRow: { flexDirection: "row", justifyContent: "space-between", padding: 16, borderBottomWidth: 1, borderBottomColor: colors.border },
     chainLabel: { fontSize: 13, fontFamily: "Inter_400Regular", color: colors.mutedForeground },
     chainValue: { fontSize: 13, fontFamily: "Inter_600SemiBold", color: colors.foreground },
+    nodeCard: { backgroundColor: colors.card, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border, overflow: "hidden" },
+    nodeRow: { padding: 16 },
+    nodeUrlRow: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 10 },
+    nodeUrl: { flex: 1, fontSize: 12, fontFamily: "Inter_400Regular", color: colors.foreground },
+    nodeActions: { flexDirection: "row", gap: 8 },
+    nodeActionBtn: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 5,
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      borderRadius: 8,
+      backgroundColor: colors.primary + "15",
+      borderWidth: 1,
+      borderColor: colors.primary + "35",
+    },
+    nodeActionText: { fontSize: 12, fontFamily: "Inter_600SemiBold", color: colors.primary },
+    nodeResetBtn: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 5,
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      borderRadius: 8,
+      backgroundColor: colors.card,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    nodeResetText: { fontSize: 12, fontFamily: "Inter_600SemiBold", color: colors.mutedForeground },
+    nodeInput: {
+      backgroundColor: colors.input,
+      borderRadius: 10,
+      borderWidth: 1.5,
+      borderColor: colors.primary + "60",
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      fontSize: 12,
+      fontFamily: "Inter_400Regular",
+      color: colors.foreground,
+      marginBottom: 10,
+    },
+    nodeEditActions: { flexDirection: "row", gap: 8 },
+    nodeSaveBtn: {
+      flex: 1,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 6,
+      paddingVertical: 10,
+      borderRadius: 10,
+      backgroundColor: colors.primary,
+    },
+    nodeSaveBtnText: { fontSize: 13, fontFamily: "Inter_600SemiBold", color: "#FFFFFF" },
+    nodeTestBtn: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 6,
+      paddingHorizontal: 14,
+      paddingVertical: 10,
+      borderRadius: 10,
+      backgroundColor: colors.card,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    nodeTestBtnText: { fontSize: 13, fontFamily: "Inter_600SemiBold", color: colors.foreground },
+    nodeCancelBtn: {
+      paddingHorizontal: 14,
+      paddingVertical: 10,
+      borderRadius: 10,
+    },
+    nodeCancelText: { fontSize: 13, fontFamily: "Inter_500Medium", color: colors.mutedForeground },
+    nodeStatusRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 6 },
+    nodeStatusDot: { width: 7, height: 7, borderRadius: 4 },
+    nodeStatusText: { fontSize: 11, fontFamily: "Inter_400Regular", color: colors.mutedForeground },
+    customBadge: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 4,
+      paddingHorizontal: 7,
+      paddingVertical: 2,
+      borderRadius: 6,
+      backgroundColor: colors.primary + "15",
+      borderWidth: 1,
+      borderColor: colors.primary + "35",
+    },
+    customBadgeText: { fontSize: 9, fontFamily: "Inter_700Bold", color: colors.primary, letterSpacing: 0.6 },
   });
 
   return (
@@ -171,6 +332,113 @@ export default function SettingsScreen() {
                   <TouchableOpacity onPress={() => { setMonikerInput(moniker); setEditingMoniker(true); }}>
                     <Icon name="pencil-outline" size={16} color={colors.mutedForeground} />
                   </TouchableOpacity>
+                </>
+              )}
+            </View>
+          </View>
+        </View>
+
+        {/* ── Network / Node URL ─────────────────────────────── */}
+        <View style={s.section}>
+          <Text style={s.sectionLabel}>NETWORK</Text>
+          <View style={s.nodeCard}>
+            <View style={s.nodeRow}>
+              {!editingNode ? (
+                <>
+                  <View style={s.nodeUrlRow}>
+                    <Text style={s.nodeUrl} numberOfLines={2}>{currentNode}</Text>
+                    {!isDefaultNode() && (
+                      <View style={s.customBadge}>
+                        <Text style={s.customBadgeText}>CUSTOM</Text>
+                      </View>
+                    )}
+                  </View>
+
+                  {(nodeTestMs !== null || nodeTestError) && (
+                    <View style={s.nodeStatusRow}>
+                      <View style={[s.nodeStatusDot, { backgroundColor: nodeTestError ? "#EF4444" : "#10B981" }]} />
+                      <Text style={s.nodeStatusText}>
+                        {nodeTestError ? nodeTestError : `Connected · ${nodeTestMs} ms`}
+                      </Text>
+                    </View>
+                  )}
+
+                  <View style={[s.nodeActions, { marginTop: 12 }]}>
+                    <TouchableOpacity
+                      style={s.nodeActionBtn}
+                      onPress={() => { setNodeInput(currentNode); setEditingNode(true); setNodeTestMs(null); setNodeTestError(null); }}
+                      activeOpacity={0.75}
+                    >
+                      <Icon name="pencil-outline" size={13} color={colors.primary} />
+                      <Text style={s.nodeActionText}>Change</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={s.nodeActionBtn}
+                      onPress={() => handleTestNode(currentNode)}
+                      disabled={testingNode}
+                      activeOpacity={0.75}
+                    >
+                      {testingNode ? (
+                        <ActivityIndicator size="small" color={colors.primary} style={{ width: 13, height: 13 }} />
+                      ) : (
+                        <Icon name="wifi-outline" size={13} color={colors.primary} />
+                      )}
+                      <Text style={s.nodeActionText}>Test</Text>
+                    </TouchableOpacity>
+                    {!isDefaultNode() && (
+                      <TouchableOpacity style={s.nodeResetBtn} onPress={handleResetNode} activeOpacity={0.75}>
+                        <Icon name="refresh-outline" size={13} color={colors.mutedForeground} />
+                        <Text style={s.nodeResetText}>Reset</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                </>
+              ) : (
+                <>
+                  <TextInput
+                    style={s.nodeInput}
+                    value={nodeInput}
+                    onChangeText={(v) => { setNodeInput(v); setNodeTestMs(null); setNodeTestError(null); }}
+                    placeholder="https://your-node.example.com/api"
+                    placeholderTextColor={colors.mutedForeground}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    autoFocus
+                    keyboardType="url"
+                    onSubmitEditing={handleSaveNode}
+                  />
+
+                  {(nodeTestMs !== null || nodeTestError) && (
+                    <View style={[s.nodeStatusRow, { marginBottom: 8, marginTop: -4 }]}>
+                      <View style={[s.nodeStatusDot, { backgroundColor: nodeTestError ? "#EF4444" : "#10B981" }]} />
+                      <Text style={s.nodeStatusText}>
+                        {nodeTestError ? nodeTestError : `Connected · ${nodeTestMs} ms`}
+                      </Text>
+                    </View>
+                  )}
+
+                  <View style={s.nodeEditActions}>
+                    <TouchableOpacity
+                      style={s.nodeTestBtn}
+                      onPress={() => handleTestNode(nodeInput)}
+                      disabled={testingNode}
+                      activeOpacity={0.75}
+                    >
+                      {testingNode ? (
+                        <ActivityIndicator size="small" color={colors.foreground} />
+                      ) : (
+                        <Icon name="wifi-outline" size={14} color={colors.foreground} />
+                      )}
+                      <Text style={s.nodeTestBtnText}>Test</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={s.nodeSaveBtn} onPress={handleSaveNode} activeOpacity={0.85}>
+                      <Icon name="checkmark" size={14} color="#FFFFFF" />
+                      <Text style={s.nodeSaveBtnText}>Save</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={s.nodeCancelBtn} onPress={() => { setEditingNode(false); setNodeTestMs(null); setNodeTestError(null); }} activeOpacity={0.75}>
+                      <Text style={s.nodeCancelText}>Cancel</Text>
+                    </TouchableOpacity>
+                  </View>
                 </>
               )}
             </View>
