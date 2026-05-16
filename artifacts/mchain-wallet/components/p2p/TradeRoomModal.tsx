@@ -1,6 +1,7 @@
 import { Icon } from "@/components/Icon";
 import { Toast } from "@/components/Toast";
 import { useWallet } from "@/context/WalletContext";
+import { usePinContext } from "@/context/PinContext";
 import { useColors } from "@/hooks/useColors";
 import { p2pApi, type P2pDispute, type P2pMessage, type P2pOrder, type EscrowInfo } from "@/services/p2pApi";
 import { api } from "@/services/api";
@@ -55,6 +56,7 @@ export function TradeRoomModal({ visible, orderId, onClose }: Props) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { mxcAddress, getPrivateKey } = useWallet();
+  const { requestPin } = usePinContext();
   const queryClient = useQueryClient();
   const scrollRef = useRef<ScrollView>(null);
 
@@ -191,9 +193,16 @@ export function TradeRoomModal({ visible, orderId, onClose }: Props) {
       ? `USDT release will be processed by the platform admin within 24 hours after you confirm.`
       : `Confirm you have received payment and want to release ${order?.cryptoAmount} ${order?.token} to the buyer.`;
 
-    Alert.alert("Release Crypto", msg,
-      [{ text: "Cancel", style: "cancel" }, { text: "Release", style: "destructive", onPress: () => release.mutate() }]
-    );
+    void requestPin({
+      title: "Confirm Release",
+      subtitle: "Enter your PIN to release crypto to the buyer.",
+      onSuccess: () => {
+        Alert.alert("Release Crypto", msg,
+          [{ text: "Cancel", style: "cancel" }, { text: "Release", style: "destructive", onPress: () => release.mutate() }]
+        );
+      },
+      onCancel: () => {},
+    });
   }
 
   function handleCancel() {
@@ -204,15 +213,23 @@ export function TradeRoomModal({ visible, orderId, onClose }: Props) {
 
   function handleLockEscrow() {
     if (!order) return;
-    if (order.token === "MC") {
-      Alert.alert(
-        "Lock Funds in Escrow",
-        `This will send ${order.cryptoAmount} MC from your wallet to the platform escrow address. The funds will be released to the buyer once you confirm receipt of payment.`,
-        [{ text: "Cancel", style: "cancel" }, { text: "Lock Now", onPress: () => lockEscrowMc.mutate() }]
-      );
-    } else {
-      setShowUsdtEscrow(true);
-    }
+    void requestPin({
+      title: "Confirm Lock Escrow",
+      subtitle: "Enter your PIN to lock funds into escrow.",
+      onSuccess: () => {
+        if (!order) return;
+        if (order.token === "MC") {
+          Alert.alert(
+            "Lock Funds in Escrow",
+            `This will send ${order.cryptoAmount} MC from your wallet to the platform escrow address. The funds will be released to the buyer once you confirm receipt of payment.`,
+            [{ text: "Cancel", style: "cancel" }, { text: "Lock Now", onPress: () => lockEscrowMc.mutate() }]
+          );
+        } else {
+          setShowUsdtEscrow(true);
+        }
+      },
+      onCancel: () => {},
+    });
   }
 
   const isTerminal = ["released", "cancelled", "resolved"].includes(order?.status ?? "");

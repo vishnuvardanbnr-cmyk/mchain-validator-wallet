@@ -13,6 +13,8 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { PinModal } from "@/components/PinModal";
+import { PinProvider, usePinContext } from "@/context/PinContext";
 import { WalletProvider, useWallet } from "@/context/WalletContext";
 import "@/services/backgroundTasks";
 import "@/services/node"; // initializes cached node URL from storage on startup
@@ -27,6 +29,28 @@ const queryClient = new QueryClient({
     },
   },
 });
+
+function PinGate({ children }: { children: React.ReactNode }) {
+  const { isAppLocked, unlockApp, pinRequest, dismissPin } = usePinContext();
+  const showModal = isAppLocked || !!pinRequest;
+  const modalTitle = isAppLocked ? "Unlock Wallet" : (pinRequest?.title ?? "");
+  const modalSubtitle = isAppLocked ? "Enter your PIN to access your wallet." : pinRequest?.subtitle;
+  const modalOnSuccess = isAppLocked ? unlockApp : (pinRequest?.onSuccess ?? (() => {}));
+  const modalOnCancel = isAppLocked ? undefined : (pinRequest?.onCancel ?? dismissPin);
+
+  return (
+    <>
+      {children}
+      <PinModal
+        visible={showModal}
+        title={modalTitle}
+        subtitle={modalSubtitle}
+        onSuccess={modalOnSuccess}
+        onCancel={modalOnCancel}
+      />
+    </>
+  );
+}
 
 function RootLayoutNav() {
   const { isLoading, isOnboarded } = useWallet();
@@ -76,9 +100,13 @@ export default function RootLayout() {
       <ErrorBoundary>
         <QueryClientProvider client={queryClient}>
           <GestureHandlerRootView style={{ flex: 1 }}>
-            <WalletProvider>
-              <RootLayoutNav />
-            </WalletProvider>
+            <PinProvider>
+              <PinGate>
+                <WalletProvider>
+                  <RootLayoutNav />
+                </WalletProvider>
+              </PinGate>
+            </PinProvider>
           </GestureHandlerRootView>
         </QueryClientProvider>
       </ErrorBoundary>

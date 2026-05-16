@@ -16,6 +16,8 @@ import {
 } from "react-native";
 import { useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { PinSetupModal } from "@/components/PinSetupModal";
+import { hasPin } from "@/services/pin";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useWallet } from "@/context/WalletContext";
 import { api } from "@/services/api";
@@ -48,6 +50,13 @@ export default function SettingsScreen() {
   const queryClient = useQueryClient();
   const { mxcAddress, ethAddress, publicKey, moniker, updateMoniker, getPrivateKey } = useWallet();
   const scrollRef = useRef<ScrollView>(null);
+  const [pinEnabled, setPinEnabled] = useState(false);
+  const [showPinSetup, setShowPinSetup] = useState(false);
+  const [pinSetupMode, setPinSetupMode] = useState<"setup" | "change" | "remove">("setup");
+
+  useEffect(() => {
+    hasPin().then(setPinEnabled);
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
@@ -422,6 +431,45 @@ export default function SettingsScreen() {
           </View>
         </View>
 
+        {/* ── Security ─────────────────────────────────────────── */}
+        <View style={s.section}>
+          <View style={s.sectionHeader}>
+            <View style={s.sectionIcon}><Icon name="shield-checkmark-outline" size={13} color={colors.primary} /></View>
+            <Text style={s.sectionLabel}>SECURITY</Text>
+          </View>
+          <View style={s.card}>
+            <TouchableOpacity
+              style={[s.row, s.rowLast]}
+              onPress={() => {
+                setPinSetupMode(pinEnabled ? "change" : "setup");
+                setShowPinSetup(true);
+              }}
+              activeOpacity={0.75}
+            >
+              <View style={s.rowIcon}><Icon name="keypad-outline" size={16} color={colors.mutedForeground} /></View>
+              <View style={s.rowBody}>
+                <Text style={s.rowLabel}>Wallet PIN</Text>
+                <Text style={s.rowSub}>{pinEnabled ? "Required to open wallet & send" : "Not set — tap to enable"}</Text>
+              </View>
+              <View style={s.rowRight}>
+                <Text style={[s.rowValue, { color: pinEnabled ? "#10B981" : colors.mutedForeground }]}>
+                  {pinEnabled ? "ON" : "OFF"}
+                </Text>
+                {pinEnabled && (
+                  <TouchableOpacity
+                    onPress={() => { setPinSetupMode("remove"); setShowPinSetup(true); }}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    style={{ marginLeft: 8 }}
+                  >
+                    <Icon name="trash-outline" size={14} color={colors.destructive} />
+                  </TouchableOpacity>
+                )}
+                <Icon name="chevron-forward" size={14} color={colors.mutedForeground} style={s.rowChevron} />
+              </View>
+            </TouchableOpacity>
+          </View>
+        </View>
+
         {/* ── Wallet ───────────────────────────────────────────── */}
         <View style={s.section}>
           <View style={s.sectionHeader}>
@@ -562,6 +610,17 @@ export default function SettingsScreen() {
           </View>
         </View>
       </Modal>
+
+      <PinSetupModal
+        visible={showPinSetup}
+        mode={pinSetupMode}
+        onDone={() => {
+          setShowPinSetup(false);
+          hasPin().then(setPinEnabled);
+          if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        }}
+        onCancel={() => setShowPinSetup(false)}
+      />
     </View>
   );
 }

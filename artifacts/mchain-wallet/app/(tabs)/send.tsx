@@ -20,6 +20,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useWallet } from "@/context/WalletContext";
+import { usePinContext } from "@/context/PinContext";
 import { api } from "@/services/api";
 import { mcToWei, shortenAddress, signEvmTransaction, weiToMc } from "@/services/crypto";
 import { QRScannerModal } from "@/components/QRScannerModal";
@@ -34,6 +35,7 @@ export default function SendScreen() {
   const insets = useSafeAreaInsets();
   const qc = useQueryClient();
   const { mxcAddress, getPrivateKey } = useWallet();
+  const { requestPin } = usePinContext();
 
   const [step, setStep] = useState<SendStep>("input");
   const [recipient, setRecipient] = useState("");
@@ -505,7 +507,7 @@ export default function SendScreen() {
 
             <TouchableOpacity
               style={[s.primaryBtn, loading && { opacity: 0.7 }]}
-              onPress={handleSend}
+              onPress={() => { void requestPin({ title: "Confirm Transaction", subtitle: "Enter your PIN to sign and broadcast.", onSuccess: handleSend, onCancel: () => {} }); }}
               disabled={loading}
               activeOpacity={0.85}
             >
