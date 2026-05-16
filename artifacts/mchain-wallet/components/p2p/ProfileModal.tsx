@@ -337,8 +337,8 @@ export function ProfileModal({ visible, onClose, profile }: Props) {
                     </View>
 
                     <Text style={s.label}>DISPLAY NAME</Text>
-                    <View style={[s.input, { justifyContent: "center", opacity: 0.7 }]}>
-                      <Text style={{ fontSize: 14, fontFamily: "Inter_400Regular", color: colors.foreground }}>{displayName || "—"}</Text>
+                    <View style={[s.input, { justifyContent: "center", opacity: 0.7 }]} pointerEvents="none">
+                      <Text style={{ fontSize: 14, fontFamily: "Inter_400Regular", color: colors.foreground }} selectable={false}>{displayName || "—"}</Text>
                     </View>
                     <Text style={[s.kycSub, { marginBottom: 14, marginTop: -8 }]}>Display name cannot be changed after registration</Text>
 
