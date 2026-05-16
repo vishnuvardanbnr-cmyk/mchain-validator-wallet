@@ -5,7 +5,7 @@ import { p2pApi, type P2pOrder } from "@/services/p2pApi";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import React, { useState } from "react";
 import {
-  ActivityIndicator, Modal, Pressable, ScrollView,
+  ActivityIndicator, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView,
   StyleSheet, Text, TouchableOpacity, View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -94,7 +94,7 @@ export function MyOrdersModal({ visible, onClose }: Props) {
   const history = orders.filter(o => ["released", "cancelled", "resolved"].includes(o.status));
 
   const s = StyleSheet.create({
-    overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.72)", justifyContent: "flex-end" },
+    overlay: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.72)" },
     sheet: { backgroundColor: colors.background, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingBottom: insets.bottom + 16, maxHeight: "92%" },
     handle: { width: 36, height: 4, backgroundColor: colors.border, borderRadius: 2, alignSelf: "center", marginTop: 12, marginBottom: 4 },
     header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: colors.border },
@@ -110,9 +110,9 @@ export function MyOrdersModal({ visible, onClose }: Props) {
   return (
     <>
       <Modal visible={visible} animationType="slide" transparent statusBarTranslucent>
-        <Pressable style={s.overlay} onPress={onClose}>
-          <Pressable onPress={() => {}}>
-            <View style={s.sheet}>
+        <KeyboardAvoidingView style={{ flex: 1, justifyContent: "flex-end" }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
+          <Pressable style={s.overlay} onPress={onClose} />
+          <View style={s.sheet}>
               <View style={s.handle} />
               <View style={s.header}>
                 <Text style={s.title}>My Orders</Text>
@@ -151,9 +151,8 @@ export function MyOrdersModal({ visible, onClose }: Props) {
                   </>
                 )}
               </ScrollView>
-            </View>
-          </Pressable>
-        </Pressable>
+          </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {openOrder && (
