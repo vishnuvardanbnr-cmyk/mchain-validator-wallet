@@ -2,7 +2,7 @@ import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -15,45 +15,111 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import QRCode from "react-native-qrcode-svg";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useWallet } from "@/context/WalletContext";
 import { api } from "@/services/api";
-import type { KeyPair } from "@/services/crypto";
+import { generateMnemonic, mnemonicToKeyPair } from "@/services/crypto";
 import { useColors } from "@/hooks/useColors";
+import type { KeyPair } from "@/services/crypto";
+import type { ValidatorInfo } from "@/services/api";
 
-type Step = "generate" | "backup" | "moniker" | "register" | "done";
+type Mode = "create" | "import";
+type Step =
+  | "welcome"
+  | "backup"
+  | "moniker"
+  | "register"
+  | "done"
+  | "import_enter"
+  | "done_restored";
 
 export default function OnboardingScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { generateAndStoreKeyPair, completeOnboarding, deviceId } = useWallet();
+  const { completeOnboarding, resolveImportMnemonic, deviceId } = useWallet();
 
-  const [step, setStep] = useState<Step>("generate");
+  const [step, setStep] = useState<Step>("welcome");
+  const [mode, setMode] = useState<Mode>("create");
+
+  // Create flow state
+  const [mnemonic, setMnemonic] = useState("");
   const [keyPair, setKeyPair] = useState<KeyPair | null>(null);
+  const [backedUp, setBackedUp] = useState(false);
+
+  // Import flow state
+  const [importInput, setImportInput] = useState("");
+  const [importLoading, setImportLoading] = useState(false);
+  const [restoredValidator, setRestoredValidator] = useState<ValidatorInfo | null>(null);
+
+  // Shared state
   const [moniker, setMoniker] = useState("");
   const [loading, setLoading] = useState(false);
   const [registrationDone, setRegistrationDone] = useState(false);
-  const [keyVisible, setKeyVisible] = useState(false);
-  const generatedRef = useRef(false);
 
-  useEffect(() => {
-    if (generatedRef.current) return;
-    generatedRef.current = true;
-    generateAndStoreKeyPair().then(setKeyPair);
-  }, [generateAndStoreKeyPair]);
-
-  async function handleCopyAddress() {
-    if (!keyPair) return;
-    await Clipboard.setStringAsync(keyPair.mxcAddress);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  function handleCreateWallet() {
+    const words = generateMnemonic();
+    const kp = mnemonicToKeyPair(words);
+    setMnemonic(words);
+    setKeyPair(kp);
+    setMode("create");
+    setBackedUp(false);
+    setStep("backup");
   }
 
-  async function handleCopyKey() {
-    if (!keyPair) return;
-    await Clipboard.setStringAsync(keyPair.privateKey);
+  function handleImportWallet() {
+    setMode("import");
+    setImportInput("");
+    setStep("import_enter");
+  }
+
+  async function handleImportSubmit() {
+    const trimmed = importInput.trim().toLowerCase().replace(/\s+/g, " ");
+    const wordCount = trimmed.split(" ").filter(Boolean).length;
+    if (wordCount !== 12) {
+      Alert.alert("Invalid Phrase", "Please enter exactly 12 words.");
+      return;
+    }
+
+    setImportLoading(true);
+    try {
+      const result = await resolveImportMnemonic(trimmed);
+      setKeyPair(result.keypair);
+      setMnemonic(trimmed);
+
+      if (result.isExistingValidator && result.validatorInfo) {
+        // Restore directly — no re-registration needed
+        setRestoredValidator(result.validatorInfo);
+        const info = result.validatorInfo;
+        await completeOnboarding(
+          result.keypair.mxcAddress,
+          result.keypair.ethAddress,
+          result.keypair.publicKey,
+          result.keypair.privateKey,
+          info.moniker,
+          info.status
+        );
+        setMoniker(info.moniker);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        setStep("done_restored");
+      } else {
+        // Not a validator yet — let them register
+        setStep("moniker");
+      }
+    } catch (err: unknown) {
+      Alert.alert(
+        "Invalid Seed Phrase",
+        err instanceof Error ? err.message : "Please check your 12 words and try again."
+      );
+    } finally {
+      setImportLoading(false);
+    }
+  }
+
+  async function handleCopyMnemonic() {
+    if (!mnemonic) return;
+    await Clipboard.setStringAsync(mnemonic);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    Alert.alert("Copied", "Private key copied to clipboard. Store it safely!");
+    Alert.alert("Copied", "Seed phrase copied. Store it somewhere safe and never share it.");
   }
 
   async function handleRegister() {
@@ -93,11 +159,35 @@ export default function OnboardingScreen() {
     router.replace("/(tabs)");
   }
 
+  async function handleRestoredEnter() {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    router.replace("/(tabs)");
+  }
+
+  const mnemonicWords = mnemonic ? mnemonic.split(" ") : [];
+
+  // Step indicator config per mode
+  const createSteps: Step[] = ["backup", "moniker", "register", "done"];
+  const importSteps: Step[] = ["import_enter", "moniker", "register", "done"];
+
+  function renderStepIndicator() {
+    if (step === "welcome" || step === "done_restored") return null;
+    const steps = mode === "create" ? createSteps : importSteps;
+    const idx = steps.indexOf(step);
+    return (
+      <View style={s.stepIndicator}>
+        {steps.map((_, i) => (
+          <View
+            key={i}
+            style={[s.stepDot, { backgroundColor: i <= idx ? colors.primary : colors.border }]}
+          />
+        ))}
+      </View>
+    );
+  }
+
   const s = StyleSheet.create({
-    outer: {
-      flex: 1,
-      backgroundColor: colors.background,
-    },
+    outer: { flex: 1, backgroundColor: colors.background },
     scroll: {
       flexGrow: 1,
       paddingHorizontal: 24,
@@ -139,33 +229,28 @@ export default function OnboardingScreen() {
       letterSpacing: 1.5,
       marginBottom: 12,
     },
-    address: {
-      fontSize: 13,
+    stepIndicator: { flexDirection: "row", gap: 6, marginBottom: 24 },
+    stepDot: { height: 3, borderRadius: 2, flex: 1 },
+    primaryBtn: { borderRadius: colors.radius, overflow: "hidden", marginBottom: 16 },
+    primaryGrad: { paddingVertical: 16, alignItems: "center" },
+    primaryBtnText: { fontSize: 16, fontFamily: "Inter_700Bold", color: "#FFFFFF" },
+    secondaryBtn: { paddingVertical: 14, alignItems: "center" },
+    secondaryBtnText: {
+      fontSize: 15,
       fontFamily: "Inter_500Medium",
-      color: colors.primary,
-      marginBottom: 12,
+      color: colors.mutedForeground,
     },
-    qrContainer: {
-      alignItems: "center",
-      paddingVertical: 16,
-      backgroundColor: "#FFFFFF",
-      borderRadius: colors.radius - 4,
-      marginBottom: 12,
-    },
-    copyBtn: {
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "center",
-      paddingVertical: 10,
+    input: {
+      backgroundColor: colors.input,
       borderRadius: colors.radius - 4,
       borderWidth: 1,
       borderColor: colors.border,
-      gap: 6,
-    },
-    copyBtnText: {
-      fontSize: 14,
-      fontFamily: "Inter_600SemiBold",
-      color: colors.primary,
+      paddingHorizontal: 16,
+      paddingVertical: 14,
+      fontSize: 16,
+      fontFamily: "Inter_400Regular",
+      color: colors.foreground,
+      marginBottom: 20,
     },
     warningCard: {
       backgroundColor: "#1A1000",
@@ -187,69 +272,7 @@ export default function OnboardingScreen() {
       color: "#D4A017",
       lineHeight: 20,
     },
-    keyBox: {
-      backgroundColor: colors.secondary,
-      borderRadius: colors.radius - 4,
-      padding: 12,
-      marginBottom: 12,
-    },
-    keyText: {
-      fontSize: 11,
-      fontFamily: "Inter_400Regular",
-      color: colors.mutedForeground,
-      lineHeight: 18,
-      letterSpacing: 0.5,
-    },
-    input: {
-      backgroundColor: colors.input,
-      borderRadius: colors.radius - 4,
-      borderWidth: 1,
-      borderColor: colors.border,
-      paddingHorizontal: 16,
-      paddingVertical: 14,
-      fontSize: 16,
-      fontFamily: "Inter_400Regular",
-      color: colors.foreground,
-      marginBottom: 20,
-    },
-    primaryBtn: {
-      borderRadius: colors.radius,
-      overflow: "hidden",
-      marginBottom: 16,
-    },
-    primaryGrad: {
-      paddingVertical: 16,
-      alignItems: "center",
-    },
-    primaryBtnText: {
-      fontSize: 16,
-      fontFamily: "Inter_700Bold",
-      color: "#FFFFFF",
-    },
-    secondaryBtn: {
-      paddingVertical: 14,
-      alignItems: "center",
-    },
-    secondaryBtnText: {
-      fontSize: 15,
-      fontFamily: "Inter_500Medium",
-      color: colors.mutedForeground,
-    },
-    stepIndicator: {
-      flexDirection: "row",
-      gap: 6,
-      marginBottom: 24,
-    },
-    stepDot: {
-      height: 3,
-      borderRadius: 2,
-      flex: 1,
-    },
-    successIcon: {
-      alignItems: "center",
-      marginBottom: 24,
-      marginTop: 8,
-    },
+    successIcon: { alignItems: "center", marginBottom: 24, marginTop: 8 },
     successCircle: {
       width: 80,
       height: 80,
@@ -259,9 +282,7 @@ export default function OnboardingScreen() {
       alignItems: "center",
       justifyContent: "center",
     },
-    successCheck: {
-      fontSize: 36,
-    },
+    successCheck: { fontSize: 36 },
     successTitle: {
       fontSize: 24,
       fontFamily: "Inter_700Bold",
@@ -292,109 +313,355 @@ export default function OnboardingScreen() {
       fontFamily: "Inter_600SemiBold",
       color: colors.warning,
     },
+    // Welcome screen
+    welcomeHero: { alignItems: "center", paddingVertical: 32, marginBottom: 16 },
+    welcomeCircle: {
+      width: 96,
+      height: 96,
+      borderRadius: 48,
+      backgroundColor: colors.primary + "20",
+      borderWidth: 2,
+      borderColor: colors.primary + "60",
+      alignItems: "center",
+      justifyContent: "center",
+      marginBottom: 24,
+    },
+    welcomeEmoji: { fontSize: 40 },
+    welcomeTitle: {
+      fontSize: 30,
+      fontFamily: "Inter_700Bold",
+      color: colors.foreground,
+      textAlign: "center",
+      marginBottom: 12,
+    },
+    welcomeSubtitle: {
+      fontSize: 15,
+      fontFamily: "Inter_400Regular",
+      color: colors.mutedForeground,
+      textAlign: "center",
+      lineHeight: 22,
+      paddingHorizontal: 8,
+    },
+    divider: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 12,
+      marginBottom: 16,
+    },
+    dividerLine: { flex: 1, height: 1, backgroundColor: colors.border },
+    dividerText: {
+      fontSize: 13,
+      fontFamily: "Inter_500Medium",
+      color: colors.mutedForeground,
+    },
+    // Seed phrase grid
+    mnemonicGrid: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: 8,
+      marginBottom: 16,
+    },
+    wordChip: {
+      flexDirection: "row",
+      alignItems: "center",
+      backgroundColor: colors.secondary,
+      borderRadius: 8,
+      paddingVertical: 8,
+      paddingHorizontal: 10,
+      minWidth: "30%",
+      flex: 1,
+      gap: 6,
+    },
+    wordIndex: {
+      fontSize: 11,
+      fontFamily: "Inter_500Medium",
+      color: colors.mutedForeground,
+      minWidth: 16,
+    },
+    wordText: {
+      fontSize: 14,
+      fontFamily: "Inter_600SemiBold",
+      color: colors.foreground,
+    },
+    checkRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 12,
+      marginBottom: 24,
+      padding: 16,
+      backgroundColor: colors.card,
+      borderRadius: colors.radius,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    checkbox: {
+      width: 22,
+      height: 22,
+      borderRadius: 6,
+      borderWidth: 2,
+      borderColor: colors.primary,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    checkboxChecked: {
+      backgroundColor: colors.primary,
+    },
+    checkboxLabel: {
+      flex: 1,
+      fontSize: 14,
+      fontFamily: "Inter_400Regular",
+      color: colors.foreground,
+      lineHeight: 20,
+    },
+    // Import text area
+    importTextArea: {
+      backgroundColor: colors.input,
+      borderRadius: colors.radius - 4,
+      borderWidth: 1,
+      borderColor: colors.border,
+      paddingHorizontal: 16,
+      paddingVertical: 14,
+      fontSize: 16,
+      fontFamily: "Inter_400Regular",
+      color: colors.foreground,
+      marginBottom: 12,
+      minHeight: 120,
+      textAlignVertical: "top",
+    },
+    wordCountBadge: {
+      alignSelf: "flex-end",
+      marginBottom: 20,
+      paddingHorizontal: 10,
+      paddingVertical: 4,
+      borderRadius: 12,
+    },
+    wordCountText: {
+      fontSize: 12,
+      fontFamily: "Inter_500Medium",
+    },
+    restoredBadge: {
+      alignSelf: "center",
+      backgroundColor: "#16a34a20",
+      borderRadius: 20,
+      borderWidth: 1,
+      borderColor: "#16a34a60",
+      paddingHorizontal: 16,
+      paddingVertical: 6,
+      marginBottom: 24,
+    },
+    restoredBadgeText: {
+      fontSize: 13,
+      fontFamily: "Inter_600SemiBold",
+      color: colors.success,
+    },
+    infoRow: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      paddingVertical: 8,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border,
+    },
+    infoLabel: {
+      fontSize: 13,
+      fontFamily: "Inter_500Medium",
+      color: colors.mutedForeground,
+    },
+    infoValue: {
+      fontSize: 13,
+      fontFamily: "Inter_600SemiBold",
+      color: colors.foreground,
+    },
   });
 
-  const steps: Step[] = ["generate", "backup", "moniker", "register", "done"];
-  const stepIndex = steps.indexOf(step);
-
-  if (!keyPair) {
-    return (
-      <View style={[s.outer, { justifyContent: "center", alignItems: "center" }]}>
-        <ActivityIndicator color={colors.primary} size="large" />
-        <Text style={{ color: colors.mutedForeground, marginTop: 16, fontFamily: "Inter_400Regular" }}>
-          Generating secure keypair...
-        </Text>
-      </View>
-    );
-  }
+  const wordCount = importInput.trim()
+    ? importInput.trim().split(/\s+/).filter(Boolean).length
+    : 0;
+  const wordCountColor =
+    wordCount === 12 ? colors.success : wordCount > 12 ? "#ef4444" : colors.mutedForeground;
 
   return (
     <View style={s.outer}>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-        <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled">
+        <ScrollView
+          contentContainerStyle={s.scroll}
+          keyboardShouldPersistTaps="handled"
+        >
           <Text style={s.logo}>MCHAIN</Text>
+          {renderStepIndicator()}
 
-          <View style={s.stepIndicator}>
-            {steps.slice(0, -1).map((_, i) => (
-              <View
-                key={i}
-                style={[
-                  s.stepDot,
-                  { backgroundColor: i <= stepIndex ? colors.primary : colors.border },
-                ]}
-              />
-            ))}
-          </View>
-
-          {step === "generate" && (
+          {/* ── WELCOME ──────────────────────────────────────────────── */}
+          {step === "welcome" && (
             <>
-              <Text style={s.title}>Your Validator Address</Text>
-              <Text style={s.subtitle}>
-                A secp256k1 keypair has been generated securely on your device.
-              </Text>
-              <View style={s.card}>
-                <Text style={s.cardTitle}>MXC ADDRESS</Text>
-                <Text style={s.address}>{keyPair.mxcAddress}</Text>
-                <View style={s.qrContainer}>
-                  <QRCode value={keyPair.mxcAddress} size={180} color="#000000" backgroundColor="#FFFFFF" />
+              <View style={s.welcomeHero}>
+                <View style={s.welcomeCircle}>
+                  <Text style={s.welcomeEmoji}>🔐</Text>
                 </View>
-                <TouchableOpacity style={s.copyBtn} onPress={handleCopyAddress}>
-                  <Text style={s.copyBtnText}>Copy Address</Text>
-                </TouchableOpacity>
-              </View>
-              <TouchableOpacity style={s.primaryBtn} onPress={() => setStep("backup")}>
-                <LinearGradient colors={["#0EA5E9", "#0284C7"]} style={s.primaryGrad}>
-                  <Text style={s.primaryBtnText}>Continue</Text>
-                </LinearGradient>
-              </TouchableOpacity>
-            </>
-          )}
-
-          {step === "backup" && (
-            <>
-              <Text style={s.title}>Back Up Your Key</Text>
-              <Text style={s.subtitle}>
-                Your private key is stored only on this device. If you lose it, there is no recovery.
-              </Text>
-              <View style={s.warningCard}>
-                <Text style={s.warningTitle}>IMPORTANT WARNING</Text>
-                <Text style={s.warningText}>
-                  Never share your private key with anyone. Anyone with this key has full control of your wallet.
-                  Write it down and store it somewhere safe.
+                <Text style={s.welcomeTitle}>MChain Validator Wallet</Text>
+                <Text style={s.welcomeSubtitle}>
+                  Secure your validator identity with a 12-word seed phrase. You're always in control.
                 </Text>
               </View>
-              <View style={s.card}>
-                <Text style={s.cardTitle}>PRIVATE KEY</Text>
-                <View style={s.keyBox}>
-                  <Text style={s.keyText}>
-                    {keyVisible ? keyPair.privateKey : "•".repeat(64)}
-                  </Text>
-                </View>
-                <TouchableOpacity
-                  style={s.copyBtn}
-                  onPress={() => setKeyVisible((v) => !v)}
-                >
-                  <Text style={s.copyBtnText}>{keyVisible ? "Hide" : "Reveal"} Key</Text>
-                </TouchableOpacity>
-              </View>
-              {keyVisible && (
-                <TouchableOpacity style={s.primaryBtn} onPress={handleCopyKey}>
-                  <LinearGradient colors={["#F59E0B", "#D97706"]} style={s.primaryGrad}>
-                    <Text style={s.primaryBtnText}>Copy Key to Clipboard</Text>
-                  </LinearGradient>
-                </TouchableOpacity>
-              )}
-              <TouchableOpacity style={s.primaryBtn} onPress={() => setStep("moniker")}>
+
+              <TouchableOpacity style={s.primaryBtn} onPress={handleCreateWallet}>
                 <LinearGradient colors={["#0EA5E9", "#0284C7"]} style={s.primaryGrad}>
-                  <Text style={s.primaryBtnText}>I've Saved My Key</Text>
+                  <Text style={s.primaryBtnText}>Create New Wallet</Text>
                 </LinearGradient>
               </TouchableOpacity>
-              <TouchableOpacity style={s.secondaryBtn} onPress={() => setStep("moniker")}>
-                <Text style={s.secondaryBtnText}>Skip for now</Text>
+
+              <View style={s.divider}>
+                <View style={s.dividerLine} />
+                <Text style={s.dividerText}>or</Text>
+                <View style={s.dividerLine} />
+              </View>
+
+              <TouchableOpacity
+                style={[
+                  s.primaryBtn,
+                  {
+                    borderWidth: 1,
+                    borderColor: colors.border,
+                    borderRadius: colors.radius,
+                    overflow: "hidden",
+                    marginBottom: 16,
+                  },
+                ]}
+                onPress={handleImportWallet}
+              >
+                <View style={{ paddingVertical: 16, alignItems: "center", backgroundColor: colors.card }}>
+                  <Text style={[s.primaryBtnText, { color: colors.foreground }]}>
+                    Import Existing Wallet
+                  </Text>
+                </View>
+              </TouchableOpacity>
+
+              <Text
+                style={{
+                  fontSize: 12,
+                  fontFamily: "Inter_400Regular",
+                  color: colors.mutedForeground,
+                  textAlign: "center",
+                  lineHeight: 18,
+                  marginTop: 8,
+                }}
+              >
+                Already a validator? Import your wallet and your validator status will be restored automatically.
+              </Text>
+            </>
+          )}
+
+          {/* ── BACKUP SEED PHRASE (Create) ───────────────────────────── */}
+          {step === "backup" && (
+            <>
+              <Text style={s.title}>Save Your Seed Phrase</Text>
+              <Text style={s.subtitle}>
+                These 12 words are the only way to recover your wallet. Write them down in order and keep them somewhere safe.
+              </Text>
+
+              <View style={s.warningCard}>
+                <Text style={s.warningTitle}>NEVER SHARE THESE WORDS</Text>
+                <Text style={s.warningText}>
+                  Anyone with your seed phrase has full access to your wallet. MChain support will never ask for them.
+                </Text>
+              </View>
+
+              <View style={s.card}>
+                <Text style={s.cardTitle}>YOUR SEED PHRASE</Text>
+                <View style={s.mnemonicGrid}>
+                  {mnemonicWords.map((word, i) => (
+                    <View key={i} style={s.wordChip}>
+                      <Text style={s.wordIndex}>{i + 1}.</Text>
+                      <Text style={s.wordText}>{word}</Text>
+                    </View>
+                  ))}
+                </View>
+                <TouchableOpacity style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  paddingVertical: 10,
+                  borderRadius: colors.radius - 4,
+                  borderWidth: 1,
+                  borderColor: colors.border,
+                  gap: 6,
+                }} onPress={handleCopyMnemonic}>
+                  <Text style={{ fontSize: 14, fontFamily: "Inter_600SemiBold", color: colors.primary }}>
+                    Copy to Clipboard
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              <TouchableOpacity
+                style={s.checkRow}
+                onPress={() => setBackedUp((v) => !v)}
+                activeOpacity={0.7}
+              >
+                <View style={[s.checkbox, backedUp && s.checkboxChecked]}>
+                  {backedUp && <Text style={{ color: "#fff", fontSize: 14 }}>✓</Text>}
+                </View>
+                <Text style={s.checkboxLabel}>
+                  I have written down my seed phrase and stored it safely
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[s.primaryBtn, !backedUp && { opacity: 0.4 }]}
+                onPress={() => backedUp && setStep("moniker")}
+                disabled={!backedUp}
+              >
+                <LinearGradient colors={["#0EA5E9", "#0284C7"]} style={s.primaryGrad}>
+                  <Text style={s.primaryBtnText}>I've Saved My Phrase</Text>
+                </LinearGradient>
               </TouchableOpacity>
             </>
           )}
 
+          {/* ── IMPORT: ENTER SEED PHRASE ────────────────────────────── */}
+          {step === "import_enter" && (
+            <>
+              <Text style={s.title}>Import Your Wallet</Text>
+              <Text style={s.subtitle}>
+                Enter your 12-word seed phrase, separated by spaces. Your keys never leave this device.
+              </Text>
+
+              <TextInput
+                style={s.importTextArea}
+                placeholder="word1 word2 word3 ..."
+                placeholderTextColor={colors.mutedForeground}
+                value={importInput}
+                onChangeText={setImportInput}
+                autoCapitalize="none"
+                autoCorrect={false}
+                multiline
+                numberOfLines={4}
+              />
+
+              <View style={[s.wordCountBadge, { backgroundColor: wordCountColor + "20" }]}>
+                <Text style={[s.wordCountText, { color: wordCountColor }]}>
+                  {wordCount} / 12 words
+                </Text>
+              </View>
+
+              <TouchableOpacity
+                style={[s.primaryBtn, (wordCount !== 12 || importLoading) && { opacity: 0.4 }]}
+                onPress={handleImportSubmit}
+                disabled={wordCount !== 12 || importLoading}
+              >
+                <LinearGradient colors={["#0EA5E9", "#0284C7"]} style={s.primaryGrad}>
+                  {importLoading ? (
+                    <ActivityIndicator color="#FFFFFF" />
+                  ) : (
+                    <Text style={s.primaryBtnText}>Import Wallet</Text>
+                  )}
+                </LinearGradient>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={s.secondaryBtn} onPress={() => setStep("welcome")}>
+                <Text style={s.secondaryBtnText}>Back</Text>
+              </TouchableOpacity>
+            </>
+          )}
+
+          {/* ── MONIKER ──────────────────────────────────────────────── */}
           {step === "moniker" && (
             <>
               <Text style={s.title}>Name Your Validator</Text>
@@ -423,7 +690,8 @@ export default function OnboardingScreen() {
             </>
           )}
 
-          {step === "register" && (
+          {/* ── REGISTER ─────────────────────────────────────────────── */}
+          {step === "register" && keyPair && (
             <>
               <Text style={s.title}>Register Validator</Text>
               <Text style={s.subtitle}>
@@ -431,12 +699,25 @@ export default function OnboardingScreen() {
               </Text>
               <View style={s.card}>
                 <Text style={s.cardTitle}>REGISTRATION DETAILS</Text>
-                <Text style={{ color: colors.mutedForeground, fontSize: 13, fontFamily: "Inter_500Medium", marginBottom: 4 }}>Moniker</Text>
-                <Text style={{ color: colors.foreground, fontSize: 15, fontFamily: "Inter_600SemiBold", marginBottom: 12 }}>{moniker}</Text>
-                <Text style={{ color: colors.mutedForeground, fontSize: 13, fontFamily: "Inter_500Medium", marginBottom: 4 }}>Address</Text>
-                <Text style={{ color: colors.primary, fontSize: 12, fontFamily: "Inter_400Regular", marginBottom: 12 }}>{keyPair.mxcAddress}</Text>
-                <Text style={{ color: colors.mutedForeground, fontSize: 13, fontFamily: "Inter_500Medium", marginBottom: 4 }}>Commission Rate</Text>
-                <Text style={{ color: colors.foreground, fontSize: 15, fontFamily: "Inter_600SemiBold" }}>10%</Text>
+                <View style={s.infoRow}>
+                  <Text style={s.infoLabel}>Moniker</Text>
+                  <Text style={s.infoValue}>{moniker}</Text>
+                </View>
+                <View style={[s.infoRow, { borderBottomWidth: 0 }]}>
+                  <Text style={s.infoLabel}>Commission Rate</Text>
+                  <Text style={s.infoValue}>10%</Text>
+                </View>
+                <Text
+                  style={{
+                    fontSize: 11,
+                    fontFamily: "Inter_400Regular",
+                    color: colors.mutedForeground,
+                    marginTop: 12,
+                  }}
+                  numberOfLines={2}
+                >
+                  {keyPair.mxcAddress}
+                </Text>
               </View>
               <TouchableOpacity
                 style={[s.primaryBtn, loading && { opacity: 0.7 }]}
@@ -457,6 +738,7 @@ export default function OnboardingScreen() {
             </>
           )}
 
+          {/* ── DONE (new registration) ───────────────────────────────── */}
           {step === "done" && (
             <>
               <View style={s.successIcon}>
@@ -475,6 +757,48 @@ export default function OnboardingScreen() {
               </Text>
               <TouchableOpacity style={s.primaryBtn} onPress={handleFinish}>
                 <LinearGradient colors={["#0EA5E9", "#0284C7"]} style={s.primaryGrad}>
+                  <Text style={s.primaryBtnText}>Enter Wallet</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            </>
+          )}
+
+          {/* ── DONE RESTORED (existing validator re-imported) ─────────── */}
+          {step === "done_restored" && restoredValidator && (
+            <>
+              <View style={s.successIcon}>
+                <View style={[s.successCircle, { borderColor: colors.success }]}>
+                  <Text style={s.successCheck}>✓</Text>
+                </View>
+              </View>
+              <Text style={s.successTitle}>Validator Restored</Text>
+              <View style={s.restoredBadge}>
+                <Text style={s.restoredBadgeText}>
+                  {restoredValidator.status.toUpperCase()}
+                </Text>
+              </View>
+              <Text style={s.successText}>
+                Your validator wallet has been recovered. All your validator history, earnings, and status are intact.
+              </Text>
+
+              <View style={[s.card, { marginTop: 8 }]}>
+                <Text style={s.cardTitle}>RESTORED VALIDATOR</Text>
+                <View style={s.infoRow}>
+                  <Text style={s.infoLabel}>Moniker</Text>
+                  <Text style={s.infoValue}>{restoredValidator.moniker}</Text>
+                </View>
+                <View style={s.infoRow}>
+                  <Text style={s.infoLabel}>Commission</Text>
+                  <Text style={s.infoValue}>{restoredValidator.commissionRate}%</Text>
+                </View>
+                <View style={[s.infoRow, { borderBottomWidth: 0 }]}>
+                  <Text style={s.infoLabel}>Active Minutes</Text>
+                  <Text style={s.infoValue}>{restoredValidator.totalActiveMinutes.toLocaleString()}</Text>
+                </View>
+              </View>
+
+              <TouchableOpacity style={s.primaryBtn} onPress={handleRestoredEnter}>
+                <LinearGradient colors={["#16a34a", "#15803d"]} style={s.primaryGrad}>
                   <Text style={s.primaryBtnText}>Enter Wallet</Text>
                 </LinearGradient>
               </TouchableOpacity>

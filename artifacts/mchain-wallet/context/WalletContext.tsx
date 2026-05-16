@@ -7,7 +7,9 @@ import React, {
   useEffect,
   useState,
 } from "react";
-import { deriveAddressFromPublicKey, generateKeyPair, type KeyPair } from "@/services/crypto";
+import { deriveAddressFromPublicKey, generateKeyPair, mnemonicToKeyPair, validateMnemonicWords, type KeyPair } from "@/services/crypto";
+import { api } from "@/services/api";
+import type { ValidatorInfo } from "@/services/api";
 
 // ─── Wallet entry (no private key; that lives in SecureStore) ───────────────
 export interface WalletEntry {
@@ -37,6 +39,14 @@ const KEYS = {
   PK_PREFIX: "mchain_pk_",
 };
 
+export type ValidatorStatus = "active" | "paused" | "pending" | "inactive" | "banned";
+
+export interface ImportResult {
+  keypair: KeyPair;
+  isExistingValidator: boolean;
+  validatorInfo?: ValidatorInfo;
+}
+
 // ─── Context interface ────────────────────────────────────────────────────────
 interface WalletContextType {
   isLoading: boolean;
@@ -52,10 +62,8 @@ interface WalletContextType {
 
   moniker: string;
   deviceId: string;
-  validatorStatus: "active" | "paused" | "pending" | "inactive" | "banned" | null;
-  setValidatorStatus: (
-    status: "active" | "paused" | "pending" | "inactive" | "banned" | null
-  ) => void;
+  validatorStatus: ValidatorStatus | null;
+  setValidatorStatus: (status: ValidatorStatus | null) => void;
   pendingHeartbeat: boolean;
   setPendingHeartbeat: (pending: boolean) => void;
   sessionExpired: boolean;
@@ -71,12 +79,14 @@ interface WalletContextType {
   setValidatorWallet: (id: string) => Promise<void>;
 
   generateAndStoreKeyPair: () => Promise<KeyPair>;
+  resolveImportMnemonic: (mnemonic: string) => Promise<ImportResult>;
   completeOnboarding: (
     mxcAddress: string,
     ethAddress: string,
     publicKey: string,
     privateKey: string,
-    moniker: string
+    moniker: string,
+    restoredValidatorStatus?: ValidatorStatus
   ) => Promise<void>;
   getPrivateKey: (walletId?: string) => Promise<string | null>;
   updateMoniker: (moniker: string) => Promise<void>;
@@ -94,9 +104,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
   const [moniker, setMoniker] = useState("");
   const [deviceId, setDeviceId] = useState("");
-  const [validatorStatus, setValidatorStatusState] = useState<
-    "active" | "paused" | "pending" | "inactive" | "banned" | null
-  >(null);
+  const [validatorStatus, setValidatorStatusState] = useState<ValidatorStatus | null>(null);
   const [pendingHeartbeat, setPendingHeartbeat] = useState(false);
   const [sessionExpired, setSessionExpired] = useState(false);
   const [sessionExpiresAt, setSessionExpiresAtState] = useState<string | null>(null);
@@ -213,9 +221,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       try {
         const storedStatus = await AsyncStorage.getItem(KEYS.VALIDATOR_STATUS);
         if (storedStatus) {
-          setValidatorStatusState(
-            storedStatus as "active" | "paused" | "pending" | "inactive" | "banned"
-          );
+          setValidatorStatusState(storedStatus as ValidatorStatus);
           if (storedStatus === "paused") setSessionExpired(true);
         }
       } catch {
@@ -240,9 +246,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  // Persists validator status to AsyncStorage and keeps sessionExpired in sync
   const setValidatorStatus = useCallback(
-    (status: "active" | "paused" | "pending" | "inactive" | "banned" | null) => {
+    (status: ValidatorStatus | null) => {
       setValidatorStatusState(status);
       setSessionExpired(status === "paused");
       if (status) {
@@ -269,6 +274,23 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
   const generateAndStoreKeyPair = useCallback(async (): Promise<KeyPair> => {
     return generateKeyPair();
+  }, []);
+
+  // Derives keypair from mnemonic and checks if the address is an existing validator.
+  // Does NOT write any state — onboarding orchestrates what to do next.
+  const resolveImportMnemonic = useCallback(async (mnemonic: string): Promise<ImportResult> => {
+    if (!validateMnemonicWords(mnemonic)) {
+      throw new Error("Invalid seed phrase. Please check all 12 words and try again.");
+    }
+    const keypair = mnemonicToKeyPair(mnemonic);
+
+    try {
+      const { validator } = await api.getValidatorStatus(keypair.mxcAddress);
+      return { keypair, isExistingValidator: true, validatorInfo: validator };
+    } catch {
+      // 404 or network error — treat as not a validator
+      return { keypair, isExistingValidator: false };
+    }
   }, []);
 
   const addWallet = useCallback(
@@ -352,7 +374,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       eth: string,
       pubKey: string,
       privKey: string,
-      mon: string
+      mon: string,
+      restoredValidatorStatus?: ValidatorStatus
     ) => {
       const id = "w_validator_" + Date.now();
       const entry: WalletEntry = {
@@ -365,7 +388,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       };
 
       const updated = [entry];
-      await Promise.all([
+      const ops: Promise<unknown>[] = [
         AsyncStorage.setItem(KEYS.LEGACY_ONBOARDED, "true"),
         AsyncStorage.setItem(KEYS.WALLETS, JSON.stringify(updated)),
         AsyncStorage.setItem(KEYS.ACTIVE_WALLET_ID, id),
@@ -373,13 +396,24 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         AsyncStorage.setItem(KEYS.VALIDATOR_ADDRESS, addr),
         AsyncStorage.setItem(KEYS.MONIKER, mon),
         SecureStore.setItemAsync(KEYS.PK_PREFIX + id, privKey),
-      ]);
+      ];
+
+      if (restoredValidatorStatus) {
+        ops.push(AsyncStorage.setItem(KEYS.VALIDATOR_STATUS, restoredValidatorStatus));
+      }
+
+      await Promise.all(ops);
 
       setIsOnboarded(true);
       setWallets(updated);
       setActiveWalletId(id);
       setValidatorWalletId(id);
       setMoniker(mon);
+
+      if (restoredValidatorStatus) {
+        setValidatorStatusState(restoredValidatorStatus);
+        if (restoredValidatorStatus === "paused") setSessionExpired(true);
+      }
     },
     []
   );
@@ -414,7 +448,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         moniker,
         deviceId,
         validatorStatus,
-        setValidatorStatus: setValidatorStatus,
+        setValidatorStatus,
         pendingHeartbeat,
         setPendingHeartbeat,
         sessionExpired,
@@ -428,6 +462,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         removeWallet,
         setValidatorWallet,
         generateAndStoreKeyPair,
+        resolveImportMnemonic,
         completeOnboarding,
         getPrivateKey,
         updateMoniker,

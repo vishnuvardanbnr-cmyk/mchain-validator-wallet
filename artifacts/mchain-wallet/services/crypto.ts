@@ -1,3 +1,6 @@
+import { HDKey } from "@scure/bip32";
+import { generateMnemonic as bip39Generate, mnemonicToSeedSync, validateMnemonic } from "@scure/bip39";
+import { wordlist } from "@scure/bip39/wordlists/english";
 import { secp256k1 } from "@noble/curves/secp256k1";
 import { keccak_256 } from "@noble/hashes/sha3";
 import { sha256 } from "@noble/hashes/sha256";
@@ -24,23 +27,40 @@ export interface KeyPair {
   mxcAddress: string;
 }
 
-export function generateKeyPair(): KeyPair {
-  const privKeyBytes = secp256k1.utils.randomPrivateKey();
+function privKeyBytesToKeyPair(privKeyBytes: Uint8Array): KeyPair {
   const pubKeyBytes = secp256k1.getPublicKey(privKeyBytes, true);
-
   const pubKeyHash = keccak_256(pubKeyBytes);
   const addressBytes = pubKeyHash.slice(-20);
-
   const ethAddress = "0x" + bytesToHex(addressBytes);
   const words = bech32.toWords(addressBytes);
   const mxcAddress = bech32.encode("mxc", words);
-
   return {
     privateKey: bytesToHex(privKeyBytes),
     publicKey: bytesToHex(pubKeyBytes),
     ethAddress,
     mxcAddress,
   };
+}
+
+export function generateMnemonic(): string {
+  return bip39Generate(wordlist, 128);
+}
+
+export function validateMnemonicWords(mnemonic: string): boolean {
+  return validateMnemonic(mnemonic.trim().toLowerCase(), wordlist);
+}
+
+export function mnemonicToKeyPair(mnemonic: string): KeyPair {
+  const seed = mnemonicToSeedSync(mnemonic.trim().toLowerCase());
+  const root = HDKey.fromMasterSeed(seed);
+  const child = root.derive("m/44'/60'/0'/0/0");
+  if (!child.privateKey) throw new Error("Failed to derive private key");
+  return privKeyBytesToKeyPair(child.privateKey);
+}
+
+export function generateKeyPair(): KeyPair {
+  const privKeyBytes = secp256k1.utils.randomPrivateKey();
+  return privKeyBytesToKeyPair(privKeyBytes);
 }
 
 export function deriveAddressFromPublicKey(publicKeyHex: string): string {

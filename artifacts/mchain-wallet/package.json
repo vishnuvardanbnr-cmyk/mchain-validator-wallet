@@ -58,6 +58,8 @@
   "dependencies": {
     "@noble/curves": "^1.9.7",
     "@noble/hashes": "^1.8.0",
+    "@scure/bip32": "^2.2.0",
+    "@scure/bip39": "^2.2.0",
     "bech32": "^2.0.0",
     "expo-background-fetch": "^14.0.9",
     "expo-battery": "^10.0.8",
