@@ -3,7 +3,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -202,6 +202,22 @@ export default function SendScreen() {
     checkRotate.setValue(0);
     hashOpacity.setValue(0);
   }
+
+  useFocusEffect(
+    useCallback(() => {
+      return () => {
+        setRecipient("");
+        setAmount("");
+        setMemo("");
+        setError("");
+        setStep("input");
+        successScale.setValue(0);
+        successOpacity.setValue(0);
+        checkRotate.setValue(0);
+        hashOpacity.setValue(0);
+      };
+    }, [successScale, successOpacity, checkRotate, hashOpacity])
+  );
 
   const spin = checkRotate.interpolate({ inputRange: [0, 1], outputRange: ["0deg", "360deg"] });
 
@@ -421,6 +437,14 @@ export default function SendScreen() {
               </LinearGradient>
             </TouchableOpacity>
           </View>
+          <TouchableOpacity
+            style={[s.secondaryBtn, { marginTop: 12, flex: 0, width: "100%", flexDirection: "row", gap: 8 }]}
+            onPress={() => { reset(); router.replace("/(tabs)/"); }}
+            activeOpacity={0.8}
+          >
+            <Icon name="home-outline" size={16} color={colors.foreground} />
+            <Text style={s.secondaryBtnText}>Back to Home</Text>
+          </TouchableOpacity>
         </Animated.View>
         <Toast message={toast} visible={!!toast} onHide={() => setToast("")} />
       </View>

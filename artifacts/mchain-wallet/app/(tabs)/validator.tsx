@@ -95,10 +95,9 @@ export default function ValidatorScreen() {
 
   // ── Registration form state ─────────────────────────────────────────────────
   const [regMoniker, setRegMoniker] = useState(moniker || "");
-  const [commissionRate, setCommissionRate] = useState("5");
+  const [commissionRate] = useState("10");
   const [regError, setRegError] = useState("");
   const [monikerFocused, setMonikerFocused] = useState(false);
-  const [commissionFocused, setCommissionFocused] = useState(false);
   const [restartLoading, setRestartLoading] = useState(false);
   const [toast, setToast] = useState("");
 
@@ -863,7 +862,6 @@ export default function ValidatorScreen() {
           <View style={s.statBox}>
             <Text style={s.statLabel}>STATUS</Text>
             <Text style={[s.statValue, { color: activeColor, fontSize: 12 }]}>{statusLabel(validator.status)}</Text>
-            <Text style={s.statSub}>{validator.commissionRate}% commission</Text>
           </View>
         </View>
 
@@ -1032,21 +1030,6 @@ export default function ValidatorScreen() {
         autoCapitalize="none" autoCorrect={false} maxLength={40}
         editable={!registerMutation.isPending}
       />
-      <Text style={s.fieldLabel}>COMMISSION RATE</Text>
-      <View style={[s.commissionRow, commissionFocused && { borderColor: colors.primary }]}>
-        <TextInput
-          style={s.commissionInput}
-          value={commissionRate}
-          onChangeText={setCommissionRate}
-          onFocus={() => setCommissionFocused(true)}
-          onBlur={() => setCommissionFocused(false)}
-          placeholder="5"
-          placeholderTextColor={colors.mutedForeground}
-          keyboardType="decimal-pad" maxLength={5}
-          editable={!registerMutation.isPending}
-        />
-        <Text style={s.commissionUnit}>%</Text>
-      </View>
       {regError ? <Text style={s.errorText}>{regError}</Text> : null}
       <TouchableOpacity style={s.registerBtn} onPress={() => registerMutation.mutate()} disabled={registerMutation.isPending} activeOpacity={0.85}>
         <LinearGradient colors={["#0EA5E9", "#0284C7"]} style={s.registerBtnGrad}>
