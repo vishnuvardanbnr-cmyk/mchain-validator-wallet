@@ -1,5 +1,11 @@
 import { secp256k1 } from "@noble/curves/secp256k1";
 import { keccak_256 } from "@noble/hashes/sha3";
+import { bech32 } from "bech32";
+import {
+  createWalletClient, http, parseUnits,
+  type WalletClient, type Chain,
+} from "viem";
+import { privateKeyToAccount } from "viem/accounts";
 
 // ── Hex helpers ───────────────────────────────────────────────────────────────
 
@@ -8,14 +14,58 @@ function bytesToHex(bytes: Uint8Array): string {
 }
 
 function hexToBytes(hex: string): Uint8Array {
-  const bytes = new Uint8Array(hex.length / 2);
-  for (let i = 0; i < hex.length; i += 2) {
-    bytes[i / 2] = parseInt(hex.substring(i, i + 2), 16);
-  }
+  const h = hex.startsWith("0x") ? hex.slice(2) : hex;
+  const bytes = new Uint8Array(h.length / 2);
+  for (let i = 0; i < h.length; i += 2) bytes[i / 2] = parseInt(h.substring(i, i + 2), 16);
   return bytes;
 }
 
-// ── Transaction signing ───────────────────────────────────────────────────────
+// ── Address conversion ────────────────────────────────────────────────────────
+
+export function mxcAddressToEthAddress(mxcAddress: string): `0x${string}` {
+  const decoded = bech32.decode(mxcAddress);
+  const bytes = Uint8Array.from(bech32.fromWords(decoded.words));
+  return `0x${bytesToHex(bytes)}`;
+}
+
+export function privateKeyToEthAddress(privateKeyHex: string): `0x${string}` {
+  const privBytes = hexToBytes(privateKeyHex);
+  const pubKeyBytes = secp256k1.getPublicKey(privBytes, true);
+  const pubKeyHash = keccak_256(pubKeyBytes);
+  return `0x${bytesToHex(pubKeyHash.slice(-20))}`;
+}
+
+// ── Chain config ──────────────────────────────────────────────────────────────
+
+const CHAIN_RPC_URL = "https://chain.mvault.pro/api/rpc";
+const CHAIN_URL     = "https://chain.mvault.pro/api";
+
+const mchain: Chain = {
+  id: 1888,
+  name: "Mchain",
+  nativeCurrency: { name: "MC", symbol: "MC", decimals: 18 },
+  rpcUrls: { default: { http: [CHAIN_RPC_URL] } },
+};
+
+// ── USDT config ───────────────────────────────────────────────────────────────
+
+const USDT_CONTRACT = "0x07daf7bda0aaea88e910879b2cd6ec9ecdc87238" as const;
+const USDT_DECIMALS = 6;
+
+const USDT_ABI = [
+  {
+    name: "transfer",
+    type: "function",
+    inputs: [
+      { name: "to",     type: "address" },
+      { name: "amount", type: "uint256" },
+    ],
+    outputs: [{ name: "", type: "bool" }],
+    stateMutability: "nonpayable",
+  },
+] as const;
+
+// ── MC native transaction signing ─────────────────────────────────────────────
 
 export function signTransaction(
   from: string,
@@ -27,31 +77,28 @@ export function signTransaction(
   const message = from + to + amount + String(nonce);
   const msgBytes = new TextEncoder().encode(message);
   const hash = keccak_256(msgBytes);
-  const privKeyBytes = hexToBytes(privateKeyHex);
-  const sig = secp256k1.sign(hash, privKeyBytes);
+  const sig = secp256k1.sign(hash, hexToBytes(privateKeyHex));
   return bytesToHex(sig.toCompactRawBytes());
 }
 
 // ── Amount conversion ─────────────────────────────────────────────────────────
 
 export function mcToWei(mc: string): string {
-  const trimmed = mc.trim();
-  const [intPart, decPart = ""] = trimmed.split(".");
+  const [intPart, decPart = ""] = mc.trim().split(".");
   const paddedDec = decPart.padEnd(18, "0").slice(0, 18);
-  const combined = (intPart || "0") + paddedDec;
-  return BigInt(combined).toString();
+  return BigInt((intPart || "0") + paddedDec).toString();
 }
 
-// ── Chain API ─────────────────────────────────────────────────────────────────
-
-const CHAIN_URL = process.env["CHAIN_NODE_URL"] ?? "https://chain.mvault.pro/api";
+// ── Chain API helpers ─────────────────────────────────────────────────────────
 
 export async function getChainAccount(address: string): Promise<{ nonce: number; balance: string }> {
   const res = await fetch(`${CHAIN_URL}/accounts/${encodeURIComponent(address)}`);
-  if (!res.ok) throw new Error(`Failed to fetch account for ${address}: ${res.status}`);
+  if (!res.ok) throw new Error(`Failed to fetch account ${address}: ${res.status}`);
   const data = await res.json() as { nonce?: number; balance?: string };
   return { nonce: data.nonce ?? 0, balance: data.balance ?? "0" };
 }
+
+// ── Broadcast MC (native token) ───────────────────────────────────────────────
 
 export async function broadcastMcTransaction(
   from: string,
@@ -69,17 +116,45 @@ export async function broadcastMcTransaction(
   });
 
   if (!res.ok) {
-    const text = await res.text().catch(() => "Broadcast failed");
-    throw new Error(`Chain broadcast failed: ${text}`);
+    const text = await res.text().catch(() => "unknown error");
+    throw new Error(`MC broadcast failed: ${text}`);
   }
 
   const data = await res.json() as { txHash?: string; hash?: string };
   const txHash = data.txHash ?? data.hash;
-  if (!txHash) throw new Error("No txHash in response");
+  if (!txHash) throw new Error("No txHash in chain response");
   return txHash;
 }
 
-// ── Escrow wallet ─────────────────────────────────────────────────────────────
+// ── Broadcast USDT (ERC-20 via eth_sendRawTransaction) ───────────────────────
+
+export async function broadcastUsdtTransaction(
+  escrowPrivateKeyHex: string,
+  buyerMxcAddress: string,
+  usdtAmount: string,   // human-readable, e.g. "10.500000"
+): Promise<string> {
+  const privKey = `0x${escrowPrivateKeyHex}` as `0x${string}`;
+  const account = privateKeyToAccount(privKey);
+  const buyerEthAddress = mxcAddressToEthAddress(buyerMxcAddress);
+  const amountUnits = parseUnits(usdtAmount, USDT_DECIMALS);
+
+  const client: WalletClient = createWalletClient({
+    account,
+    chain: mchain,
+    transport: http(CHAIN_RPC_URL),
+  });
+
+  const txHash = await client.writeContract({
+    address: USDT_CONTRACT,
+    abi: USDT_ABI,
+    functionName: "transfer",
+    args: [buyerEthAddress, amountUnits],
+  });
+
+  return txHash;
+}
+
+// ── Escrow wallet env helpers ─────────────────────────────────────────────────
 
 export function getEscrowAddress(): string {
   const addr = process.env["P2P_ESCROW_ADDRESS"];

@@ -355,14 +355,23 @@ router.post("/admin/escrow/orders/:id/release", async (req, res) => {
   if (!order) { res.status(404).json({ error: "Order not found" }); return; }
   if (order.escrowStatus !== "locked") { res.status(400).json({ error: "No locked escrow" }); return; }
 
-  const { broadcastMcTransaction, getEscrowAddress, getEscrowPrivateKey, mcToWei, isEscrowConfigured } = await import("../escrow");
-  let releaseTxHash: string | null = null;
+  const {
+    broadcastMcTransaction, broadcastUsdtTransaction,
+    getEscrowAddress, getEscrowPrivateKey, mcToWei, isEscrowConfigured,
+  } = await import("../escrow");
 
-  if (order.token === "MC" && isEscrowConfigured()) {
+  let releaseTxHash: string | null = null;
+  if (isEscrowConfigured()) {
     try {
-      releaseTxHash = await broadcastMcTransaction(
-        getEscrowAddress(), order.buyerAddress, mcToWei(String(order.cryptoAmount)), getEscrowPrivateKey()
-      );
+      if (order.token === "MC") {
+        releaseTxHash = await broadcastMcTransaction(
+          getEscrowAddress(), order.buyerAddress, mcToWei(String(order.cryptoAmount)), getEscrowPrivateKey()
+        );
+      } else {
+        releaseTxHash = await broadcastUsdtTransaction(
+          getEscrowPrivateKey(), order.buyerAddress, String(order.cryptoAmount)
+        );
+      }
     } catch (e) {
       res.status(502).json({ error: `Broadcast failed: ${e instanceof Error ? e.message : "Unknown"}` });
       return;
@@ -378,7 +387,7 @@ router.post("/admin/escrow/orders/:id/release", async (req, res) => {
   const [updated] = await db.update(p2pOrders).set(setData).where(eq(p2pOrders.id, id)).returning();
   await db.insert(p2pMessages).values({
     orderId: id, senderAddress: "system",
-    content: `Admin released escrow to buyer.${releaseTxHash ? ` (tx: ${releaseTxHash.slice(0, 12)}…)` : " USDT will be sent manually."}`,
+    content: `Admin released ${order.cryptoAmount} ${order.token} from escrow to buyer on-chain.${releaseTxHash ? ` (tx: ${releaseTxHash.slice(0, 12)}…)` : ""}`,
     isSystem: true,
   });
   res.json(updated);
@@ -391,14 +400,23 @@ router.post("/admin/escrow/orders/:id/refund", async (req, res) => {
   if (!order) { res.status(404).json({ error: "Order not found" }); return; }
   if (order.escrowStatus !== "locked") { res.status(400).json({ error: "No locked escrow" }); return; }
 
-  const { broadcastMcTransaction, getEscrowAddress, getEscrowPrivateKey, mcToWei, isEscrowConfigured } = await import("../escrow");
-  let refundTxHash: string | null = null;
+  const {
+    broadcastMcTransaction, broadcastUsdtTransaction,
+    getEscrowAddress, getEscrowPrivateKey, mcToWei, isEscrowConfigured,
+  } = await import("../escrow");
 
-  if (order.token === "MC" && isEscrowConfigured()) {
+  let refundTxHash: string | null = null;
+  if (isEscrowConfigured()) {
     try {
-      refundTxHash = await broadcastMcTransaction(
-        getEscrowAddress(), order.sellerAddress, mcToWei(String(order.cryptoAmount)), getEscrowPrivateKey()
-      );
+      if (order.token === "MC") {
+        refundTxHash = await broadcastMcTransaction(
+          getEscrowAddress(), order.sellerAddress, mcToWei(String(order.cryptoAmount)), getEscrowPrivateKey()
+        );
+      } else {
+        refundTxHash = await broadcastUsdtTransaction(
+          getEscrowPrivateKey(), order.sellerAddress, String(order.cryptoAmount)
+        );
+      }
     } catch (e) {
       res.status(502).json({ error: `Broadcast failed: ${e instanceof Error ? e.message : "Unknown"}` });
       return;
@@ -410,7 +428,7 @@ router.post("/admin/escrow/orders/:id/refund", async (req, res) => {
   const [updated] = await db.update(p2pOrders).set(setData).where(eq(p2pOrders.id, id)).returning();
   await db.insert(p2pMessages).values({
     orderId: id, senderAddress: "system",
-    content: `Admin refunded escrow to seller. Reason: ${reason ?? "Dispute resolution"}.${refundTxHash ? ` (tx: ${refundTxHash.slice(0, 12)}…)` : ""}`,
+    content: `Admin refunded ${order.cryptoAmount} ${order.token} from escrow to seller. Reason: ${reason ?? "Dispute resolution"}.${refundTxHash ? ` (tx: ${refundTxHash.slice(0, 12)}…)` : ""}`,
     isSystem: true,
   });
   res.json(updated);

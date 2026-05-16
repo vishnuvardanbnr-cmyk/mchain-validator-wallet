@@ -8,8 +8,8 @@ import {
 import { eq, and, or, desc, sql, count } from "drizzle-orm";
 import { z } from "zod";
 import {
-  broadcastMcTransaction, mcToWei, isEscrowConfigured,
-  getEscrowAddress, getEscrowPrivateKey,
+  broadcastMcTransaction, broadcastUsdtTransaction, mcToWei,
+  isEscrowConfigured, getEscrowAddress, getEscrowPrivateKey,
 } from "../escrow";
 
 const router = Router();
@@ -287,13 +287,17 @@ router.post("/p2p/orders/:id/release", async (req, res) => {
 
   let releaseTxHash: string | null = null;
 
-  // ── On-chain release for MC orders with locked escrow ─────────────────────
-  if (order.token === "MC" && order.escrowStatus === "locked" && isEscrowConfigured()) {
+  // ── On-chain release for orders with locked escrow ────────────────────────
+  if (order.escrowStatus === "locked" && isEscrowConfigured()) {
     try {
       const escrowAddr = getEscrowAddress();
-      const escrowPk = getEscrowPrivateKey();
-      const amountWei = mcToWei(String(order.cryptoAmount));
-      releaseTxHash = await broadcastMcTransaction(escrowAddr, order.buyerAddress, amountWei, escrowPk);
+      const escrowPk   = getEscrowPrivateKey();
+      if (order.token === "MC") {
+        releaseTxHash = await broadcastMcTransaction(escrowAddr, order.buyerAddress, mcToWei(String(order.cryptoAmount)), escrowPk);
+      } else {
+        // USDT: ERC-20 transfer via eth_sendRawTransaction
+        releaseTxHash = await broadcastUsdtTransaction(escrowPk, order.buyerAddress, String(order.cryptoAmount));
+      }
     } catch (e) {
       res.status(502).json({ error: `Escrow release failed: ${e instanceof Error ? e.message : "Unknown error"}` });
       return;
@@ -319,8 +323,6 @@ router.post("/p2p/orders/:id/release", async (req, res) => {
 
   const releaseMsg = releaseTxHash
     ? `Trade completed. ${order.cryptoAmount} ${order.token} released to buyer on-chain (tx: ${releaseTxHash.slice(0, 12)}…).`
-    : order.token === "USDT" && order.escrowStatus === "locked"
-    ? "Trade completed. USDT release is being processed by admin — funds will arrive within 24 hours."
     : "Trade completed. Crypto has been released to the buyer.";
 
   await db.insert(p2pMessages).values({ orderId: id, senderAddress: "system", content: releaseMsg, isSystem: true });
