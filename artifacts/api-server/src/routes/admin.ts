@@ -1,7 +1,7 @@
 import { Router, type Request, type Response, type NextFunction } from "express";
 import { db } from "@workspace/db";
-import { p2pProfiles, p2pOrders, p2pDisputes, p2pAds } from "@workspace/db";
-import { eq, and, desc, count, sql } from "drizzle-orm";
+import { p2pProfiles, p2pOrders, p2pDisputes, p2pAds, p2pMessages } from "@workspace/db";
+import { eq, and, desc, count, sql, asc } from "drizzle-orm";
 
 const router = Router();
 
@@ -193,6 +193,42 @@ router.post("/admin/disputes/:id/resolve", async (req, res) => {
     .where(eq(p2pOrders.id, updated.orderId));
 
   res.json(updated);
+});
+
+// ── Order chat (admin view + send) ────────────────────────────────────────────
+
+router.get("/admin/orders/:orderId/messages", async (req, res) => {
+  const { orderId } = req.params;
+
+  const order = await db.select({ id: p2pOrders.id })
+    .from(p2pOrders).where(eq(p2pOrders.id, orderId)).limit(1);
+  if (!order.length) { res.status(404).json({ error: "Order not found" }); return; }
+
+  const messages = await db.select().from(p2pMessages)
+    .where(eq(p2pMessages.orderId, orderId))
+    .orderBy(asc(p2pMessages.createdAt));
+
+  res.json(messages);
+});
+
+router.post("/admin/orders/:orderId/message", async (req, res) => {
+  const { orderId } = req.params;
+  const { content } = req.body as { content?: string };
+
+  if (!content?.trim()) { res.status(400).json({ error: "content required" }); return; }
+
+  const order = await db.select({ id: p2pOrders.id })
+    .from(p2pOrders).where(eq(p2pOrders.id, orderId)).limit(1);
+  if (!order.length) { res.status(404).json({ error: "Order not found" }); return; }
+
+  const [msg] = await db.insert(p2pMessages).values({
+    orderId,
+    senderAddress: "ADMIN",
+    content: content.trim(),
+    isSystem: false,
+  }).returning();
+
+  res.status(201).json(msg);
 });
 
 export default router;

@@ -62,6 +62,15 @@ export interface Profile {
   updatedAt: string;
 }
 
+export interface Message {
+  id: string;
+  orderId: string;
+  senderAddress: string;
+  content: string;
+  isSystem: boolean;
+  createdAt: string;
+}
+
 export interface Dispute {
   dispute: {
     id: string;
