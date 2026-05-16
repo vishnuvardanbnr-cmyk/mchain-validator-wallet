@@ -117,6 +117,7 @@ export default function SendScreen() {
 
   const balance = weiToMc(account?.balance ?? "0");
   const balanceNum = parseFloat(balance.replace(/,/g, ""));
+  const TX_FEE_MC = 0.0001;
 
   function validateInput(): string | null {
     if (!recipient.trim()) return "Enter a recipient address";
@@ -125,7 +126,8 @@ export default function SendScreen() {
     if (recipient.length < 20) return "Invalid address length";
     const amt = parseFloat(amount);
     if (isNaN(amt) || amt <= 0) return "Enter a valid amount";
-    if (amt > balanceNum) return "Insufficient balance";
+    if (balanceNum === 0) return "Your wallet has no balance on this network";
+    if (amt + TX_FEE_MC > balanceNum) return `Insufficient balance — need ${(amt + TX_FEE_MC).toFixed(4)} MC (amount + fee)`;
     return null;
   }
 
@@ -158,7 +160,13 @@ export default function SendScreen() {
       if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (err: unknown) {
       const e = err as Error;
-      setToast(e.message || "Transaction failed");
+      let msg = e.message || "Transaction failed";
+      if (/account not found|not found on this chain/i.test(msg)) {
+        msg = "Insufficient balance — your wallet has no funds on this network. Fund your wallet before sending.";
+      } else if (/insufficient funds|insufficient balance/i.test(msg)) {
+        msg = "Insufficient balance to cover amount + network fee.";
+      }
+      setToast(msg);
       if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     } finally {
       setLoading(false);

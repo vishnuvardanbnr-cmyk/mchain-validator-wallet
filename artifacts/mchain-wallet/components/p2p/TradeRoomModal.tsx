@@ -155,7 +155,14 @@ export function TradeRoomModal({ visible, orderId, onClose }: Props) {
       setToast("Funds locked in escrow ✓");
       if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     },
-    onError: (e) => setToast(e instanceof Error ? e.message : "Failed to lock escrow"),
+    onError: (e) => {
+      let msg = e instanceof Error ? e.message : "Failed to lock escrow";
+      if (/account not found|not found on this chain/i.test(msg))
+        msg = "Insufficient balance — wallet has no funds on this network. Top up before locking escrow.";
+      else if (/insufficient/i.test(msg))
+        msg = "Insufficient balance to cover amount + network fee.";
+      setToast(msg);
+    },
   });
 
   // ── Lock escrow (USDT — manual, seller provides tx hash) ─────────────────
