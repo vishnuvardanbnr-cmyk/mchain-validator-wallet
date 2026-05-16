@@ -1,6 +1,6 @@
 import { Router, type Request, type Response, type NextFunction } from "express";
 import { db } from "@workspace/db";
-import { p2pProfiles, p2pOrders, p2pDisputes, p2pAds, p2pMessages } from "@workspace/db";
+import { p2pProfiles, p2pOrders, p2pDisputes, p2pAds, p2pMessages, appSettings, DEFAULT_VOLUME_TIERS, type VolumeTiers } from "@workspace/db";
 import { eq, and, desc, count, sql, asc } from "drizzle-orm";
 
 const router = Router();
@@ -229,6 +229,41 @@ router.post("/admin/orders/:orderId/message", async (req, res) => {
   }).returning();
 
   res.status(201).json(msg);
+});
+
+// ── Settings ──────────────────────────────────────────────────────────────────
+
+const VOLUME_TIERS_KEY = "volume_tiers";
+
+async function getVolumeTiers(): Promise<VolumeTiers> {
+  const [row] = await db.select().from(appSettings).where(eq(appSettings.key, VOLUME_TIERS_KEY)).limit(1);
+  if (!row) return { ...DEFAULT_VOLUME_TIERS };
+  try {
+    return JSON.parse(row.value) as VolumeTiers;
+  } catch {
+    return { ...DEFAULT_VOLUME_TIERS };
+  }
+}
+
+router.get("/admin/settings/volume-tiers", async (_req, res) => {
+  res.json(await getVolumeTiers());
+});
+
+router.put("/admin/settings/volume-tiers", async (req, res) => {
+  const { bronze, silver, gold, platinum } = req.body as VolumeTiers;
+  if (
+    typeof bronze !== "number" || typeof silver !== "number" ||
+    typeof gold !== "number" || typeof platinum !== "number" ||
+    bronze < 1 || silver <= bronze || gold <= silver || platinum <= gold
+  ) {
+    res.status(400).json({ error: "Invalid tier thresholds — each must be a positive integer, strictly increasing: bronze < silver < gold < platinum" });
+    return;
+  }
+  const value = JSON.stringify({ bronze, silver, gold, platinum });
+  await db.insert(appSettings)
+    .values({ key: VOLUME_TIERS_KEY, value })
+    .onConflictDoUpdate({ target: appSettings.key, set: { value, updatedAt: new Date() } });
+  res.json({ bronze, silver, gold, platinum });
 });
 
 export default router;

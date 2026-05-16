@@ -194,3 +194,20 @@ export const kycSubmitRequestSchema = z.object({
   kycName: z.string().min(2).max(100),
   kycDocType: z.enum(["passport", "national_id", "drivers_license"]),
 });
+
+// ─── App Settings ─────────────────────────────────────────────────────────────
+
+export const appSettings = pgTable("app_settings", {
+  key:       text("key").primaryKey(),
+  value:     text("value").notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const DEFAULT_VOLUME_TIERS = {
+  bronze:   10,
+  silver:   50,
+  gold:     100,
+  platinum: 500,
+};
+
+export type VolumeTiers = typeof DEFAULT_VOLUME_TIERS;

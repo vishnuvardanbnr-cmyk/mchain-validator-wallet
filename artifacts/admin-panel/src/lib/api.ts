@@ -34,6 +34,20 @@ export function post<T>(path: string, body?: unknown) {
   });
 }
 
+export function put<T>(path: string, body?: unknown) {
+  return request<T>(path, {
+    method: "PUT",
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+}
+
+export interface VolumeTiers {
+  bronze: number;
+  silver: number;
+  gold: number;
+  platinum: number;
+}
+
 export interface Stats {
   totalProfiles: number;
   pendingKyc: number;
