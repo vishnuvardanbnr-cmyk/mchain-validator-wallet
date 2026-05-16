@@ -179,7 +179,7 @@ export function ProfileModal({ visible, onClose, profile }: Props) {
                           <View style={s.badgeKyc}><Text style={s.badgeKycText}>✓ KYC Verified</Text></View>
                         )}
                         {profile?.isMerchant && profile?.kycStatus === "verified" && (
-                          <View style={s.badgeVerified}><Text style={s.badgeVerifiedText}>✦ Verified Merchant</Text></View>
+                          <View style={s.badgeVerified}><Text style={s.badgeVerifiedText}>✦ Trusted Merchant</Text></View>
                         )}
                         {profile?.isMerchant && profile?.kycStatus !== "verified" && (
                           <View style={s.badgeMerchant}><Text style={s.badgeMerchantText}>Merchant</Text></View>

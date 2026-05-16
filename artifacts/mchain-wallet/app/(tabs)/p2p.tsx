@@ -79,7 +79,7 @@ function AdRow({ ad, myAddress, onPress }: { ad: P2pAd; myAddress: string; onPre
             <Text style={s.name}>{ad.displayName ?? shortenAddr(ad.ownerAddress)}</Text>
             {ad.kycVerified && <View style={s.kycBadge}><Text style={s.kycText}>✓ KYC</Text></View>}
             {ad.isMerchant && ad.kycVerified
-              ? <View style={s.verifiedMerchantBadge}><Text style={s.verifiedMerchantText}>✦ VERIFIED</Text></View>
+              ? <View style={s.verifiedMerchantBadge}><Text style={s.verifiedMerchantText}>✦ TRUSTED</Text></View>
               : ad.isMerchant
               ? <View style={s.merchantBadge}><Text style={s.merchantText}>MERCHANT</Text></View>
               : null}

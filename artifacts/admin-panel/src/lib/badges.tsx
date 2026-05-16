@@ -34,7 +34,7 @@ export function MerchantBadge({ isVerifiedMerchant }: { isVerifiedMerchant: bool
   return isVerifiedMerchant ? (
     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border bg-primary/15 text-primary border-primary/30">
       <Store size={11} />
-      Verified Merchant
+      Trusted Merchant
     </span>
   ) : (
     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border bg-amber-500/10 text-amber-400 border-amber-500/25">
