@@ -107,11 +107,10 @@ export interface P2pDispute {
 }
 
 function getApiBase(): string {
-  if (Platform.OS === "web") {
-    const domain = typeof process !== "undefined" ? process.env.EXPO_PUBLIC_DOMAIN : undefined;
-    return domain ? `https://${domain}/api/p2p` : "/api/p2p";
-  }
-  return `${getNodeUrl()}/p2p`;
+  const domain = typeof process !== "undefined" ? process.env.EXPO_PUBLIC_DOMAIN : undefined;
+  if (domain) return `https://${domain}/api/p2p`;
+  if (Platform.OS !== "web") return `${getNodeUrl()}/p2p`;
+  return "/api/p2p";
 }
 
 async function req<T>(path: string, options?: RequestInit): Promise<T> {
@@ -138,7 +137,7 @@ export const p2pApi = {
   getProfile: (address: string) => req<P2pProfile>(`/profiles/${address}`),
   upsertProfile: (body: { mxcAddress: string; displayName: string }) =>
     req<P2pProfile>("/profiles", { method: "POST", body: JSON.stringify(body) }),
-  submitKyc: (body: { mxcAddress: string; kycName: string; kycDocType: string; displayName: string }) =>
+  submitKyc: (body: { mxcAddress: string; kycName: string; kycDocType: string; displayName: string; kycDocImage?: string }) =>
     req<P2pProfile>("/profiles/kyc", { method: "POST", body: JSON.stringify(body) }),
 
   // ── Ads ──────────────────────────────────────────────────────────────────

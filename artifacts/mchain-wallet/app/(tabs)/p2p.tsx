@@ -191,11 +191,35 @@ export default function P2PScreen() {
     return () => clearInterval(id);
   }, [loadAds, adPage]);
 
-  const { data: profile } = useQuery({
+  const {
+    data: profile,
+    isLoading: profileLoading,
+    refetch: refetchProfile,
+  } = useQuery({
     queryKey: ["p2p_profile", mxcAddress],
-    queryFn: () => p2pApi.getProfile(mxcAddress!),
+    queryFn: async () => {
+      try { return await p2pApi.getProfile(mxcAddress!); }
+      catch { return null; }
+    },
     enabled: !!mxcAddress,
   });
+
+  const [activating, setActivating] = useState(false);
+  async function handleActivate() {
+    if (!mxcAddress) return;
+    setActivating(true);
+    try {
+      await p2pApi.upsertProfile({ mxcAddress, displayName: mxcAddress.slice(0, 10) + "…" });
+      void refetchProfile();
+    } catch {
+      // ignore
+    } finally {
+      setActivating(false);
+    }
+  }
+
+  const profileReady = !profileLoading;
+  const hasProfile = profile != null;
 
   const s = StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.background },
@@ -249,7 +273,42 @@ export default function P2PScreen() {
     pageBtnDisabled: { opacity: 0.3 },
     pageBtnText: { fontSize: 13, fontFamily: "Inter_600SemiBold", color: colors.primary },
     pageInfo: { fontSize: 13, fontFamily: "Inter_400Regular", color: colors.mutedForeground },
+    connectWrap: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 32, gap: 0 },
+    connectIconWrap: { width: 80, height: 80, borderRadius: 40, backgroundColor: colors.primary + "15", borderWidth: 2, borderColor: colors.primary + "40", alignItems: "center", justifyContent: "center", marginBottom: 20 },
+    connectTitle: { fontSize: 22, fontFamily: "Inter_700Bold", color: colors.foreground, textAlign: "center", marginBottom: 10 },
+    connectDesc: { fontSize: 14, fontFamily: "Inter_400Regular", color: colors.mutedForeground, textAlign: "center", lineHeight: 22, marginBottom: 24 },
+    connectAddrBox: { backgroundColor: colors.card, borderRadius: 10, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 14, paddingVertical: 10, marginBottom: 28, alignSelf: "stretch" },
+    connectAddr: { fontSize: 12, fontFamily: "Inter_400Regular", color: colors.mutedForeground, textAlign: "center" },
+    connectBtn: { borderRadius: 14, overflow: "hidden", alignSelf: "stretch" },
+    connectBtnGrad: { paddingVertical: 16, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 8 },
+    connectBtnText: { fontSize: 15, fontFamily: "Inter_700Bold", color: "#FFF" },
+    connectNote: { fontSize: 11, fontFamily: "Inter_400Regular", color: colors.mutedForeground, textAlign: "center", marginTop: 14, lineHeight: 17 },
   });
+
+  if (profileReady && !hasProfile) {
+    return (
+      <View style={[s.container, { paddingTop: insets.top + (Platform.OS === "web" ? 67 : 8) }]}>
+        <View style={s.connectWrap}>
+          <View style={s.connectIconWrap}>
+            <Icon name="storefront-outline" size={38} color={colors.primary} />
+          </View>
+          <Text style={s.connectTitle}>Activate P2P Trading</Text>
+          <Text style={s.connectDesc}>
+            Your wallet address will be used as your P2P identity. No password needed — you trade pseudonymously using your on-chain address.
+          </Text>
+          <View style={s.connectAddrBox}>
+            <Text style={s.connectAddr}>{mxcAddress ? `${mxcAddress.slice(0, 16)}…${mxcAddress.slice(-8)}` : "—"}</Text>
+          </View>
+          <TouchableOpacity style={[s.connectBtn, activating && { opacity: 0.6 }]} onPress={handleActivate} disabled={activating} activeOpacity={0.85}>
+            <LinearGradient colors={["#0EA5E9", "#0284C7"]} style={s.connectBtnGrad}>
+              {activating ? <ActivityIndicator color="#FFF" /> : <><Icon name="flash-outline" size={18} color="#FFF" /><Text style={s.connectBtnText}>Connect Wallet to P2P</Text></>}
+            </LinearGradient>
+          </TouchableOpacity>
+          <Text style={s.connectNote}>Your private keys stay on your device at all times. The P2P market only stores your address and trade history.</Text>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={s.container}>

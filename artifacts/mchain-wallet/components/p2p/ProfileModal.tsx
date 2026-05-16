@@ -7,6 +7,8 @@ import { formatDetailsSingleLine, PAYMENT_METHODS as PM_LIST } from "@/services/
 import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { PaymentDetailSheet } from "./PaymentDetailSheet";
 import * as Haptics from "expo-haptics";
+import * as ImagePicker from "expo-image-picker";
+import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import React, { useState } from "react";
 import {
@@ -50,6 +52,7 @@ export function ProfileModal({ visible, onClose, profile }: Props) {
   const [displayName, setDisplayName] = useState(profile?.displayName ?? "");
   const [kycName, setKycName] = useState("");
   const [kycDoc, setKycDoc] = useState("passport");
+  const [kycDocImage, setKycDocImage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState("");
 
@@ -82,15 +85,37 @@ export function ProfileModal({ visible, onClose, profile }: Props) {
     }
   }
 
+  async function pickDocument() {
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) { setToast("Camera roll permission required"); return; }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      quality: 0.6,
+      base64: true,
+      allowsEditing: true,
+    });
+    if (!result.canceled && result.assets[0]) {
+      const asset = result.assets[0];
+      setKycDocImage(asset.base64 ? `data:image/jpeg;base64,${asset.base64}` : asset.uri);
+    }
+  }
+
   async function handleSubmitKyc() {
     if (!mxcAddress) return;
     if (!displayName.trim() || !kycName.trim()) { setToast("Fill in all fields"); return; }
     setLoading(true);
     try {
-      await p2pApi.submitKyc({ mxcAddress, displayName: displayName.trim(), kycName: kycName.trim(), kycDocType: kycDoc });
+      await p2pApi.submitKyc({
+        mxcAddress,
+        displayName: displayName.trim(),
+        kycName: kycName.trim(),
+        kycDocType: kycDoc,
+        kycDocImage: kycDocImage ?? undefined,
+      });
       queryClient.invalidateQueries({ queryKey: ["p2p_profile"] });
       if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setToast("KYC submitted — pending review");
+      setKycDocImage(null);
       setTab("overview");
     } catch (e) {
       setToast(e instanceof Error ? e.message : "Failed to submit");
@@ -142,6 +167,13 @@ export function ProfileModal({ visible, onClose, profile }: Props) {
     docChipActive: { borderColor: colors.primary, backgroundColor: colors.primary + "15" },
     docText: { fontSize: 12, fontFamily: "Inter_500Medium", color: colors.mutedForeground },
     docTextActive: { color: colors.primary, fontFamily: "Inter_600SemiBold" },
+    uploadBtn: { borderRadius: 12, borderWidth: 1.5, borderColor: colors.border, borderStyle: "dashed", overflow: "hidden", marginBottom: 18, minHeight: 120, justifyContent: "center" },
+    uploadPlaceholder: { alignItems: "center", paddingVertical: 24, gap: 6 },
+    uploadText: { fontSize: 13, fontFamily: "Inter_500Medium", color: colors.foreground },
+    uploadHint: { fontSize: 11, fontFamily: "Inter_400Regular", color: colors.mutedForeground },
+    docPreview: { width: "100%", height: 160 },
+    uploadOverlay: { position: "absolute", bottom: 0, left: 0, right: 0, backgroundColor: "rgba(0,0,0,0.55)", flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, paddingVertical: 6 },
+    uploadChangeText: { fontSize: 12, fontFamily: "Inter_600SemiBold", color: "#FFF" },
     btn: { borderRadius: 14, overflow: "hidden", marginTop: 4 },
     btnGrad: { paddingVertical: 16, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 8 },
     btnText: { fontSize: 15, fontFamily: "Inter_700Bold", color: "#FFF" },
@@ -295,6 +327,25 @@ export function ProfileModal({ visible, onClose, profile }: Props) {
                         </TouchableOpacity>
                       ))}
                     </View>
+
+                    <Text style={s.label}>DOCUMENT PHOTO</Text>
+                    <TouchableOpacity style={s.uploadBtn} onPress={pickDocument} activeOpacity={0.8}>
+                      {kycDocImage ? (
+                        <Image source={{ uri: kycDocImage }} style={s.docPreview} contentFit="cover" />
+                      ) : (
+                        <View style={s.uploadPlaceholder}>
+                          <Icon name="cloud-upload-outline" size={28} color={colors.primary} />
+                          <Text style={s.uploadText}>Tap to upload photo of document</Text>
+                          <Text style={s.uploadHint}>Clear front side, good lighting</Text>
+                        </View>
+                      )}
+                      {kycDocImage && (
+                        <View style={s.uploadOverlay}>
+                          <Icon name="camera-outline" size={16} color="#FFF" />
+                          <Text style={s.uploadChangeText}>Change</Text>
+                        </View>
+                      )}
+                    </TouchableOpacity>
 
                     <TouchableOpacity style={[s.btn, loading && { opacity: 0.6 }]} onPress={handleSubmitKyc} disabled={loading} activeOpacity={0.85}>
                       <LinearGradient colors={["#10B981", "#059669"]} style={s.btnGrad}>

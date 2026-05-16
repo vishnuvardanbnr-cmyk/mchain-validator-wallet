@@ -41,6 +41,7 @@ export const p2pProfiles = pgTable("p2p_profiles", {
   kycStatus: p2pKycStatusEnum("kyc_status").notNull().default("none"),
   kycName: text("kyc_name"),
   kycDocType: text("kyc_doc_type"),
+  kycDocImage: text("kyc_doc_image"),
   kycSubmittedAt: timestamp("kyc_submitted_at"),
   kycVerifiedAt: timestamp("kyc_verified_at"),
   isMerchant: boolean("is_merchant").notNull().default(false),
@@ -194,6 +195,7 @@ export const kycSubmitRequestSchema = z.object({
   displayName: z.string().min(2).max(100),
   kycName: z.string().min(2).max(100),
   kycDocType: z.enum(["passport", "national_id", "drivers_license"]),
+  kycDocImage: z.string().optional(),
 });
 
 // ─── Payment Details ──────────────────────────────────────────────────────────

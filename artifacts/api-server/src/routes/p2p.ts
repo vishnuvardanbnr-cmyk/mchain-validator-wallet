@@ -84,10 +84,10 @@ router.post("/p2p/profiles", async (req, res) => {
 router.post("/p2p/profiles/kyc", async (req, res) => {
   const v = validate(kycSubmitRequestSchema, req.body);
   if ("error" in v) { res.status(400).json({ error: v.error }); return; }
-  const { mxcAddress, kycName, kycDocType, displayName } = v.data as { mxcAddress: string; kycName: string; kycDocType: string; displayName: string };
+  const { mxcAddress, kycName, kycDocType, displayName, kycDocImage } = v.data as { mxcAddress: string; kycName: string; kycDocType: string; displayName: string; kycDocImage?: string };
   await ensureProfile(mxcAddress, displayName);
   const [updated] = await db.update(p2pProfiles)
-    .set({ kycName, kycDocType, kycStatus: "pending", kycSubmittedAt: new Date(), displayName, updatedAt: new Date() })
+    .set({ kycName, kycDocType, kycDocImage, kycStatus: "pending", kycSubmittedAt: new Date(), displayName, updatedAt: new Date() })
     .where(eq(p2pProfiles.mxcAddress, mxcAddress))
     .returning();
   res.json(updated);
