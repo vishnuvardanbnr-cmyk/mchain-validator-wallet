@@ -7,9 +7,11 @@ import {
   signPersonalMessage,
   weiToMc,
 } from "@/services/crypto";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
-import React, { useCallback, useRef, useState } from "react";
+import { useNavigation } from "expo-router";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -25,6 +27,17 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { WebView, type WebViewMessageEvent, type WebViewNavigation } from "react-native-webview";
+
+// ── History ────────────────────────────────────────────────────────────────────
+const HISTORY_KEY = "dapp_browser_history_v1";
+const MAX_HISTORY = 20;
+const HISTORY_PREVIEW = 4;
+
+interface HistoryEntry {
+  url: string;
+  title: string;
+  visitedAt: number;
+}
 
 // ── Chain constants ────────────────────────────────────────────────────────────
 const CHAIN_ID_HEX = "0x760"; // 1888
@@ -212,6 +225,7 @@ interface SendTxReq {
 export default function DAppScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const navigation = useNavigation();
   const { ethAddress, getPrivateKey } = useWallet();
 
   // ── Browser state ────────────────────────────────────────────────────────────
@@ -221,6 +235,10 @@ export default function DAppScreen() {
   const [canGoBack, setCanGoBack] = useState(false);
   const [canGoForward, setCanGoForward] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  // ── History state ────────────────────────────────────────────────────────────
+  const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [showAllHistory, setShowAllHistory] = useState(false);
 
   // ── Wallet connection state ──────────────────────────────────────────────────
   const [isConnected, setIsConnected] = useState(false);
@@ -232,6 +250,47 @@ export default function DAppScreen() {
   const [txBusy, setTxBusy] = useState(false);
 
   const webViewRef = useRef<WebView>(null);
+
+  // ── Load history on mount ────────────────────────────────────────────────────
+  useEffect(() => {
+    AsyncStorage.getItem(HISTORY_KEY).then((raw) => {
+      if (raw) {
+        try { setHistory(JSON.parse(raw)); } catch { /* ignore */ }
+      }
+    });
+  }, []);
+
+  // ── Hide tab bar while browser is active ─────────────────────────────────────
+  useEffect(() => {
+    const parent = navigation.getParent();
+    if (!parent) return;
+    if (activeUrl) {
+      parent.setOptions({ tabBarStyle: { display: "none" } });
+    } else {
+      // Restore default tab bar style defined in _layout.tsx
+      parent.setOptions({ tabBarStyle: undefined });
+    }
+  }, [activeUrl, navigation]);
+
+  // ── History helpers ──────────────────────────────────────────────────────────
+  async function saveToHistory(url: string, title: string) {
+    const entry: HistoryEntry = { url, title, visitedAt: Date.now() };
+    const next = [entry, ...history.filter((h) => h.url !== url)].slice(0, MAX_HISTORY);
+    setHistory(next);
+    await AsyncStorage.setItem(HISTORY_KEY, JSON.stringify(next));
+  }
+
+  async function removeFromHistory(url: string) {
+    const next = history.filter((h) => h.url !== url);
+    setHistory(next);
+    await AsyncStorage.setItem(HISTORY_KEY, JSON.stringify(next));
+  }
+
+  async function clearHistory() {
+    setHistory([]);
+    setShowAllHistory(false);
+    await AsyncStorage.removeItem(HISTORY_KEY);
+  }
 
   // ── WebView helpers ──────────────────────────────────────────────────────────
   function runInWebView(js: string) {
@@ -358,7 +417,7 @@ export default function DAppScreen() {
   const signReqRaw = useRef<string>("");
 
   // ── Navigation ───────────────────────────────────────────────────────────────
-  function openDApp(url: string) {
+  function openDApp(url: string, knownTitle?: string) {
     const target = normalizeUrl(url);
     if (!target) return;
     Keyboard.dismiss();
@@ -371,12 +430,19 @@ export default function DAppScreen() {
     setCanGoBack(false);
     setCanGoForward(false);
     setIsConnected(false); // reset connection per site
+    // Optimistically save with domain as title; updated on page load
+    const domain = (() => { try { return new URL(target).hostname; } catch { return target; } })();
+    saveToHistory(target, knownTitle ?? domain);
   }
 
   function handleNavStateChange(nav: WebViewNavigation) {
     setCanGoBack(nav.canGoBack);
     setCanGoForward(nav.canGoForward);
     if (nav.url) setDisplayUrl(nav.url);
+    // Update history title when page title becomes available
+    if (nav.url && nav.title && nav.title !== nav.url) {
+      saveToHistory(nav.url, nav.title);
+    }
   }
 
   function handleClose() {
@@ -544,6 +610,20 @@ export default function DAppScreen() {
     dangerBtn: { flex: 1, borderRadius: 14, overflow: "hidden" as const },
     dangerGrad: { paddingVertical: 14, alignItems: "center", justifyContent: "center" },
     dangerText: { fontSize: 15, fontFamily: "Inter_700Bold", color: "#FFF" },
+
+    // History
+    historySection: { marginBottom: 8 },
+    historySectionHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginHorizontal: 20, marginBottom: 10 },
+    historyItem: { flexDirection: "row", alignItems: "center", marginHorizontal: 14, marginBottom: 8, backgroundColor: colors.card, borderRadius: 14, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 14, paddingVertical: 11, gap: 10 },
+    historyIconWrap: { width: 32, height: 32, borderRadius: 10, backgroundColor: colors.background, alignItems: "center", justifyContent: "center" },
+    historyTextWrap: { flex: 1 },
+    historyTitle: { fontSize: 13, fontFamily: "Inter_600SemiBold", color: colors.foreground, marginBottom: 1 },
+    historyUrl: { fontSize: 11, fontFamily: "Inter_400Regular", color: colors.mutedForeground },
+    historyDelete: { width: 28, height: 28, borderRadius: 8, alignItems: "center", justifyContent: "center" },
+    showMoreRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 4, marginVertical: 4, marginBottom: 16 },
+    showMoreText: { fontSize: 12, fontFamily: "Inter_600SemiBold", color: colors.primary },
+    clearHistoryBtn: { paddingHorizontal: 8, paddingVertical: 2 },
+    clearHistoryText: { fontSize: 11, fontFamily: "Inter_400Regular", color: colors.mutedForeground },
   });
 
   // ── In-app browser ────────────────────────────────────────────────────────────
@@ -776,10 +856,70 @@ export default function DAppScreen() {
           )}
         </View>
 
+        {/* ── Recent history ─────────────────────────────────────────── */}
+        {history.length > 0 && (() => {
+          const visible = showAllHistory ? history : history.slice(0, HISTORY_PREVIEW);
+          return (
+            <View style={s.historySection}>
+              <View style={s.historySectionHeader}>
+                <Text style={s.sectionLabel}>RECENT</Text>
+                <TouchableOpacity style={s.clearHistoryBtn} onPress={clearHistory} activeOpacity={0.7}>
+                  <Text style={s.clearHistoryText}>Clear all</Text>
+                </TouchableOpacity>
+              </View>
+
+              {visible.map((entry) => {
+                const domain = (() => { try { return new URL(entry.url).hostname; } catch { return entry.url; } })();
+                return (
+                  <TouchableOpacity
+                    key={entry.url + entry.visitedAt}
+                    style={s.historyItem}
+                    onPress={() => openDApp(entry.url, entry.title)}
+                    activeOpacity={0.75}
+                  >
+                    <View style={s.historyIconWrap}>
+                      <Icon name="time-outline" size={16} color={colors.mutedForeground} />
+                    </View>
+                    <View style={s.historyTextWrap}>
+                      <Text style={s.historyTitle} numberOfLines={1}>{entry.title}</Text>
+                      <Text style={s.historyUrl} numberOfLines={1}>{domain}</Text>
+                    </View>
+                    <TouchableOpacity
+                      style={s.historyDelete}
+                      onPress={() => removeFromHistory(entry.url)}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      activeOpacity={0.7}
+                    >
+                      <Icon name="close-outline" size={15} color={colors.mutedForeground} />
+                    </TouchableOpacity>
+                  </TouchableOpacity>
+                );
+              })}
+
+              {history.length > HISTORY_PREVIEW && (
+                <TouchableOpacity
+                  style={s.showMoreRow}
+                  onPress={() => setShowAllHistory(!showAllHistory)}
+                  activeOpacity={0.7}
+                >
+                  <Icon
+                    name={showAllHistory ? "chevron-up-outline" : "chevron-down-outline"}
+                    size={14}
+                    color={colors.primary}
+                  />
+                  <Text style={s.showMoreText}>
+                    {showAllHistory ? "Show less" : `Show ${history.length - HISTORY_PREVIEW} more`}
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          );
+        })()}
+
         <Text style={s.sectionLabel}>FEATURED DAPPS</Text>
         <View style={s.grid}>
           {FEATURED_DAPPS.map((dapp) => (
-            <TouchableOpacity key={dapp.id} style={s.card} onPress={() => openDApp(dapp.url)} activeOpacity={0.8}>
+            <TouchableOpacity key={dapp.id} style={s.card} onPress={() => openDApp(dapp.url, dapp.name)} activeOpacity={0.8}>
               <View style={[s.cardIconWrap, { backgroundColor: dapp.color + "20" }]}>
                 <Icon name={dapp.icon as Parameters<typeof Icon>[0]["name"]} size={22} color={dapp.color} />
               </View>
