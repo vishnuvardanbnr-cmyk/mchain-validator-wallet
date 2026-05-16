@@ -447,7 +447,7 @@ export default function SendScreen() {
                 <Text style={s.confirmLabel}>Network</Text>
                 <View style={s.networkBadge}>
                   <Icon name="flash-outline" size={10} color={colors.primary} />
-                  <Text style={s.networkBadgeText}>MChain · 1729</Text>
+                  <Text style={s.networkBadgeText}>MChain · 1888</Text>
                 </View>
               </View>
               <View style={s.confirmRow}>

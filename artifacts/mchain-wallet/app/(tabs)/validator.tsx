@@ -1005,13 +1005,13 @@ export default function ValidatorScreen() {
       </View>
       <Text style={s.registerTitle}>Become a Validator</Text>
       <Text style={s.registerDesc}>
-        Register your device on the MChain network (Chain ID 1729). Keep it online to earn MC rewards through uptime-based treasury payouts and gas fee sharing.
+        Register your device on the MChain network (Chain ID 1888). Keep it online to earn MC rewards through uptime-based treasury payouts and gas fee sharing.
       </Text>
       <View style={s.featureRow}>
         {[
           { icon: "time-outline", label: "Uptime Rewards" },
           { icon: "flash-outline", label: "Gas Fees" },
-          { icon: "hardware-chip-outline", label: "Chain ID 1729" },
+          { icon: "hardware-chip-outline", label: "Chain ID 1888" },
           { icon: "trophy-outline", label: "MC Earnings" },
         ].map((f) => (
           <View key={f.label} style={s.featureChip}>
