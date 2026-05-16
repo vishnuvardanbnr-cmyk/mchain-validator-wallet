@@ -119,7 +119,6 @@ export function ProfileModal({ visible, onClose, profile }: Props) {
       mediaTypes: ["images"],
       quality: 0.6,
       base64: true,
-      allowsEditing: true,
     });
     if (!result.canceled && result.assets[0]) {
       const asset = result.assets[0];
@@ -166,7 +165,7 @@ export function ProfileModal({ visible, onClose, profile }: Props) {
     tabBtnActive: { backgroundColor: colors.primary + "20", borderWidth: 1, borderColor: colors.primary + "50" },
     tabText: { fontSize: 13, fontFamily: "Inter_500Medium", color: colors.mutedForeground },
     tabTextActive: { fontFamily: "Inter_700Bold", color: colors.primary },
-    scroll: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 8 },
+    scroll: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 40 },
     avatarWrap: { width: 72, height: 72, borderRadius: 36, backgroundColor: colors.primary + "20", alignItems: "center", justifyContent: "center", alignSelf: "center", marginBottom: 10, borderWidth: 2, borderColor: colors.primary + "40" },
     avatarText: { fontSize: 26, fontFamily: "Inter_700Bold", color: colors.primary },
     nameText: { fontSize: 20, fontFamily: "Inter_700Bold", color: colors.foreground, textAlign: "center" },
