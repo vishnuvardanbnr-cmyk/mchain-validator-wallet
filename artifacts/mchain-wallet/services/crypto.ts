@@ -28,15 +28,17 @@ export interface KeyPair {
 }
 
 function privKeyBytesToKeyPair(privKeyBytes: Uint8Array): KeyPair {
-  const pubKeyBytes = secp256k1.getPublicKey(privKeyBytes, true);
-  const pubKeyHash = keccak_256(pubKeyBytes);
+  const pubKeyCompressed = secp256k1.getPublicKey(privKeyBytes, true);   // 33 bytes — for storage
+  const pubKeyUncompressed = secp256k1.getPublicKey(privKeyBytes, false); // 65 bytes — for address
+  // Ethereum address = keccak256(uncompressed_pubkey_without_04_prefix).slice(-20)
+  const pubKeyHash = keccak_256(pubKeyUncompressed.slice(1));
   const addressBytes = pubKeyHash.slice(-20);
   const ethAddress = "0x" + bytesToHex(addressBytes);
   const words = bech32.toWords(addressBytes);
   const mxcAddress = bech32.encode("mxc", words);
   return {
     privateKey: bytesToHex(privKeyBytes),
-    publicKey: bytesToHex(pubKeyBytes),
+    publicKey: bytesToHex(pubKeyCompressed),
     ethAddress,
     mxcAddress,
   };
@@ -64,8 +66,13 @@ export function generateKeyPair(): KeyPair {
 }
 
 export function deriveAddressFromPublicKey(publicKeyHex: string): string {
-  const pubKeyBytes = hexToBytes(publicKeyHex);
-  const pubKeyHash = keccak_256(pubKeyBytes);
+  let pubKeyBytes = hexToBytes(publicKeyHex);
+  // If compressed (33 bytes with 02/03 prefix), decompress to 65-byte uncompressed form
+  if (pubKeyBytes.length === 33) {
+    pubKeyBytes = secp256k1.ProjectivePoint.fromHex(pubKeyBytes).toRawBytes(false);
+  }
+  // Ethereum address = keccak256(uncompressed_pubkey_without_04_prefix).slice(-20)
+  const pubKeyHash = keccak_256(pubKeyBytes.slice(1));
   const addressBytes = pubKeyHash.slice(-20);
   const words = bech32.toWords(addressBytes);
   return bech32.encode("mxc", words);

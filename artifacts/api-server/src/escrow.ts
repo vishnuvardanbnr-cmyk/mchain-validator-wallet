@@ -37,8 +37,8 @@ export function normalizeAddress(addr: string): `0x${string}` {
 
 export function privateKeyToEthAddress(privateKeyHex: string): `0x${string}` {
   const privBytes = hexToBytes(privateKeyHex);
-  const pubKeyBytes = secp256k1.getPublicKey(privBytes, true);
-  const pubKeyHash = keccak_256(pubKeyBytes);
+  const pubKeyUncompressed = secp256k1.getPublicKey(privBytes, false); // 65 bytes
+  const pubKeyHash = keccak_256(pubKeyUncompressed.slice(1)); // skip 0x04 prefix
   return `0x${bytesToHex(pubKeyHash.slice(-20))}`;
 }
 
