@@ -305,13 +305,13 @@ function TxRow({
     row: {
       flexDirection: "row",
       alignItems: "center",
-      minHeight: ROW_HEIGHT,
+      height: ROW_HEIGHT,
       paddingHorizontal: 20,
-      paddingVertical: 14,
       gap: 12,
       borderBottomWidth: 1,
       borderBottomColor: colors.border,
       backgroundColor: colors.background,
+      overflow: "hidden",
     },
     iconWrap: {
       width: 44,
@@ -321,14 +321,14 @@ function TxRow({
       justifyContent: "center",
       flexShrink: 0,
     },
-    info: { flex: 1, justifyContent: "center", gap: 3 },
+    info: { flex: 1, justifyContent: "center", gap: 2 },
     label: { fontSize: 14, fontFamily: "Inter_600SemiBold", color: colors.foreground, lineHeight: 18 },
     addr: { fontSize: 11, fontFamily: "Inter_400Regular", color: colors.mutedForeground, lineHeight: 15 },
-    right: { alignItems: "flex-end", justifyContent: "center", gap: 3, flexShrink: 0 },
-    amount: { fontSize: 14, fontFamily: "Inter_700Bold", lineHeight: 18 },
-    date: { fontSize: 11, fontFamily: "Inter_400Regular", color: colors.mutedForeground, lineHeight: 15 },
-    statusBadge: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
-    statusText: { fontSize: 9, fontFamily: "Inter_700Bold", lineHeight: 12 },
+    right: { alignItems: "flex-end", justifyContent: "center", gap: 2, flexShrink: 0 },
+    amount: { fontSize: 13, fontFamily: "Inter_700Bold", lineHeight: 17 },
+    date: { fontSize: 10, fontFamily: "Inter_400Regular", color: colors.mutedForeground, lineHeight: 13 },
+    statusBadge: { paddingHorizontal: 5, paddingVertical: 1, borderRadius: 4 },
+    statusText: { fontSize: 9, fontFamily: "Inter_700Bold", lineHeight: 11 },
     chevron: { opacity: 0.35, flexShrink: 0 },
   });
 
@@ -344,10 +344,10 @@ function TxRow({
         </Text>
       </View>
       <View style={s.right}>
-        <Text style={[s.amount, { color }]}>
+        <Text style={[s.amount, { color }]} numberOfLines={1}>
           {isSelf ? "" : isSend ? "- " : "+ "}{amount} {entry.symbol}
         </Text>
-        <Text style={s.date}>{entry.dateStr}</Text>
+        <Text style={s.date} numberOfLines={1}>{entry.dateStr}</Text>
         <View style={[s.statusBadge, { backgroundColor: entry.status === "confirmed" ? "#10B98118" : "#EF444418" }]}>
           <Text style={[s.statusText, { color: entry.status === "confirmed" ? "#10B981" : "#EF4444" }]}>
             {entry.status?.toUpperCase() ?? "UNKNOWN"}
