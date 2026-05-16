@@ -149,7 +149,8 @@ export default function SendScreen() {
     try {
       const privateKey = await getPrivateKey();
       if (!privateKey) throw new Error("Private key not found");
-      const nonce = account?.nonce ?? 0;
+      if (!account?.ethAddress) throw new Error("Account not loaded — wait a moment and retry");
+      const nonce = await api.getEvmNonce(account.ethAddress);
       const weiAmount = mcToWei(amount);
       const signedTx = signEvmTransaction(recipient, BigInt(weiAmount), nonce, privateKey);
       const result = await api.sendRawTransaction(signedTx);

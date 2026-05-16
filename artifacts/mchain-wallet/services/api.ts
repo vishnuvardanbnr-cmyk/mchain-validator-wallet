@@ -325,6 +325,10 @@ export const api = {
       `/transactions?address=${encodeURIComponent(address)}&limit=${limit}`
     ),
 
+  getEvmNonce: (ethAddress: string) =>
+    rpcRequest<string>("eth_getTransactionCount", [ethAddress, "latest"])
+      .then(hex => parseInt(hex as string, 16)),
+
   sendRawTransaction: (signedTx: string) =>
     rpcRequest<string>("eth_sendRawTransaction", [signedTx])
       .then(hash => ({ txHash: hash as string })),

@@ -143,8 +143,9 @@ export function TradeRoomModal({ visible, orderId, onClose }: Props) {
       if (!pk) throw new Error("Cannot access private key — unlock your wallet first");
 
       const account = await api.getAccount(mxcAddress);
+      const nonce = await api.getEvmNonce(account.ethAddress);
       const amountWei = mcToWei(order.cryptoAmount);
-      const signedTx = signEvmTransaction(escrowInfo.escrowAddress, BigInt(amountWei), account.nonce, pk);
+      const signedTx = signEvmTransaction(escrowInfo.escrowAddress, BigInt(amountWei), nonce, pk);
       const result = await api.sendRawTransaction(signedTx);
       await p2pApi.lockEscrow(orderId, mxcAddress, result.txHash);
       return result.txHash;
