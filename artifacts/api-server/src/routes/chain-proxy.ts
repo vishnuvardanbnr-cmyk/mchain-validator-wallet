@@ -2,7 +2,7 @@ import { Router } from "express";
 
 const router = Router();
 
-const DEFAULT_CHAIN_BASE = "https://api.mxc.org/api";
+const DEFAULT_CHAIN_BASE = "https://chain.mvault.pro/api";
 
 function resolveChainBase(req: { headers: Record<string, string | string[] | undefined> }): string {
   const custom = req.headers["x-mchain-node"];
