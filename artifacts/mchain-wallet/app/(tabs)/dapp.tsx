@@ -261,13 +261,31 @@ export default function DAppScreen() {
   }, []);
 
   // ── Hide tab bar while browser is active ─────────────────────────────────────
-  // navigation.setOptions() targets THIS screen's options within the Tabs navigator,
-  // which is exactly where tabBarStyle per-screen overrides live.
+  // We only call setOptions when the browser actually opens/closes.
+  // Setting tabBarStyle:undefined on every mount would clear the screenOptions
+  // styling and leave a white/default background — so we guard with a ref.
+  const tabBarHiddenRef = useRef(false);
+  const isWeb = Platform.OS === "web";
   useEffect(() => {
-    navigation.setOptions({
-      tabBarStyle: activeUrl ? { display: "none" } : undefined,
-    });
-  }, [activeUrl, navigation]);
+    if (activeUrl) {
+      tabBarHiddenRef.current = true;
+      navigation.setOptions({ tabBarStyle: { display: "none" } });
+    } else if (tabBarHiddenRef.current) {
+      tabBarHiddenRef.current = false;
+      // Restore the exact same style defined in _layout.tsx screenOptions
+      navigation.setOptions({
+        tabBarStyle: {
+          position: "absolute",
+          backgroundColor: Platform.OS === "ios" ? "transparent" : colors.card,
+          borderTopWidth: 1,
+          borderTopColor: colors.border,
+          elevation: 0,
+          paddingBottom: isWeb ? 0 : insets.bottom,
+          ...(isWeb ? { height: 84 } : {}),
+        },
+      });
+    }
+  }, [activeUrl, navigation, colors, insets, isWeb]);
 
   // ── History helpers ──────────────────────────────────────────────────────────
   async function saveToHistory(url: string, title: string) {
