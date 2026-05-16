@@ -14,11 +14,15 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 const PAYMENT_METHODS = [
-  { id: "bank_transfer", label: "Bank Transfer" },
-  { id: "paypal", label: "PayPal" },
-  { id: "revolut", label: "Revolut" },
-  { id: "wise", label: "Wise" },
-  { id: "cash", label: "Cash" },
+  { id: "bank_transfer",  label: "Bank Transfer" },
+  { id: "upi",           label: "UPI" },
+  { id: "phonepe",       label: "PhonePe" },
+  { id: "google_pay",    label: "Google Pay" },
+  { id: "paytm",         label: "Paytm" },
+  { id: "paypal",        label: "PayPal" },
+  { id: "revolut",       label: "Revolut" },
+  { id: "wise",          label: "Wise" },
+  { id: "cash",          label: "Cash" },
   { id: "crypto_transfer", label: "Crypto Transfer" },
 ];
 

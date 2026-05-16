@@ -24,7 +24,8 @@ export const p2pDisputeReasonEnum = pgEnum("p2p_dispute_reason", [
 export const p2pDisputeStatusEnum = pgEnum("p2p_dispute_status", ["open", "resolved_buyer", "resolved_seller"]);
 export const p2pKycStatusEnum = pgEnum("p2p_kyc_status", ["none", "pending", "verified", "rejected"]);
 export const p2pPaymentMethodEnum = pgEnum("p2p_payment_method", [
-  "bank_transfer", "paypal", "revolut", "wise", "cash", "crypto_transfer", "other"
+  "bank_transfer", "upi", "phonepe", "google_pay", "paytm",
+  "paypal", "revolut", "wise", "cash", "crypto_transfer", "other"
 ]);
 
 // ─── Tables ───────────────────────────────────────────────────────────────────
