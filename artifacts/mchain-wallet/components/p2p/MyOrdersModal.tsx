@@ -10,6 +10,8 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { TradeRoomModal } from "./TradeRoomModal";
 
+const ORDER_LIMIT = 20;
+
 const STATUS_COLORS: Record<string, string> = {
   pending: "#F59E0B",
   paid: "#0EA5E9",
@@ -85,47 +87,45 @@ export function MyOrdersModal({ visible, onClose }: Props) {
   // ── Paginated orders state ──────────────────────────────────────────────
   const [orderItems, setOrderItems] = useState<P2pOrder[]>([]);
   const [orderTotal, setOrderTotal] = useState(0);
-  const [orderOffset, setOrderOffset] = useState(0);
+  const [orderPage, setOrderPage] = useState(0);
   const [orderLoading, setOrderLoading] = useState(false);
-  const [orderLoadingMore, setOrderLoadingMore] = useState(false);
 
-  const loadOrders = useCallback(async (offset: number, append: boolean) => {
+  const totalPages = Math.ceil(orderTotal / ORDER_LIMIT);
+
+  const loadOrders = useCallback(async (page: number) => {
     if (!mxcAddress) return;
-    if (offset === 0) setOrderLoading(true); else setOrderLoadingMore(true);
+    setOrderLoading(true);
     try {
-      const res = await p2pApi.getMyOrders(mxcAddress, offset);
-      setOrderItems(prev => append ? [...prev, ...res.orders] : res.orders);
+      const res = await p2pApi.getMyOrders(mxcAddress, page * ORDER_LIMIT);
+      setOrderItems(res.orders);
       setOrderTotal(res.total);
-      setOrderOffset(offset + res.orders.length);
+      setOrderPage(page);
     } catch {
       // silently ignore
     } finally {
       setOrderLoading(false);
-      setOrderLoadingMore(false);
     }
   }, [mxcAddress]);
 
-  // Load when modal opens; reset on close
+  // Load page 0 when modal opens; reset on close
   useEffect(() => {
     if (visible && mxcAddress) {
       setOrderItems([]);
       setOrderTotal(0);
-      setOrderOffset(0);
-      void loadOrders(0, false);
+      setOrderPage(0);
+      void loadOrders(0);
     }
   }, [visible, mxcAddress]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Auto-refresh active orders every 10 s (first page only)
+  // Auto-refresh current page every 10 s
   useEffect(() => {
     if (!visible) return;
-    const id = setInterval(() => { void loadOrders(0, false); }, 10_000);
+    const id = setInterval(() => { void loadOrders(orderPage); }, 10_000);
     return () => clearInterval(id);
-  }, [visible, loadOrders]);
+  }, [visible, loadOrders, orderPage]);
 
   const active = orderItems.filter(o => !["released", "cancelled", "resolved"].includes(o.status));
   const history = orderItems.filter(o => ["released", "cancelled", "resolved"].includes(o.status));
-
-  const hasMore = orderItems.length < orderTotal;
 
   const s = StyleSheet.create({
     overlay: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.72)" },
@@ -139,14 +139,17 @@ export function MyOrdersModal({ visible, onClose }: Props) {
     empty: { alignItems: "center", paddingVertical: 48, gap: 10 },
     emptyText: { fontSize: 14, fontFamily: "Inter_500Medium", color: colors.mutedForeground },
     divider: { height: 1, backgroundColor: colors.border, marginVertical: 18 },
-    loadMoreBtn: {
-      marginVertical: 12,
-      paddingVertical: 12, borderRadius: 12,
-      borderWidth: 1, borderColor: colors.border,
-      alignItems: "center",
+    paginationRow: {
+      flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+      marginTop: 8, marginBottom: 4,
     },
-    loadMoreText: { fontSize: 13, fontFamily: "Inter_600SemiBold", color: colors.primary },
-    totalText: { fontSize: 11, fontFamily: "Inter_400Regular", color: colors.mutedForeground, textAlign: "center", marginBottom: 8 },
+    pageBtn: {
+      paddingHorizontal: 14, paddingVertical: 10, borderRadius: 10,
+      borderWidth: 1, borderColor: colors.border,
+    },
+    pageBtnDisabled: { opacity: 0.3 },
+    pageBtnText: { fontSize: 13, fontFamily: "Inter_600SemiBold", color: colors.primary },
+    pageInfo: { fontSize: 13, fontFamily: "Inter_400Regular", color: colors.mutedForeground },
   });
 
   return (
@@ -185,27 +188,33 @@ export function MyOrdersModal({ visible, onClose }: Props) {
                   {history.length > 0 && (
                     <>
                       {active.length > 0 && <View style={s.divider} />}
-                      <Text style={s.sectionLabel}>
-                        HISTORY{orderTotal > orderItems.length ? ` (${orderItems.length} of ${orderTotal})` : ` (${history.length})`}
-                      </Text>
+                      <Text style={s.sectionLabel}>HISTORY</Text>
                       {history.map(o => (
                         <OrderCard key={o.id} order={o} myAddress={mxcAddress ?? ""} onOpen={() => setOpenOrder(o)} />
                       ))}
                     </>
                   )}
 
-                  {hasMore && (
-                    orderLoadingMore ? (
-                      <ActivityIndicator color={colors.primary} style={{ marginVertical: 16 }} />
-                    ) : (
+                  {totalPages > 1 && (
+                    <View style={s.paginationRow}>
                       <TouchableOpacity
-                        style={s.loadMoreBtn}
-                        onPress={() => { void loadOrders(orderOffset, true); }}
+                        style={[s.pageBtn, orderPage === 0 && s.pageBtnDisabled]}
+                        onPress={() => { void loadOrders(orderPage - 1); }}
+                        disabled={orderPage === 0}
                         activeOpacity={0.75}
                       >
-                        <Text style={s.loadMoreText}>Load More ({orderTotal - orderItems.length} remaining)</Text>
+                        <Text style={[s.pageBtnText, orderPage === 0 && { color: colors.border }]}>← Prev</Text>
                       </TouchableOpacity>
-                    )
+                      <Text style={s.pageInfo}>Page {orderPage + 1} of {totalPages}</Text>
+                      <TouchableOpacity
+                        style={[s.pageBtn, orderPage >= totalPages - 1 && s.pageBtnDisabled]}
+                        onPress={() => { void loadOrders(orderPage + 1); }}
+                        disabled={orderPage >= totalPages - 1}
+                        activeOpacity={0.75}
+                      >
+                        <Text style={[s.pageBtnText, orderPage >= totalPages - 1 && { color: colors.border }]}>Next →</Text>
+                      </TouchableOpacity>
+                    </View>
                   )}
                 </>
               )}

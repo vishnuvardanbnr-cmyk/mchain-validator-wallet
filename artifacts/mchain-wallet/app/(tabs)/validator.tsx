@@ -106,23 +106,20 @@ export default function ValidatorScreen() {
   // ── Paginated lists ─────────────────────────────────────────────────────────
   const [treasuryItems, setTreasuryItems] = useState<TreasuryReward[]>([]);
   const [treasuryTotal, setTreasuryTotal] = useState(0);
-  const [treasuryOffset, setTreasuryOffset] = useState(0);
+  const [treasuryPage, setTreasuryPage] = useState(0);
   const [treasuryInitLoading, setTreasuryInitLoading] = useState(false);
-  const [treasuryLoadingMore, setTreasuryLoadingMore] = useState(false);
   const [treasuryError, setTreasuryError] = useState<string | null>(null);
 
   const [gasItems, setGasItems] = useState<GasReward[]>([]);
   const [gasTotal, setGasTotal] = useState(0);
-  const [gasOffset, setGasOffset] = useState(0);
+  const [gasPage, setGasPage] = useState(0);
   const [gasInitLoading, setGasInitLoading] = useState(false);
-  const [gasLoadingMore, setGasLoadingMore] = useState(false);
   const [gasError, setGasError] = useState<string | null>(null);
 
   const [blocksItems, setBlocksItems] = useState<ValidatorBlock[]>([]);
   const [blocksTotal, setBlocksTotal] = useState(0);
-  const [blocksOffset, setBlocksOffset] = useState(0);
+  const [blocksPage, setBlocksPage] = useState(0);
   const [blocksInitLoading, setBlocksInitLoading] = useState(false);
-  const [blocksLoadingMore, setBlocksLoadingMore] = useState(false);
   const [blocksError, setBlocksError] = useState<string | null>(null);
 
   // ── Animation refs ──────────────────────────────────────────────────────────
@@ -160,66 +157,65 @@ export default function ValidatorScreen() {
   const stats = earningsData?.stats;
 
   // ── Pagination loaders ──────────────────────────────────────────────────────
-  const loadTreasury = useCallback(async (offset: number, append: boolean) => {
+  const LIMIT = 50;
+
+  const loadTreasury = useCallback(async (page: number) => {
     if (!mxcAddress) return;
-    if (offset === 0) setTreasuryInitLoading(true); else setTreasuryLoadingMore(true);
+    setTreasuryInitLoading(true);
     setTreasuryError(null);
     try {
-      const res = await api.getTreasuryRewards(mxcAddress, 50, offset);
-      setTreasuryItems((prev) => append ? [...prev, ...res.rewards] : res.rewards);
+      const res = await api.getTreasuryRewards(mxcAddress, LIMIT, page * LIMIT);
+      setTreasuryItems(res.rewards);
       setTreasuryTotal(res.total);
-      setTreasuryOffset(offset + res.rewards.length);
+      setTreasuryPage(page);
     } catch (err) {
       setTreasuryError(err instanceof Error ? err.message : "Failed to load");
     } finally {
       setTreasuryInitLoading(false);
-      setTreasuryLoadingMore(false);
     }
   }, [mxcAddress]);
 
-  const loadGas = useCallback(async (offset: number, append: boolean) => {
+  const loadGas = useCallback(async (page: number) => {
     if (!mxcAddress) return;
-    if (offset === 0) setGasInitLoading(true); else setGasLoadingMore(true);
+    setGasInitLoading(true);
     setGasError(null);
     try {
-      const res = await api.getGasRewards(mxcAddress, 50, offset);
-      setGasItems((prev) => append ? [...prev, ...res.gasRewards] : res.gasRewards);
+      const res = await api.getGasRewards(mxcAddress, LIMIT, page * LIMIT);
+      setGasItems(res.gasRewards);
       setGasTotal(res.total);
-      setGasOffset(offset + res.gasRewards.length);
+      setGasPage(page);
     } catch (err) {
       setGasError(err instanceof Error ? err.message : "Failed to load");
     } finally {
       setGasInitLoading(false);
-      setGasLoadingMore(false);
     }
   }, [mxcAddress]);
 
-  const loadBlocks = useCallback(async (offset: number, append: boolean) => {
+  const loadBlocks = useCallback(async (page: number) => {
     if (!mxcAddress) return;
-    if (offset === 0) setBlocksInitLoading(true); else setBlocksLoadingMore(true);
+    setBlocksInitLoading(true);
     setBlocksError(null);
     try {
-      const res = await api.getValidatorBlocks(mxcAddress, 50, offset);
-      setBlocksItems((prev) => append ? [...prev, ...res.blocks] : res.blocks);
+      const res = await api.getValidatorBlocks(mxcAddress, LIMIT, page * LIMIT);
+      setBlocksItems(res.blocks);
       setBlocksTotal(res.total);
-      setBlocksOffset(offset + res.blocks.length);
+      setBlocksPage(page);
     } catch (err) {
       setBlocksError(err instanceof Error ? err.message : "Failed to load");
     } finally {
       setBlocksInitLoading(false);
-      setBlocksLoadingMore(false);
     }
   }, [mxcAddress]);
 
   // Initial load when validator is registered
   useEffect(() => {
-    if (mxcAddress && isRegistered) loadTreasury(0, false);
+    if (mxcAddress && isRegistered) loadTreasury(0);
   }, [mxcAddress, isRegistered, loadTreasury]);
   useEffect(() => {
-    if (mxcAddress && isRegistered && activeTab === "gas" && gasItems.length === 0) loadGas(0, false);
+    if (mxcAddress && isRegistered && activeTab === "gas" && gasItems.length === 0) loadGas(0);
   }, [activeTab, mxcAddress, isRegistered, gasItems.length, loadGas]);
   useEffect(() => {
-    if (mxcAddress && isRegistered && activeTab === "blocks" && blocksItems.length === 0) loadBlocks(0, false);
+    if (mxcAddress && isRegistered && activeTab === "blocks" && blocksItems.length === 0) loadBlocks(0);
   }, [activeTab, mxcAddress, isRegistered, blocksItems.length, loadBlocks]);
 
   // ── Registration mutation ───────────────────────────────────────────────────
@@ -365,25 +361,34 @@ export default function ValidatorScreen() {
     if (activeTab === "gas") return gasItems;
     return blocksItems;
   }
-  function activeHasMore() {
-    if (activeTab === "treasury") return treasuryOffset < treasuryTotal;
-    if (activeTab === "gas") return gasOffset < gasTotal;
-    return blocksOffset < blocksTotal;
+  function activeTotalPages() {
+    if (activeTab === "treasury") return Math.ceil(treasuryTotal / LIMIT);
+    if (activeTab === "gas") return Math.ceil(gasTotal / LIMIT);
+    return Math.ceil(blocksTotal / LIMIT);
   }
-  function activeLoadingMore() {
-    if (activeTab === "treasury") return treasuryLoadingMore;
-    if (activeTab === "gas") return gasLoadingMore;
-    return blocksLoadingMore;
+  function activePage() {
+    if (activeTab === "treasury") return treasuryPage;
+    if (activeTab === "gas") return gasPage;
+    return blocksPage;
   }
-  function handleLoadMore() {
-    if (activeTab === "treasury") loadTreasury(treasuryOffset, true);
-    else if (activeTab === "gas") loadGas(gasOffset, true);
-    else loadBlocks(blocksOffset, true);
+  function handlePrevPage() {
+    const p = activePage();
+    if (p === 0) return;
+    if (activeTab === "treasury") loadTreasury(p - 1);
+    else if (activeTab === "gas") loadGas(p - 1);
+    else loadBlocks(p - 1);
+  }
+  function handleNextPage() {
+    const p = activePage();
+    if (p >= activeTotalPages() - 1) return;
+    if (activeTab === "treasury") loadTreasury(p + 1);
+    else if (activeTab === "gas") loadGas(p + 1);
+    else loadBlocks(p + 1);
   }
   function handleRetry() {
-    if (activeTab === "treasury") loadTreasury(0, false);
-    else if (activeTab === "gas") loadGas(0, false);
-    else loadBlocks(0, false);
+    if (activeTab === "treasury") loadTreasury(0);
+    else if (activeTab === "gas") loadGas(0);
+    else loadBlocks(0);
   }
 
   // ── Styles ──────────────────────────────────────────────────────────────────
@@ -604,13 +609,17 @@ export default function ValidatorScreen() {
     blockGas: { flex: 1, fontSize: 12, fontFamily: "Inter_400Regular", color: colors.mutedForeground },
     blockTime: { width: 94, fontSize: 10, fontFamily: "Inter_400Regular", color: colors.mutedForeground, textAlign: "right" },
 
-    loadMoreBtn: {
+    paginationRow: {
+      flexDirection: "row", alignItems: "center", justifyContent: "space-between",
       marginHorizontal: 20, marginVertical: 16,
-      paddingVertical: 13, borderRadius: 12,
-      borderWidth: 1, borderColor: colors.border,
-      alignItems: "center",
     },
-    loadMoreText: { fontSize: 13, fontFamily: "Inter_600SemiBold", color: colors.primary },
+    pageBtn: {
+      paddingHorizontal: 16, paddingVertical: 11, borderRadius: 10,
+      borderWidth: 1, borderColor: colors.border,
+    },
+    pageBtnDisabled: { opacity: 0.3 },
+    pageBtnText: { fontSize: 13, fontFamily: "Inter_600SemiBold", color: colors.primary },
+    pageInfo: { fontSize: 13, fontFamily: "Inter_400Regular", color: colors.mutedForeground },
 
     emptyState: { paddingVertical: 48, alignItems: "center", gap: 10 },
     emptyText: { fontSize: 14, fontFamily: "Inter_400Regular", color: colors.mutedForeground },
@@ -1031,9 +1040,9 @@ export default function ValidatorScreen() {
             onRefresh={() => {
               refetchValidator();
               refetchEarnings();
-              loadTreasury(0, false);
-              if (activeTab === "gas") loadGas(0, false);
-              if (activeTab === "blocks") loadBlocks(0, false);
+              loadTreasury(treasuryPage);
+              if (activeTab === "gas") loadGas(gasPage);
+              if (activeTab === "blocks") loadBlocks(blocksPage);
             }}
             tintColor={colors.primary}
           />
@@ -1060,12 +1069,26 @@ export default function ValidatorScreen() {
           ) : null
         }
         ListFooterComponent={
-          isRegistered && activeHasMore() ? (
-            <TouchableOpacity style={s.loadMoreBtn} onPress={handleLoadMore} disabled={activeLoadingMore()}>
-              {activeLoadingMore() ? <ActivityIndicator color={colors.primary} size="small" /> : (
-                <Text style={s.loadMoreText}>Load More</Text>
-              )}
-            </TouchableOpacity>
+          isRegistered && !activeInitLoading() && activeTotalPages() > 1 ? (
+            <View style={s.paginationRow}>
+              <TouchableOpacity
+                style={[s.pageBtn, activePage() === 0 && s.pageBtnDisabled]}
+                onPress={handlePrevPage}
+                disabled={activePage() === 0}
+                activeOpacity={0.75}
+              >
+                <Text style={[s.pageBtnText, activePage() === 0 && { color: colors.border }]}>← Prev</Text>
+              </TouchableOpacity>
+              <Text style={s.pageInfo}>Page {activePage() + 1} of {activeTotalPages()}</Text>
+              <TouchableOpacity
+                style={[s.pageBtn, activePage() >= activeTotalPages() - 1 && s.pageBtnDisabled]}
+                onPress={handleNextPage}
+                disabled={activePage() >= activeTotalPages() - 1}
+                activeOpacity={0.75}
+              >
+                <Text style={[s.pageBtnText, activePage() >= activeTotalPages() - 1 && { color: colors.border }]}>Next →</Text>
+              </TouchableOpacity>
+            </View>
           ) : null
         }
       />

@@ -24,6 +24,7 @@ import { ProfileModal } from "@/components/p2p/ProfileModal";
 
 type Token = "MC" | "USDT";
 type Side = "buy" | "sell";
+const AD_LIMIT = 20;
 
 function AdRow({ ad, myAddress, onPress }: { ad: P2pAd; myAddress: string; onPress: () => void }) {
   const colors = useColors();
@@ -157,46 +158,38 @@ export default function P2PScreen() {
   // ── Paginated ads state ──────────────────────────────────────────────────
   const [adItems, setAdItems] = useState<P2pAd[]>([]);
   const [adTotal, setAdTotal] = useState(0);
-  const [adOffset, setAdOffset] = useState(0);
-  const [adInitLoading, setAdInitLoading] = useState(false);
-  const [adLoadingMore, setAdLoadingMore] = useState(false);
-  const [adRefreshing, setAdRefreshing] = useState(false);
+  const [adPage, setAdPage] = useState(0);
+  const [adLoading, setAdLoading] = useState(false);
 
-  const loadAds = useCallback(async (offset: number, append: boolean) => {
-    if (offset === 0 && !append) setAdInitLoading(true);
-    else setAdLoadingMore(true);
+  const totalPages = Math.ceil(adTotal / AD_LIMIT);
+
+  const loadAds = useCallback(async (page: number) => {
+    setAdLoading(true);
     try {
-      const res = await p2pApi.getAds({ token, side, offset });
-      setAdItems(prev => append ? [...prev, ...res.ads] : res.ads);
+      const res = await p2pApi.getAds({ token, side, offset: page * AD_LIMIT });
+      setAdItems(res.ads);
       setAdTotal(res.total);
-      setAdOffset(offset + res.ads.length);
+      setAdPage(page);
     } catch {
-      // silently ignore refresh errors
+      // silently ignore
     } finally {
-      setAdInitLoading(false);
-      setAdLoadingMore(false);
-      setAdRefreshing(false);
+      setAdLoading(false);
     }
   }, [token, side]);
 
-  // Reset and reload when token or side changes (loadAds identity changes)
+  // Reset to page 0 and reload when token/side changes (loadAds identity changes)
   useEffect(() => {
     setAdItems([]);
     setAdTotal(0);
-    setAdOffset(0);
-    void loadAds(0, false);
+    setAdPage(0);
+    void loadAds(0);
   }, [loadAds]);
 
-  // Auto-refresh first page every 15 s
+  // Auto-refresh current page every 15 s
   useEffect(() => {
-    const id = setInterval(() => { void loadAds(0, false); }, 15_000);
+    const id = setInterval(() => { void loadAds(adPage); }, 15_000);
     return () => clearInterval(id);
-  }, [loadAds]);
-
-  const handleRefresh = useCallback(() => {
-    setAdRefreshing(true);
-    void loadAds(0, false);
-  }, [loadAds]);
+  }, [loadAds, adPage]);
 
   const { data: profile } = useQuery({
     queryKey: ["p2p_profile", mxcAddress],
@@ -245,14 +238,17 @@ export default function P2PScreen() {
     },
     postBtnGrad: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 18, paddingVertical: 14 },
     postBtnText: { fontSize: 14, fontFamily: "Inter_700Bold", color: "#FFF" },
-    loadMoreBtn: {
-      marginVertical: 16,
-      paddingVertical: 13, borderRadius: 12,
-      borderWidth: 1, borderColor: colors.border,
-      alignItems: "center",
+    paginationRow: {
+      flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+      marginTop: 8, marginBottom: 4,
     },
-    loadMoreText: { fontSize: 13, fontFamily: "Inter_600SemiBold", color: colors.primary },
-    totalText: { fontSize: 11, fontFamily: "Inter_400Regular", color: colors.mutedForeground, textAlign: "center", marginBottom: 10 },
+    pageBtn: {
+      paddingHorizontal: 16, paddingVertical: 11, borderRadius: 10,
+      borderWidth: 1, borderColor: colors.border,
+    },
+    pageBtnDisabled: { opacity: 0.3 },
+    pageBtnText: { fontSize: 13, fontFamily: "Inter_600SemiBold", color: colors.primary },
+    pageInfo: { fontSize: 13, fontFamily: "Inter_400Regular", color: colors.mutedForeground },
   });
 
   return (
@@ -291,9 +287,9 @@ export default function P2PScreen() {
       <ScrollView
         style={{ flex: 1 }}
         contentContainerStyle={s.scroll}
-        refreshControl={<RefreshControl refreshing={adRefreshing} onRefresh={handleRefresh} tintColor={colors.primary} />}
+        refreshControl={<RefreshControl refreshing={adLoading} onRefresh={() => { void loadAds(adPage); }} tintColor={colors.primary} />}
       >
-        {adInitLoading ? (
+        {adLoading ? (
           <ActivityIndicator color={colors.primary} style={{ marginTop: 40 }} />
         ) : adItems.length === 0 ? (
           <View style={s.empty}>
@@ -303,9 +299,6 @@ export default function P2PScreen() {
           </View>
         ) : (
           <>
-            {adTotal > adItems.length && (
-              <Text style={s.totalText}>{adItems.length} of {adTotal} ads</Text>
-            )}
             {adItems.map((ad) => (
               <AdRow
                 key={ad.id}
@@ -314,18 +307,26 @@ export default function P2PScreen() {
                 onPress={() => { setSelectedAd(ad); if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
               />
             ))}
-            {adItems.length < adTotal && (
-              adLoadingMore ? (
-                <ActivityIndicator color={colors.primary} style={{ marginVertical: 16 }} />
-              ) : (
+            {totalPages > 1 && (
+              <View style={s.paginationRow}>
                 <TouchableOpacity
-                  style={s.loadMoreBtn}
-                  onPress={() => { void loadAds(adOffset, true); }}
+                  style={[s.pageBtn, adPage === 0 && s.pageBtnDisabled]}
+                  onPress={() => { void loadAds(adPage - 1); }}
+                  disabled={adPage === 0}
                   activeOpacity={0.75}
                 >
-                  <Text style={s.loadMoreText}>Load More ({adTotal - adItems.length} remaining)</Text>
+                  <Text style={[s.pageBtnText, adPage === 0 && { color: colors.border }]}>← Prev</Text>
                 </TouchableOpacity>
-              )
+                <Text style={s.pageInfo}>Page {adPage + 1} of {totalPages}</Text>
+                <TouchableOpacity
+                  style={[s.pageBtn, adPage >= totalPages - 1 && s.pageBtnDisabled]}
+                  onPress={() => { void loadAds(adPage + 1); }}
+                  disabled={adPage >= totalPages - 1}
+                  activeOpacity={0.75}
+                >
+                  <Text style={[s.pageBtnText, adPage >= totalPages - 1 && { color: colors.border }]}>Next →</Text>
+                </TouchableOpacity>
+              </View>
             )}
           </>
         )}
@@ -341,14 +342,14 @@ export default function P2PScreen() {
       <PostAdModal
         visible={showPostAd}
         onClose={() => setShowPostAd(false)}
-        onPosted={() => { void loadAds(0, false); }}
+        onPosted={() => { void loadAds(0); }}
       />
       {selectedAd && (
         <OrderModal
           ad={selectedAd}
           visible={!!selectedAd}
           onClose={() => setSelectedAd(null)}
-          onOrderPlaced={() => { setSelectedAd(null); void loadAds(0, false); setShowMyOrders(true); }}
+          onOrderPlaced={() => { setSelectedAd(null); void loadAds(0); setShowMyOrders(true); }}
         />
       )}
       <MyOrdersModal visible={showMyOrders} onClose={() => setShowMyOrders(false)} />
