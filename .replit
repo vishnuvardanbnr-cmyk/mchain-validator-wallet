@@ -24,10 +24,6 @@ args = "API Server"
 task = "workflow.run"
 args = "Admin Panel"
 
-[[workflows.workflow.tasks]]
-task = "workflow.run"
-args = "MChain Wallet"
-
 [[workflows.workflow]]
 name = "API Server"
 author = "agent"
@@ -50,17 +46,6 @@ outputType = "webview"
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "PORT=3000 BASE_PATH=/ pnpm --filter @workspace/admin-panel run dev"
-
-[[workflows.workflow]]
-name = "MChain Wallet"
-author = "agent"
-
-[workflows.workflow.metadata]
-outputType = "webview"
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "PORT=20130 pnpm --filter @workspace/mchain-wallet run dev"
 
 [agent]
 stack = "PNPM_WORKSPACE"
@@ -94,6 +79,10 @@ externalPort = 3000
 [[ports]]
 localPort = 20130
 externalPort = 3001
+
+[[ports]]
+localPort = 20131
+externalPort = 4200
 
 [nix]
 channel = "stable-25_05"
