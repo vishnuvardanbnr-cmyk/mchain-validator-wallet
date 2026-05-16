@@ -7,7 +7,7 @@ import React, {
   useEffect,
   useState,
 } from "react";
-import { deriveAddressFromPublicKey, generateKeyPair, mnemonicToKeyPair, validateMnemonicWords, type KeyPair } from "@/services/crypto";
+import { deriveAddressFromPublicKey, mxcAddressToEthAddress, generateKeyPair, mnemonicToKeyPair, validateMnemonicWords, type KeyPair } from "@/services/crypto";
 import { api } from "@/services/api";
 import type { ValidatorInfo } from "@/services/api";
 
@@ -141,21 +141,25 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         ]);
 
         let correctedAddr = addr;
-        if (addr && addr.startsWith("mxc11") && pubKey) {
+        let correctedEth = eth;
+        if (pubKey) {
           try {
             correctedAddr = deriveAddressFromPublicKey(pubKey);
+            correctedEth = mxcAddressToEthAddress(correctedAddr);
             await AsyncStorage.setItem(KEYS.LEGACY_MXC_ADDRESS, correctedAddr);
+            if (correctedEth) await AsyncStorage.setItem(KEYS.LEGACY_ETH_ADDRESS, correctedEth);
           } catch {
-            correctedAddr = addr;
+            correctedAddr = addr ?? "";
+            correctedEth = eth;
           }
         }
 
-        if (correctedAddr && eth && pubKey) {
+        if (correctedAddr && correctedEth && pubKey) {
           const id = "w_migrated";
           const entry: WalletEntry = {
             id,
             mxcAddress: correctedAddr,
-            ethAddress: eth,
+            ethAddress: correctedEth,
             publicKey: pubKey,
             label: "Validator Wallet",
             createdAt: new Date().toISOString(),
@@ -197,7 +201,23 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         ]);
 
         const parsed: WalletEntry[] = JSON.parse(walletsJson);
-        loadedWallets = parsed;
+        // Re-derive correct Ethereum-standard addresses from each wallet's public key
+        let needsAddressSave = false;
+        loadedWallets = parsed.map(w => {
+          if (!w.publicKey) return w;
+          try {
+            const correctedMxc = deriveAddressFromPublicKey(w.publicKey);
+            const correctedEth = mxcAddressToEthAddress(correctedMxc);
+            if (w.mxcAddress !== correctedMxc || w.ethAddress !== correctedEth) {
+              needsAddressSave = true;
+              return { ...w, mxcAddress: correctedMxc, ethAddress: correctedEth };
+            }
+          } catch { /* keep as-is */ }
+          return w;
+        });
+        if (needsAddressSave) {
+          await AsyncStorage.setItem(KEYS.WALLETS, JSON.stringify(loadedWallets));
+        }
         loadedActiveId = activeId;
         loadedValidatorId = validatorId;
 

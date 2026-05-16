@@ -32,7 +32,7 @@ export default function SettingsScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
-  const { mxcAddress, publicKey, moniker, updateMoniker, getPrivateKey } = useWallet();
+  const { mxcAddress, ethAddress, publicKey, moniker, updateMoniker, getPrivateKey } = useWallet();
 
   const [editingMoniker, setEditingMoniker] = useState(false);
   const [monikerInput, setMonikerInput] = useState(moniker);
@@ -479,10 +479,30 @@ export default function SettingsScreen() {
         <View style={s.section}>
           <Text style={s.sectionLabel}>WALLET</Text>
           <View style={s.card}>
-            <View style={s.row}>
+            <TouchableOpacity style={s.row} onPress={() => {
+              if (mxcAddress) {
+                Clipboard.setStringAsync(mxcAddress);
+                if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+              }
+            }}>
               <Text style={s.rowLabel}>MXC Address</Text>
-              <Text style={s.rowValue} numberOfLines={1}>{mxcAddress ? shortenAddress(mxcAddress, 8) : "—"}</Text>
-            </View>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                <Text style={s.rowValue} numberOfLines={1}>{mxcAddress ? shortenAddress(mxcAddress, 8) : "—"}</Text>
+                <Icon name="copy-outline" size={13} color={colors.textSecondary} />
+              </View>
+            </TouchableOpacity>
+            <TouchableOpacity style={s.row} onPress={() => {
+              if (ethAddress) {
+                Clipboard.setStringAsync(ethAddress);
+                if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+              }
+            }}>
+              <Text style={s.rowLabel}>EVM Address (0x)</Text>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                <Text style={s.rowValue} numberOfLines={1}>{ethAddress ? shortenAddress(ethAddress, 8) : "—"}</Text>
+                <Icon name="copy-outline" size={13} color={colors.textSecondary} />
+              </View>
+            </TouchableOpacity>
             <View style={[s.row, s.rowLast]}>
               <Text style={s.rowLabel}>Public Key</Text>
               <Text style={s.rowValue} numberOfLines={1}>{publicKey ? shortenAddress(publicKey, 8) : "—"}</Text>
