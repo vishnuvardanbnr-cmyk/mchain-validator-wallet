@@ -358,12 +358,17 @@ export function NewWalletModal({ visible, onClose }: Props) {
       onRequestClose={onClose}
       statusBarTranslucent
     >
-      <Animated.View style={[s.overlay, { opacity: overlayOpacity }]}>
+      {/* Dim overlay — separate from layout so KAV can move the sheet freely */}
+      <Animated.View
+        style={[StyleSheet.absoluteFill, { backgroundColor: "rgba(0,0,0,0.7)", opacity: overlayOpacity }]}
+        pointerEvents="none"
+      />
+      <KeyboardAvoidingView
+        style={{ flex: 1, justifyContent: "flex-end" }}
+        behavior={Platform.OS === "ios" ? "padding" : "padding"}
+        keyboardVerticalOffset={0}
+      >
         <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={onClose} />
-        <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
-          keyboardVerticalOffset={0}
-        >
         <Animated.View style={[s.sheet, { transform: [{ translateY: slideAnim }] }]}>
           <View style={s.handle} />
           <View style={s.sheetHeader}>
@@ -517,8 +522,7 @@ export function NewWalletModal({ visible, onClose }: Props) {
             )}
           </ScrollView>
         </Animated.View>
-        </KeyboardAvoidingView>
-      </Animated.View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
