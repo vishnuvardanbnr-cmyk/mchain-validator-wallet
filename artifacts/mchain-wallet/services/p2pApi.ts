@@ -1,5 +1,6 @@
 import { Platform } from "react-native";
 import { getNodeUrl, isDefaultNode } from "./node";
+import { ethAddressToMxc } from "./crypto";
 
 // Re-export types used across the P2P UI
 export interface P2pProfile {
@@ -114,6 +115,55 @@ export interface P2pDispute {
   createdAt: string;
 }
 
+// ── Address conversion helpers ────────────────────────────────────────────────
+
+const ETH_ADDR_RE = /^0x[0-9a-fA-F]{40}$/i;
+
+/** Convert a 0x ETH address to MXC bech32 for display. Pass-through for non-ETH values. */
+function toMxc(addr: string): string {
+  if (!addr) return addr;
+  if (ETH_ADDR_RE.test(addr)) return ethAddressToMxc(addr);
+  return addr;
+}
+
+function cvtProfile(p: P2pProfile): P2pProfile {
+  return { ...p, mxcAddress: toMxc(p.mxcAddress) };
+}
+
+function cvtAd(ad: P2pAd): P2pAd {
+  return { ...ad, ownerAddress: toMxc(ad.ownerAddress) };
+}
+
+function cvtPaymentDetail(pd: PaymentDetail): PaymentDetail {
+  return { ...pd, ownerAddress: toMxc(pd.ownerAddress) };
+}
+
+function cvtOrder(o: P2pOrder): P2pOrder {
+  return {
+    ...o,
+    buyerAddress: toMxc(o.buyerAddress),
+    sellerAddress: toMxc(o.sellerAddress),
+    ad: o.ad ? cvtAd(o.ad) : o.ad,
+    buyerProfile: o.buyerProfile ? cvtProfile(o.buyerProfile) : o.buyerProfile,
+    sellerProfile: o.sellerProfile ? cvtProfile(o.sellerProfile) : o.sellerProfile,
+    sellerPaymentDetail: o.sellerPaymentDetail ? cvtPaymentDetail(o.sellerPaymentDetail) : o.sellerPaymentDetail,
+  };
+}
+
+function cvtMessage(m: P2pMessage): P2pMessage {
+  return { ...m, senderAddress: toMxc(m.senderAddress) };
+}
+
+function cvtDispute(d: P2pDispute): P2pDispute {
+  return { ...d, openedBy: toMxc(d.openedBy) };
+}
+
+function cvtEscrowInfo(info: EscrowInfo): EscrowInfo {
+  return { ...info, escrowAddress: info.escrowAddress ? toMxc(info.escrowAddress) : null };
+}
+
+// ── API base URL ──────────────────────────────────────────────────────────────
+
 function getApiBase(): string {
   const domain = typeof process !== "undefined" ? process.env.EXPO_PUBLIC_DOMAIN : undefined;
   if (domain) return `https://${domain}/api/p2p`;
@@ -142,70 +192,83 @@ async function req<T>(path: string, options?: RequestInit): Promise<T> {
 
 export const p2pApi = {
   // ── Profile ──────────────────────────────────────────────────────────────
-  getProfile: (address: string) => req<P2pProfile>(`/profiles/${address}`),
-  upsertProfile: (body: { mxcAddress: string; displayName: string; phone?: string }) =>
-    req<P2pProfile>("/profiles", { method: "POST", body: JSON.stringify(body) }),
-  submitKyc: (body: { mxcAddress: string; kycName: string; kycDocType: string; displayName: string; kycDocImage?: string }) =>
-    req<P2pProfile>("/profiles/kyc", { method: "POST", body: JSON.stringify(body) }),
+  getProfile: async (address: string) => cvtProfile(await req<P2pProfile>(`/profiles/${address}`)),
+  upsertProfile: async (body: { mxcAddress: string; displayName: string; phone?: string }) =>
+    cvtProfile(await req<P2pProfile>("/profiles", { method: "POST", body: JSON.stringify(body) })),
+  submitKyc: async (body: { mxcAddress: string; kycName: string; kycDocType: string; displayName: string; kycDocImage?: string }) =>
+    cvtProfile(await req<P2pProfile>("/profiles/kyc", { method: "POST", body: JSON.stringify(body) })),
   disconnectProfile: (address: string) =>
     req<{ ok: boolean }>(`/profiles/${address}`, { method: "DELETE" }),
 
   // ── Ads ──────────────────────────────────────────────────────────────────
-  getAds: (params: { token?: string; side?: string; offset?: number }) => {
+  getAds: async (params: { token?: string; side?: string; offset?: number }) => {
     const qs = new URLSearchParams();
     if (params.token) qs.set("token", params.token);
     if (params.side) qs.set("side", params.side);
     if (params.offset) qs.set("offset", String(params.offset));
-    return req<P2pAdsPage>(`/ads?${qs.toString()}`);
+    const page = await req<P2pAdsPage>(`/ads?${qs.toString()}`);
+    return { ...page, ads: page.ads.map(cvtAd) };
   },
-  getMyAds: (address: string) => req<P2pAdsPage>(`/ads?owner=${address}`),
-  postAd: (body: {
+  getMyAds: async (address: string) => {
+    const page = await req<P2pAdsPage>(`/ads?owner=${address}`);
+    return { ...page, ads: page.ads.map(cvtAd) };
+  },
+  postAd: async (body: {
     ownerAddress: string; token: string; side: string; price: string;
     minAmount: string; maxAmount: string; availableAmount: string;
     paymentMethods: string[]; paymentWindow: number; terms?: string;
-  }) => req<P2pAd>("/ads", { method: "POST", body: JSON.stringify(body) }),
+  }) => cvtAd(await req<P2pAd>("/ads", { method: "POST", body: JSON.stringify(body) })),
   updateAdStatus: (id: string, status: string) =>
     req<P2pAd>(`/ads/${id}/status`, { method: "PATCH", body: JSON.stringify({ status }) }),
 
   // ── Orders ───────────────────────────────────────────────────────────────
-  getMyOrders: (address: string, offset = 0) =>
-    req<P2pOrdersPage>(`/orders?address=${encodeURIComponent(address)}&offset=${offset}`),
-  getOrder: (id: string) => req<P2pOrder>(`/orders/${id}`),
-  createOrder: (body: {
+  getMyOrders: async (address: string, offset = 0) => {
+    const page = await req<P2pOrdersPage>(`/orders?address=${encodeURIComponent(address)}&offset=${offset}`);
+    return { ...page, orders: page.orders.map(cvtOrder) };
+  },
+  getOrder: async (id: string) => cvtOrder(await req<P2pOrder>(`/orders/${id}`)),
+  createOrder: async (body: {
     adId: string; buyerAddress: string; cryptoAmount: string;
     paymentMethod: string; paymentDetails?: string;
-  }) => req<P2pOrder>("/orders", { method: "POST", body: JSON.stringify(body) }),
-  markPaid: (id: string, address: string) =>
-    req<P2pOrder>(`/orders/${id}/pay`, { method: "POST", body: JSON.stringify({ address }) }),
-  confirmRelease: (id: string, address: string) =>
-    req<P2pOrder>(`/orders/${id}/release`, { method: "POST", body: JSON.stringify({ address }) }),
-  lockEscrow: (id: string, sellerAddress: string, txHash: string) =>
-    req<P2pOrder>(`/orders/${id}/lock-escrow`, { method: "POST", body: JSON.stringify({ sellerAddress, txHash }) }),
-  getEscrowInfo: () => req<EscrowInfo>("/escrow/info"),
-  cancelOrder: (id: string, address: string, reason?: string) =>
-    req<P2pOrder>(`/orders/${id}/cancel`, { method: "POST", body: JSON.stringify({ address, reason }) }),
+  }) => cvtOrder(await req<P2pOrder>("/orders", { method: "POST", body: JSON.stringify(body) })),
+  markPaid: async (id: string, address: string) =>
+    cvtOrder(await req<P2pOrder>(`/orders/${id}/pay`, { method: "POST", body: JSON.stringify({ address }) })),
+  confirmRelease: async (id: string, address: string) =>
+    cvtOrder(await req<P2pOrder>(`/orders/${id}/release`, { method: "POST", body: JSON.stringify({ address }) })),
+  lockEscrow: async (id: string, sellerAddress: string, txHash: string) =>
+    cvtOrder(await req<P2pOrder>(`/orders/${id}/lock-escrow`, { method: "POST", body: JSON.stringify({ sellerAddress, txHash }) })),
+  getEscrowInfo: async () => cvtEscrowInfo(await req<EscrowInfo>("/escrow/info")),
+  cancelOrder: async (id: string, address: string, reason?: string) =>
+    cvtOrder(await req<P2pOrder>(`/orders/${id}/cancel`, { method: "POST", body: JSON.stringify({ address, reason }) })),
 
   // ── Messages ─────────────────────────────────────────────────────────────
-  getMessages: (orderId: string) => req<P2pMessage[]>(`/orders/${orderId}/messages`),
-  sendMessage: (orderId: string, body: { senderAddress: string; content: string }) =>
-    req<P2pMessage>(`/orders/${orderId}/messages`, { method: "POST", body: JSON.stringify(body) }),
+  getMessages: async (orderId: string) => {
+    const msgs = await req<P2pMessage[]>(`/orders/${orderId}/messages`);
+    return msgs.map(cvtMessage);
+  },
+  sendMessage: async (orderId: string, body: { senderAddress: string; content: string }) =>
+    cvtMessage(await req<P2pMessage>(`/orders/${orderId}/messages`, { method: "POST", body: JSON.stringify(body) })),
 
   // ── Disputes ─────────────────────────────────────────────────────────────
-  getDispute: (orderId: string) => req<P2pDispute>(`/orders/${orderId}/dispute`),
-  openDispute: (orderId: string, body: { openedBy: string; reason: string; description: string; evidence?: string }) =>
-    req<P2pDispute>(`/orders/${orderId}/dispute`, { method: "POST", body: JSON.stringify(body) }),
+  getDispute: async (orderId: string) => cvtDispute(await req<P2pDispute>(`/orders/${orderId}/dispute`)),
+  openDispute: async (orderId: string, body: { openedBy: string; reason: string; description: string; evidence?: string }) =>
+    cvtDispute(await req<P2pDispute>(`/orders/${orderId}/dispute`, { method: "POST", body: JSON.stringify(body) })),
 
   // ── Ratings ──────────────────────────────────────────────────────────────
   rateOrder: (orderId: string, body: { raterAddress: string; ratedAddress: string; score: number; comment?: string }) =>
     req<{ ok: boolean }>(`/orders/${orderId}/rate`, { method: "POST", body: JSON.stringify(body) }),
 
   // ── Payment Details ───────────────────────────────────────────────────────
-  getPaymentDetails: (address: string) =>
-    req<PaymentDetail[]>(`/payment-details/${address}`),
-  getPaymentDetailForMethod: (address: string, method: string) =>
-    req<PaymentDetail[]>(`/payment-details/${address}/${encodeURIComponent(method)}`),
-  savePaymentDetail: (body: { ownerAddress: string; paymentMethod: string; label?: string; details: Record<string, string> }) =>
-    req<PaymentDetail>("/payment-details", { method: "POST", body: JSON.stringify(body) }),
+  getPaymentDetails: async (address: string) => {
+    const rows = await req<PaymentDetail[]>(`/payment-details/${address}`);
+    return rows.map(cvtPaymentDetail);
+  },
+  getPaymentDetailForMethod: async (address: string, method: string) => {
+    const rows = await req<PaymentDetail[]>(`/payment-details/${address}/${encodeURIComponent(method)}`);
+    return rows.map(cvtPaymentDetail);
+  },
+  savePaymentDetail: async (body: { ownerAddress: string; paymentMethod: string; label?: string; details: Record<string, string> }) =>
+    cvtPaymentDetail(await req<PaymentDetail>("/payment-details", { method: "POST", body: JSON.stringify(body) })),
   deletePaymentDetail: (id: string, ownerAddress: string) =>
     req<{ ok: boolean }>(`/payment-details/${id}`, { method: "DELETE", body: JSON.stringify({ ownerAddress }) }),
 };

@@ -9,7 +9,7 @@ import { eq, and, or, desc, sql, count } from "drizzle-orm";
 import { z } from "zod";
 import {
   broadcastMcTransaction, broadcastUsdtTransaction, mcToWei,
-  isEscrowConfigured, getEscrowAddress, getEscrowPrivateKey,
+  isEscrowConfigured, getEscrowAddress, getEscrowPrivateKey, normalizeAddress,
 } from "../escrow";
 
 const router = Router();
@@ -20,6 +20,12 @@ function validate<T>(schema: z.ZodType<T>, body: unknown): { data: T } | { error
   const result = schema.safeParse(body);
   if (!result.success) return { error: result.error.issues.map((i: z.ZodIssue) => i.message).join(", ") };
   return { data: result.data };
+}
+
+/** Normalize any incoming address to lowercase 0x ETH format. */
+function toEth(addr: string | undefined): string {
+  if (!addr) return addr as unknown as string;
+  try { return normalizeAddress(addr); } catch { return addr; }
 }
 
 async function ensureProfile(address: string, displayName?: string): Promise<void> {
@@ -57,7 +63,7 @@ async function enrichAds(ads: (typeof p2pAds.$inferSelect)[]) {
 // ── Profiles ─────────────────────────────────────────────────────────────────
 
 router.get("/p2p/profiles/:address", async (req, res) => {
-  const { address } = req.params;
+  const address = toEth(req.params.address);
   const [profile] = await db.select().from(p2pProfiles).where(eq(p2pProfiles.mxcAddress, address)).limit(1);
   if (!profile) { res.status(404).json({ error: "Profile not found" }); return; }
   const completionRate = profile.totalTrades > 0
@@ -69,28 +75,29 @@ router.get("/p2p/profiles/:address", async (req, res) => {
 router.post("/p2p/profiles", async (req, res) => {
   const body = req.body as { mxcAddress?: string; displayName?: string; phone?: string };
   if (!body.mxcAddress) { res.status(400).json({ error: "mxcAddress required" }); return; }
-  const existing = await db.select().from(p2pProfiles).where(eq(p2pProfiles.mxcAddress, body.mxcAddress)).limit(1);
+  const ethAddress = toEth(body.mxcAddress);
+  const existing = await db.select().from(p2pProfiles).where(eq(p2pProfiles.mxcAddress, ethAddress)).limit(1);
   if (existing.length > 0) {
     const updateData: Record<string, unknown> = { updatedAt: new Date() };
     if (body.displayName) updateData.displayName = body.displayName;
     if (body.phone !== undefined) updateData.phone = body.phone;
     const [updated] = await db.update(p2pProfiles)
       .set(updateData)
-      .where(eq(p2pProfiles.mxcAddress, body.mxcAddress))
+      .where(eq(p2pProfiles.mxcAddress, ethAddress))
       .returning();
     res.json(updated);
     return;
   }
   const [created] = await db.insert(p2pProfiles).values({
-    mxcAddress: body.mxcAddress,
-    displayName: body.displayName ?? body.mxcAddress.slice(0, 10) + "…",
+    mxcAddress: ethAddress,
+    displayName: body.displayName ?? ethAddress.slice(0, 12) + "…",
     phone: body.phone,
   }).returning();
   res.status(201).json(created);
 });
 
 router.delete("/p2p/profiles/:address", async (req, res) => {
-  const { address } = req.params;
+  const address = toEth(req.params.address);
   const existing = await db.select().from(p2pProfiles).where(eq(p2pProfiles.mxcAddress, address)).limit(1);
   if (!existing.length) { res.status(404).json({ error: "Profile not found" }); return; }
   if ((existing[0].completedTrades ?? 0) > 0) {
@@ -104,7 +111,8 @@ router.delete("/p2p/profiles/:address", async (req, res) => {
 router.post("/p2p/profiles/kyc", async (req, res) => {
   const v = validate(kycSubmitRequestSchema, req.body);
   if ("error" in v) { res.status(400).json({ error: v.error }); return; }
-  const { mxcAddress, kycName, kycDocType, displayName, kycDocImage } = v.data as { mxcAddress: string; kycName: string; kycDocType: string; displayName: string; kycDocImage?: string };
+  const { mxcAddress: rawAddr, kycName, kycDocType, displayName, kycDocImage } = v.data as { mxcAddress: string; kycName: string; kycDocType: string; displayName: string; kycDocImage?: string };
+  const mxcAddress = toEth(rawAddr);
   await ensureProfile(mxcAddress, displayName);
   const [updated] = await db.update(p2pProfiles)
     .set({ kycName, kycDocType, kycDocImage, kycStatus: "pending", kycSubmittedAt: new Date(), displayName, updatedAt: new Date() })
@@ -116,7 +124,8 @@ router.post("/p2p/profiles/kyc", async (req, res) => {
 // ── Ads ───────────────────────────────────────────────────────────────────────
 
 router.get("/p2p/ads", async (req, res) => {
-  const { token, side, owner } = req.query as { token?: string; side?: string; owner?: string };
+  const { token, side, owner: rawOwner } = req.query as { token?: string; side?: string; owner?: string };
+  const owner = rawOwner ? toEth(rawOwner) : undefined;
   const offset = Math.max(0, Number(req.query["offset"] ?? 0));
   const limit = owner ? 100 : 20;
 
@@ -143,7 +152,7 @@ router.post("/p2p/ads", async (req, res) => {
   const v = validate(createAdRequestSchema, req.body);
   if ("error" in v) { res.status(400).json({ error: v.error }); return; }
   const body = v.data as z.infer<typeof createAdRequestSchema> & { ownerAddress?: string };
-  const ownerAddress = (req.body as { ownerAddress?: string }).ownerAddress;
+  const ownerAddress = toEth((req.body as { ownerAddress?: string }).ownerAddress);
   if (!ownerAddress) { res.status(400).json({ error: "ownerAddress required" }); return; }
   await ensureProfile(ownerAddress);
   const [ad] = await db.insert(p2pAds).values({
@@ -177,7 +186,7 @@ router.patch("/p2p/ads/:id/status", async (req, res) => {
 // ── Orders ────────────────────────────────────────────────────────────────────
 
 router.get("/p2p/orders", async (req, res) => {
-  const { address } = req.query as { address?: string };
+  const address = toEth((req.query as { address?: string }).address);
   if (!address) { res.status(400).json({ error: "address required" }); return; }
   const offset = Math.max(0, Number(req.query["offset"] ?? 0));
   const limit = 20;
@@ -211,7 +220,8 @@ router.post("/p2p/orders", async (req, res) => {
   const v = validate(createOrderRequestSchema, req.body);
   if ("error" in v) { res.status(400).json({ error: v.error }); return; }
   const body = v.data as z.infer<typeof createOrderRequestSchema>;
-  const { buyerAddress, paymentDetails } = req.body as { buyerAddress?: string; paymentDetails?: string };
+  const { buyerAddress: rawBuyer, paymentDetails } = req.body as { buyerAddress?: string; paymentDetails?: string };
+  const buyerAddress = toEth(rawBuyer);
   if (!buyerAddress) { res.status(400).json({ error: "buyerAddress required" }); return; }
 
   const [ad] = await db.select().from(p2pAds).where(and(eq(p2pAds.id, body.adId), eq(p2pAds.status, "active"))).limit(1);
@@ -263,7 +273,7 @@ router.post("/p2p/orders", async (req, res) => {
 
 router.post("/p2p/orders/:id/pay", async (req, res) => {
   const { id } = req.params;
-  const { address } = req.body as { address?: string };
+  const address = toEth((req.body as { address?: string }).address);
   const [order] = await db.select().from(p2pOrders).where(eq(p2pOrders.id, id)).limit(1);
   if (!order) { res.status(404).json({ error: "Order not found" }); return; }
   if (order.buyerAddress !== address) { res.status(403).json({ error: "Not the buyer" }); return; }
@@ -279,7 +289,7 @@ router.post("/p2p/orders/:id/pay", async (req, res) => {
 
 router.post("/p2p/orders/:id/release", async (req, res) => {
   const { id } = req.params;
-  const { address } = req.body as { address?: string };
+  const address = toEth((req.body as { address?: string }).address);
   const [order] = await db.select().from(p2pOrders).where(eq(p2pOrders.id, id)).limit(1);
   if (!order) { res.status(404).json({ error: "Order not found" }); return; }
   if (order.sellerAddress !== address) { res.status(403).json({ error: "Not the seller" }); return; }
@@ -336,12 +346,13 @@ router.get("/p2p/escrow/info", (_req, res) => {
     res.json({ configured: false, escrowAddress: null });
     return;
   }
-  res.json({ configured: true, escrowAddress: getEscrowAddress() });
+  res.json({ configured: true, escrowAddress: toEth(getEscrowAddress()) });
 });
 
 router.post("/p2p/orders/:id/lock-escrow", async (req, res) => {
   const { id } = req.params;
-  const { sellerAddress, txHash } = req.body as { sellerAddress?: string; txHash?: string };
+  const { sellerAddress: rawSeller, txHash } = req.body as { sellerAddress?: string; txHash?: string };
+  const sellerAddress = toEth(rawSeller);
   if (!sellerAddress || !txHash) { res.status(400).json({ error: "sellerAddress and txHash required" }); return; }
 
   const [order] = await db.select().from(p2pOrders).where(eq(p2pOrders.id, id)).limit(1);
@@ -404,7 +415,8 @@ router.post("/p2p/orders/:id/refund-escrow", async (req, res) => {
 
 router.post("/p2p/orders/:id/cancel", async (req, res) => {
   const { id } = req.params;
-  const { address, reason } = req.body as { address?: string; reason?: string };
+  const { address: rawAddr, reason } = req.body as { address?: string; reason?: string };
+  const address = toEth(rawAddr);
   const [order] = await db.select().from(p2pOrders).where(eq(p2pOrders.id, id)).limit(1);
   if (!order) { res.status(404).json({ error: "Order not found" }); return; }
   if (![order.buyerAddress, order.sellerAddress].includes(address ?? "")) { res.status(403).json({ error: "Not a party to this order" }); return; }
@@ -440,7 +452,7 @@ router.post("/p2p/orders/:id/messages", async (req, res) => {
   const { id } = req.params;
   const v = validate(sendMessageRequestSchema, req.body);
   if ("error" in v) { res.status(400).json({ error: v.error }); return; }
-  const { senderAddress } = req.body as { senderAddress?: string };
+  const senderAddress = toEth((req.body as { senderAddress?: string }).senderAddress);
   if (!senderAddress) { res.status(400).json({ error: "senderAddress required" }); return; }
 
   const [order] = await db.select().from(p2pOrders).where(eq(p2pOrders.id, id)).limit(1);
@@ -469,7 +481,7 @@ router.post("/p2p/orders/:id/dispute", async (req, res) => {
   const { id } = req.params;
   const v = validate(createDisputeRequestSchema, req.body);
   if ("error" in v) { res.status(400).json({ error: v.error }); return; }
-  const { openedBy } = req.body as { openedBy?: string };
+  const openedBy = toEth((req.body as { openedBy?: string }).openedBy);
   if (!openedBy) { res.status(400).json({ error: "openedBy required" }); return; }
 
   const [order] = await db.select().from(p2pOrders).where(eq(p2pOrders.id, id)).limit(1);
@@ -493,7 +505,7 @@ router.post("/p2p/orders/:id/dispute", async (req, res) => {
 // ── Payment Details ───────────────────────────────────────────────────────────
 
 router.get("/p2p/payment-details/:address", async (req, res) => {
-  const { address } = req.params;
+  const address = toEth(req.params.address);
   const rows = await db.select().from(p2pPaymentDetails)
     .where(eq(p2pPaymentDetails.ownerAddress, address))
     .orderBy(p2pPaymentDetails.paymentMethod, p2pPaymentDetails.createdAt);
@@ -501,7 +513,8 @@ router.get("/p2p/payment-details/:address", async (req, res) => {
 });
 
 router.get("/p2p/payment-details/:address/:method", async (req, res) => {
-  const { address, method } = req.params;
+  const { method } = req.params;
+  const address = toEth(req.params.address);
   const rows = await db.select().from(p2pPaymentDetails)
     .where(and(
       eq(p2pPaymentDetails.ownerAddress, address),
@@ -512,9 +525,10 @@ router.get("/p2p/payment-details/:address/:method", async (req, res) => {
 });
 
 router.post("/p2p/payment-details", async (req, res) => {
-  const { ownerAddress, paymentMethod, label, details } = req.body as {
+  const { ownerAddress: rawOwner, paymentMethod, label, details } = req.body as {
     ownerAddress?: string; paymentMethod?: string; label?: string; details?: Record<string, string>;
   };
+  const ownerAddress = toEth(rawOwner);
   if (!ownerAddress || !paymentMethod || !details) {
     res.status(400).json({ error: "ownerAddress, paymentMethod and details required" }); return;
   }
@@ -539,7 +553,7 @@ router.post("/p2p/payment-details", async (req, res) => {
 
 router.delete("/p2p/payment-details/:id", async (req, res) => {
   const { id } = req.params;
-  const { ownerAddress } = req.body as { ownerAddress?: string };
+  const ownerAddress = toEth((req.body as { ownerAddress?: string }).ownerAddress);
   if (!ownerAddress) { res.status(400).json({ error: "ownerAddress required" }); return; }
   const [deleted] = await db.delete(p2pPaymentDetails)
     .where(and(eq(p2pPaymentDetails.id, id), eq(p2pPaymentDetails.ownerAddress, ownerAddress)))
@@ -554,7 +568,8 @@ router.post("/p2p/orders/:id/rate", async (req, res) => {
   const { id } = req.params;
   const v = validate(rateOrderRequestSchema, req.body);
   if ("error" in v) { res.status(400).json({ error: v.error }); return; }
-  const { raterAddress, ratedAddress } = req.body as { raterAddress?: string; ratedAddress?: string };
+  const raterAddress = toEth((req.body as { raterAddress?: string }).raterAddress);
+  const ratedAddress = toEth((req.body as { ratedAddress?: string }).ratedAddress);
   if (!raterAddress || !ratedAddress) { res.status(400).json({ error: "raterAddress and ratedAddress required" }); return; }
 
   const [order] = await db.select().from(p2pOrders).where(and(eq(p2pOrders.id, id), eq(p2pOrders.status, "released"))).limit(1);

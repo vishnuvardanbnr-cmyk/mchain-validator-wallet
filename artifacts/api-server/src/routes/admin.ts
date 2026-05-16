@@ -2,6 +2,13 @@ import { Router, type Request, type Response, type NextFunction } from "express"
 import { db } from "@workspace/db";
 import { p2pProfiles, p2pOrders, p2pDisputes, p2pAds, p2pMessages, appSettings, DEFAULT_VOLUME_TIERS, type VolumeTiers } from "@workspace/db";
 import { eq, and, desc, count, sql, asc } from "drizzle-orm";
+import { normalizeAddress } from "../escrow";
+
+/** Normalize any incoming address to lowercase 0x ETH format. */
+function toEth(addr: string | undefined): string {
+  if (!addr) return addr as unknown as string;
+  try { return normalizeAddress(addr); } catch { return addr; }
+}
 
 const router = Router();
 
@@ -77,7 +84,7 @@ router.get("/admin/kyc/pending", async (req, res) => {
 });
 
 router.post("/admin/kyc/:address/approve", async (req, res) => {
-  const { address } = req.params;
+  const address = toEth(req.params.address);
   const [updated] = await db.update(p2pProfiles)
     .set({ kycStatus: "verified", kycVerifiedAt: new Date(), updatedAt: new Date() })
     .where(and(
@@ -94,7 +101,7 @@ router.post("/admin/kyc/:address/approve", async (req, res) => {
 });
 
 router.post("/admin/kyc/:address/reject", async (req, res) => {
-  const { address } = req.params;
+  const address = toEth(req.params.address);
   const [updated] = await db.update(p2pProfiles)
     .set({ kycStatus: "rejected", updatedAt: new Date() })
     .where(and(
@@ -113,7 +120,7 @@ router.post("/admin/kyc/:address/reject", async (req, res) => {
 // ── Merchant ──────────────────────────────────────────────────────────────────
 
 router.post("/admin/merchant/:address/verify", async (req, res) => {
-  const { address } = req.params;
+  const address = toEth(req.params.address);
   const [profile] = await db.select().from(p2pProfiles)
     .where(eq(p2pProfiles.mxcAddress, address)).limit(1);
 
@@ -325,7 +332,7 @@ router.get("/admin/escrow/info", async (_req, res) => {
   const { isEscrowConfigured, getEscrowAddress } = await import("../escrow");
   res.json({
     configured: isEscrowConfigured(),
-    escrowAddress: isEscrowConfigured() ? getEscrowAddress() : null,
+    escrowAddress: isEscrowConfigured() ? toEth(getEscrowAddress()) : null,
   });
 });
 
@@ -345,7 +352,7 @@ router.get("/admin/escrow/orders", async (req, res) => {
   res.json({
     orders: rows,
     total: rows.length,
-    escrowAddress: isEscrowConfigured() ? getEscrowAddress() : null,
+    escrowAddress: isEscrowConfigured() ? toEth(getEscrowAddress()) : null,
   });
 });
 

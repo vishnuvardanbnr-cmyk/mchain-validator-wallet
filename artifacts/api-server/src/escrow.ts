@@ -26,6 +26,15 @@ export function mxcAddressToEthAddress(mxcAddress: string): `0x${string}` {
   return `0x${bytesToHex(bytes)}`;
 }
 
+/** Accepts either mxc1… bech32 or 0x… hex — always returns lowercase 0x hex. */
+export function normalizeAddress(addr: string): `0x${string}` {
+  if (addr.startsWith("0x") || addr.startsWith("0X"))
+    return addr.toLowerCase() as `0x${string}`;
+  if (addr.startsWith("mxc1"))
+    return mxcAddressToEthAddress(addr);
+  throw new Error(`Unrecognized address format: ${addr}`);
+}
+
 export function privateKeyToEthAddress(privateKeyHex: string): `0x${string}` {
   const privBytes = hexToBytes(privateKeyHex);
   const pubKeyBytes = secp256k1.getPublicKey(privBytes, true);
@@ -84,7 +93,7 @@ export async function broadcastMcTransaction(
   amountWei: string,
   privateKeyHex: string,
 ): Promise<string> {
-  const toEthAddr = mxcAddressToEthAddress(to);
+  const toEthAddr = normalizeAddress(to);
   const privKey = `0x${privateKeyHex}` as `0x${string}`;
   const account = privateKeyToAccount(privKey);
 
@@ -111,7 +120,7 @@ export async function broadcastUsdtTransaction(
 ): Promise<string> {
   const privKey = `0x${escrowPrivateKeyHex}` as `0x${string}`;
   const account = privateKeyToAccount(privKey);
-  const buyerEthAddress = mxcAddressToEthAddress(buyerMxcAddress);
+  const buyerEthAddress = normalizeAddress(buyerMxcAddress);
   const amountUnits = parseUnits(usdtAmount, USDT_DECIMALS);
 
   const client: WalletClient = createWalletClient({

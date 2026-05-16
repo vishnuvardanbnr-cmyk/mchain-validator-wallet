@@ -93,6 +93,16 @@ export function mxcAddressToEthAddress(mxcAddress: string): string {
   return "0x" + bytesToHex(bytes);
 }
 
+/** Convert a lowercase 0x ETH hex address back to MXC bech32 format. */
+export function ethAddressToMxc(ethAddress: string): string {
+  const hex = ethAddress.startsWith("0x") || ethAddress.startsWith("0X")
+    ? ethAddress.slice(2)
+    : ethAddress;
+  const bytes = new Uint8Array(hex.match(/.{1,2}/g)!.map(b => parseInt(b, 16)));
+  const words = bech32.toWords(bytes);
+  return bech32.encode("mxc", words);
+}
+
 // ── Minimal RLP encoder (for EVM transaction signing) ────────────────────────
 
 function bigintToMinimalBytes(n: bigint): Uint8Array {
