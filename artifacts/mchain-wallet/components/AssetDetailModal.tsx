@@ -433,7 +433,9 @@ export function AssetDetailModal({
       backgroundColor: colors.background,
       borderTopLeftRadius: 24, borderTopRightRadius: 24,
       borderTopWidth: 1, borderColor: colors.border,
-      maxHeight: "92%", paddingBottom: insets.bottom,
+      height: "92%",
+      paddingBottom: insets.bottom,
+      flexDirection: "column",
     },
     handle: { width: 36, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: "center", marginTop: 12, marginBottom: 4 },
     header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: colors.border },
@@ -501,30 +503,32 @@ export function AssetDetailModal({
               ))}
             </View>
 
-            {isLoading ? (
-              <ActivityIndicator color={colors.primary} style={{ marginTop: 40 }} />
-            ) : filtered.length === 0 ? (
-              <View style={s.empty}>
-                <Icon name="swap-horizontal-outline" size={40} color={colors.border} />
-                <Text style={s.emptyText}>No transactions</Text>
-                <Text style={s.emptyDesc}>
-                  {filter === "all"
-                    ? `No ${isToken ? tokenSymbol + " transfer" : ""} history found for this wallet.`
-                    : `No ${filter === "send" ? "sent" : "received"} transactions found.`}
-                </Text>
-              </View>
-            ) : (
-              <ScrollView showsVerticalScrollIndicator={false}>
-                {filtered.map((entry, i) => (
-                  <TxRow
-                    key={`${entry.hash}-${i}`}
-                    entry={entry}
-                    myEthAddress={myEthAddress}
-                    onPress={() => setSelectedEntry(entry)}
-                  />
-                ))}
-              </ScrollView>
-            )}
+            <View style={{ flex: 1 }}>
+              {isLoading ? (
+                <ActivityIndicator color={colors.primary} style={{ marginTop: 40 }} />
+              ) : filtered.length === 0 ? (
+                <View style={s.empty}>
+                  <Icon name="swap-horizontal-outline" size={40} color={colors.border} />
+                  <Text style={s.emptyText}>No transactions</Text>
+                  <Text style={s.emptyDesc}>
+                    {filter === "all"
+                      ? `No ${isToken ? tokenSymbol + " transfer" : ""} history found for this wallet.`
+                      : `No ${filter === "send" ? "sent" : "received"} transactions found.`}
+                  </Text>
+                </View>
+              ) : (
+                <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
+                  {filtered.map((entry, i) => (
+                    <TxRow
+                      key={`${entry.hash}-${i}`}
+                      entry={entry}
+                      myEthAddress={myEthAddress}
+                      onPress={() => setSelectedEntry(entry)}
+                    />
+                  ))}
+                </ScrollView>
+              )}
+            </View>
           </View>
         </View>
       </Modal>
