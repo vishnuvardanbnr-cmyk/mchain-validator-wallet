@@ -49,7 +49,12 @@ const mchain: Chain = {
 
 // ── USDT config ───────────────────────────────────────────────────────────────
 
-const USDT_CONTRACT = "0x07daf7bda0aaea88e910879b2cd6ec9ecdc87238" as const;
+function getUsdtContract(): `0x${string}` {
+  const addr = process.env["USDT_CONTRACT_ADDRESS"];
+  if (!addr) throw new Error("USDT_CONTRACT_ADDRESS is not configured");
+  return addr as `0x${string}`;
+}
+
 const USDT_DECIMALS = 6;
 
 const USDT_ABI = [
@@ -145,7 +150,7 @@ export async function broadcastUsdtTransaction(
   });
 
   const txHash = await client.writeContract({
-    address: USDT_CONTRACT,
+    address: getUsdtContract(),
     abi: USDT_ABI,
     functionName: "transfer",
     args: [buyerEthAddress, amountUnits],
