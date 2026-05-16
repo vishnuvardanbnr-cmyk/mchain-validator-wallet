@@ -10,7 +10,7 @@ import * as Haptics from "expo-haptics";
 import * as ImagePicker from "expo-image-picker";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator, KeyboardAvoidingView, Modal, Platform,
   Pressable, ScrollView, StyleSheet, Text, TextInput,
@@ -51,6 +51,14 @@ export function ProfileModal({ visible, onClose, profile }: Props) {
   const [pmSheet, setPmSheet] = useState<{ method: string } | null>(null);
   const [displayName, setDisplayName] = useState(profile?.displayName ?? "");
   const [phone, setPhone] = useState(profile?.phone ?? "");
+
+  // Re-sync fields every time the modal opens or the saved profile changes
+  useEffect(() => {
+    if (visible) {
+      setDisplayName(profile?.displayName ?? "");
+      setPhone(profile?.phone ?? "");
+    }
+  }, [visible, profile]);
   const [kycName, setKycName] = useState("");
   const [kycDoc, setKycDoc] = useState("passport");
   const [kycDocImage, setKycDocImage] = useState<string | null>(null);
@@ -90,9 +98,10 @@ export function ProfileModal({ visible, onClose, profile }: Props) {
   async function handleSaveProfile() {
     if (!mxcAddress) return;
     if (!displayName.trim()) { setToast("Enter a display name"); return; }
+    if (!phone.trim()) { setToast("Phone number is required"); return; }
     setLoading(true);
     try {
-      await p2pApi.upsertProfile({ mxcAddress, displayName: displayName.trim(), phone: phone.trim() || undefined });
+      await p2pApi.upsertProfile({ mxcAddress, displayName: displayName.trim(), phone: phone.trim() });
       queryClient.invalidateQueries({ queryKey: ["p2p_profile"] });
       if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setToast("Profile saved");
@@ -330,8 +339,8 @@ export function ProfileModal({ visible, onClose, profile }: Props) {
                     <Text style={s.label}>DISPLAY NAME</Text>
                     <TextInput style={s.input} value={displayName} onChangeText={setDisplayName} placeholder="Your trader name" placeholderTextColor={colors.mutedForeground} maxLength={50} />
 
-                    <Text style={s.label}>PHONE NUMBER (optional)</Text>
-                    <View style={s.phoneRow}>
+                    <Text style={s.label}>PHONE NUMBER <Text style={{ color: colors.destructive }}>*</Text></Text>
+                    <View style={[s.phoneRow, !phone.trim() && { borderColor: colors.border }]}>
                       <Icon name="phone-portrait-outline" size={16} color={colors.mutedForeground} />
                       <TextInput
                         style={[s.input, { flex: 1, marginBottom: 0 }]}
@@ -343,7 +352,7 @@ export function ProfileModal({ visible, onClose, profile }: Props) {
                         maxLength={20}
                       />
                     </View>
-                    <Text style={[s.kycSub, { marginBottom: 14 }]}>Visible only to your trade counterparty after order is confirmed</Text>
+                    <Text style={[s.kycSub, { marginBottom: 14 }]}>Required — visible only to your trade counterparty after order is confirmed</Text>
 
                     <TouchableOpacity style={[s.btn, loading && { opacity: 0.6 }]} onPress={handleSaveProfile} disabled={loading} activeOpacity={0.85}>
                       <LinearGradient colors={["#0EA5E9", "#0284C7"]} style={s.btnGrad}>
