@@ -433,7 +433,7 @@ export function AssetDetailModal({
       backgroundColor: colors.background,
       borderTopLeftRadius: 24, borderTopRightRadius: 24,
       borderTopWidth: 1, borderColor: colors.border,
-      height: "80%",
+      height: "70%",
       paddingBottom: insets.bottom,
       flexDirection: "column",
     },
