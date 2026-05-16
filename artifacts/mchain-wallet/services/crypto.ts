@@ -151,55 +151,72 @@ function rlpList(items: Uint8Array[]): Uint8Array {
   return out;
 }
 
-// ── EVM transaction signer (EIP-155, Type 0) ─────────────────────────────────
+// ── EVM transaction signer (EIP-1559, Type 2) ────────────────────────────────
+// Matches MetaMask's default format: maxFeePerGas = maxPriorityFeePerGas = 1 Gwei
+// (MChain has base fee = 0, so these values are identical to gasPrice)
 
 export function signEvmTransaction(
   toAddress: string,   // MXC bech32 (mxc1...) or 0x ETH address — both accepted
   valueWei: bigint,
   nonce: number,
   privateKeyHex: string,
-  options?: { gasPrice?: bigint; gasLimit?: bigint; chainId?: number }
+  options?: { maxPriorityFeePerGas?: bigint; maxFeePerGas?: bigint; gasLimit?: bigint; chainId?: number }
 ): string {
   const {
-    gasPrice = 1_000_000_000n,
-    gasLimit = 21_000n,
-    chainId = 1888,
+    maxPriorityFeePerGas = 1_000_000_000n, // 1 Gwei
+    maxFeePerGas         = 1_000_000_000n, // 1 Gwei (base fee = 0 on MChain)
+    gasLimit             = 21_000n,
+    chainId              = 1888,
   } = options ?? {};
 
   const resolved = toAddress.startsWith("mxc1") ? mxcAddressToEthAddress(toAddress) : toAddress;
   const toBytes = hexToBytes(resolved.startsWith("0x") ? resolved.slice(2) : resolved);
   const privBytes = hexToBytes(privateKeyHex);
 
-  const unsignedFields = [
+  // EIP-1559 unsigned payload: 0x02 || rlp([chainId, nonce, maxPriorityFeePerGas, maxFeePerGas, gasLimit, to, value, data, accessList])
+  const fields = [
+    rlpItem(bigintToMinimalBytes(BigInt(chainId))),
     rlpItem(bigintToMinimalBytes(BigInt(nonce))),
-    rlpItem(bigintToMinimalBytes(gasPrice)),
+    rlpItem(bigintToMinimalBytes(maxPriorityFeePerGas)),
+    rlpItem(bigintToMinimalBytes(maxFeePerGas)),
     rlpItem(bigintToMinimalBytes(gasLimit)),
     rlpItem(toBytes),
     rlpItem(bigintToMinimalBytes(valueWei)),
-    rlpItem(new Uint8Array(0)),
-    rlpItem(bigintToMinimalBytes(BigInt(chainId))),
-    rlpItem(new Uint8Array(0)),
-    rlpItem(new Uint8Array(0)),
+    rlpItem(new Uint8Array(0)), // data (empty)
+    rlpList([]),                 // accessList (empty)
   ];
-  const unsigned = rlpList(unsignedFields);
-  const hash = keccak_256(unsigned);
+  const unsignedRlp = rlpList(fields);
+  const payload = new Uint8Array(1 + unsignedRlp.length);
+  payload[0] = 0x02;
+  payload.set(unsignedRlp, 1);
 
+  const hash = keccak_256(payload);
   const sig = secp256k1.sign(hash, privBytes);
-  const v = BigInt(chainId) * 2n + 35n + BigInt(sig.recovery ?? 0);
+
+  // EIP-1559: v is just the recovery bit (0 or 1) — no chain_id multiplication
+  const v = BigInt(sig.recovery ?? 0);
 
   const signedFields = [
+    rlpItem(bigintToMinimalBytes(BigInt(chainId))),
     rlpItem(bigintToMinimalBytes(BigInt(nonce))),
-    rlpItem(bigintToMinimalBytes(gasPrice)),
+    rlpItem(bigintToMinimalBytes(maxPriorityFeePerGas)),
+    rlpItem(bigintToMinimalBytes(maxFeePerGas)),
     rlpItem(bigintToMinimalBytes(gasLimit)),
     rlpItem(toBytes),
     rlpItem(bigintToMinimalBytes(valueWei)),
-    rlpItem(new Uint8Array(0)),
+    rlpItem(new Uint8Array(0)), // data
+    rlpList([]),                 // accessList
     rlpItem(bigintToMinimalBytes(v)),
     rlpItem(bigintToMinimalBytes(sig.r)),
     rlpItem(bigintToMinimalBytes(sig.s)),
   ];
-  const signed = rlpList(signedFields);
-  return "0x" + bytesToHex(signed);
+  const signedRlp = rlpList(signedFields);
+
+  // Prepend the EIP-1559 type byte (0x02) to the signed RLP
+  const result = new Uint8Array(1 + signedRlp.length);
+  result[0] = 0x02;
+  result.set(signedRlp, 1);
+  return "0x" + bytesToHex(result);
 }
 
 export function mcToWei(mc: string): string {
