@@ -54,6 +54,7 @@ export default function SendScreen() {
   const successOpacity = useRef(new Animated.Value(0)).current;
   const checkRotate = useRef(new Animated.Value(0)).current;
   const hashOpacity = useRef(new Animated.Value(0)).current;
+  const scrollRef = useRef<ScrollView>(null);
 
   const { data: account, refetch: refetchAccount } = useQuery({
     queryKey: ["account", mxcAddress],
@@ -190,33 +191,39 @@ export default function SendScreen() {
     if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   }
 
-  function reset() {
+  function fullReset() {
+    // Stop any in-flight animations and return all values to neutral first
+    slideAnim.stopAnimation();
+    slideAnim.setValue(0);
+    successScale.setValue(0);
+    successOpacity.setValue(0);
+    checkRotate.setValue(0);
+    hashOpacity.setValue(0);
+    // Clear all form / UI state
     setStep("input");
     setRecipient("");
     setAmount("");
     setMemo("");
     setTxHash("");
     setError("");
-    successScale.setValue(0);
-    successOpacity.setValue(0);
-    checkRotate.setValue(0);
-    hashOpacity.setValue(0);
+    setShowRecent(false);
+    setShowScanner(false);
+    setRecipientFocused(false);
+    setAmountFocused(false);
+    // Scroll the input list back to the top so no stale offset is retained
+    requestAnimationFrame(() => {
+      scrollRef.current?.scrollTo({ y: 0, animated: false });
+    });
   }
 
   useFocusEffect(
     useCallback(() => {
+      // Reset everything when the screen goes out of focus so the next visit is fresh
       return () => {
-        setRecipient("");
-        setAmount("");
-        setMemo("");
-        setError("");
-        setStep("input");
-        successScale.setValue(0);
-        successOpacity.setValue(0);
-        checkRotate.setValue(0);
-        hashOpacity.setValue(0);
+        fullReset();
       };
-    }, [successScale, successOpacity, checkRotate, hashOpacity])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [])
   );
 
   const spin = checkRotate.interpolate({ inputRange: [0, 1], outputRange: ["0deg", "360deg"] });
@@ -432,10 +439,10 @@ export default function SendScreen() {
             <Text style={s.txHashText} numberOfLines={3}>{txHash}</Text>
           </TouchableOpacity>
           <View style={s.successBtnRow}>
-            <TouchableOpacity style={s.secondaryBtn} onPress={reset}>
+            <TouchableOpacity style={s.secondaryBtn} onPress={fullReset}>
               <Text style={s.secondaryBtnText}>Send Again</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={s.successBtn} onPress={() => { reset(); router.replace("/(tabs)"); }}>
+            <TouchableOpacity style={s.successBtn} onPress={() => { fullReset(); router.replace("/(tabs)"); }}>
               <LinearGradient colors={["#0EA5E9", "#0284C7"]} style={s.successBtnGrad}>
                 <Text style={s.successBtnText}>Done</Text>
               </LinearGradient>
@@ -533,6 +540,7 @@ export default function SendScreen() {
     <View style={s.container}>
       <Animated.View style={{ flex: 1, transform: [{ translateX: slideAnim }] }}>
         <ScrollView
+          ref={scrollRef}
           contentContainerStyle={s.scroll}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
