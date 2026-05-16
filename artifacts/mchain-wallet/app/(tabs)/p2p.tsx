@@ -221,16 +221,24 @@ export default function P2PScreen() {
   const [connectName, setConnectName] = useState("");
   const [connectPhone, setConnectPhone] = useState("");
   const [connectErr, setConnectErr] = useState("");
+  // true when both fields were loaded from AsyncStorage (previously saved)
+  const [savedCredentials, setSavedCredentials] = useState(false);
 
-  // Reset fields immediately when wallet switches, then load any saved name
+  // Reset fields immediately when wallet switches, then restore any saved values
   useEffect(() => {
     setConnectName("");
     setConnectPhone("");
     setConnectErr("");
+    setSavedCredentials(false);
     if (!mxcAddress) return;
-    AsyncStorage.getItem(`p2p_displayname_${mxcAddress}`)
-      .then((saved) => { if (saved) setConnectName(saved); })
-      .catch(() => {});
+    Promise.all([
+      AsyncStorage.getItem(`p2p_displayname_${mxcAddress}`),
+      AsyncStorage.getItem(`p2p_phone_${mxcAddress}`),
+    ]).then(([savedName, savedPhone]) => {
+      if (savedName) setConnectName(savedName);
+      if (savedPhone) setConnectPhone(savedPhone);
+      if (savedName && savedPhone) setSavedCredentials(true);
+    }).catch(() => {});
   }, [mxcAddress]);
 
   function handleDisconnect() {
@@ -274,8 +282,9 @@ export default function P2PScreen() {
         displayName: connectName.trim(),
         phone: connectPhone.trim(),
       });
-      // Persist display name so it pre-fills if user reconnects later
+      // Persist name + phone so they pre-fill (and lock) if user reconnects later
       AsyncStorage.setItem(`p2p_displayname_${mxcAddress}`, connectName.trim()).catch(() => {});
+      AsyncStorage.setItem(`p2p_phone_${mxcAddress}`, connectPhone.trim()).catch(() => {});
       void refetchProfile();
     } catch (e) {
       setConnectErr(e instanceof Error ? e.message : "Failed to connect");
@@ -387,26 +396,38 @@ export default function P2PScreen() {
           </View>
 
           <Text style={s.connectFieldLabel}>DISPLAY NAME *</Text>
-          <TextInput
-            style={[s.connectInput, connectErr && connectErr.includes("name") ? s.connectInputErr : null]}
-            value={connectName}
-            onChangeText={setConnectName}
-            placeholder="Your trader name (visible to others)"
-            placeholderTextColor={colors.mutedForeground}
-            maxLength={50}
-            autoCorrect={false}
-          />
+          {savedCredentials ? (
+            <View style={[s.connectInput, { justifyContent: "center", opacity: 0.7 }]} pointerEvents="none">
+              <Text style={{ fontSize: 14, fontFamily: "Inter_400Regular", color: colors.foreground }} selectable={false}>{connectName}</Text>
+            </View>
+          ) : (
+            <TextInput
+              style={[s.connectInput, connectErr && connectErr.includes("name") ? s.connectInputErr : null]}
+              value={connectName}
+              onChangeText={setConnectName}
+              placeholder="Your trader name (visible to others)"
+              placeholderTextColor={colors.mutedForeground}
+              maxLength={50}
+              autoCorrect={false}
+            />
+          )}
 
           <Text style={s.connectFieldLabel}>PHONE NUMBER <Text style={{ color: "#EF4444" }}>*</Text></Text>
-          <TextInput
-            style={[s.connectInput, connectErr && connectErr.includes("Phone") ? s.connectInputErr : null]}
-            value={connectPhone}
-            onChangeText={setConnectPhone}
-            placeholder="+1 234 567 890"
-            placeholderTextColor={colors.mutedForeground}
-            keyboardType="phone-pad"
-            maxLength={20}
-          />
+          {savedCredentials ? (
+            <View style={[s.connectInput, { justifyContent: "center", opacity: 0.7 }]} pointerEvents="none">
+              <Text style={{ fontSize: 14, fontFamily: "Inter_400Regular", color: colors.foreground }} selectable={false}>{connectPhone}</Text>
+            </View>
+          ) : (
+            <TextInput
+              style={[s.connectInput, connectErr && connectErr.includes("Phone") ? s.connectInputErr : null]}
+              value={connectPhone}
+              onChangeText={setConnectPhone}
+              placeholder="+1 234 567 890"
+              placeholderTextColor={colors.mutedForeground}
+              keyboardType="phone-pad"
+              maxLength={20}
+            />
+          )}
 
           {!!connectErr && (
             <View style={s.connectErrBox}>
