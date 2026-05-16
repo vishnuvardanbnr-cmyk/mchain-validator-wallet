@@ -439,7 +439,7 @@ export default function SendScreen() {
           </View>
           <TouchableOpacity
             style={[s.secondaryBtn, { marginTop: 12, flex: 0, width: "100%", flexDirection: "row", gap: 8 }]}
-            onPress={() => { reset(); router.replace("/(tabs)/"); }}
+            onPress={() => { reset(); router.replace("/(tabs)"); }}
             activeOpacity={0.8}
           >
             <Icon name="home-outline" size={16} color={colors.foreground} />
