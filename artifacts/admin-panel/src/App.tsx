@@ -9,7 +9,8 @@ import KYC from "@/pages/KYC";
 import Merchants from "@/pages/Merchants";
 import Disputes from "@/pages/Disputes";
 import Settings from "@/pages/Settings";
-import { Shield, LayoutDashboard, BadgeCheck, Store, AlertTriangle, LogOut, Settings as SettingsIcon } from "lucide-react";
+import Escrow from "@/pages/Escrow";
+import { Shield, LayoutDashboard, BadgeCheck, Store, AlertTriangle, LogOut, Settings as SettingsIcon, Lock } from "lucide-react";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: false, staleTime: 30_000 } },
@@ -23,6 +24,7 @@ function Nav({ onLogout }: { onLogout: () => void }) {
     { href: "/kyc", label: "KYC", Icon: BadgeCheck },
     { href: "/merchants", label: "Merchants", Icon: Store },
     { href: "/disputes", label: "Disputes", Icon: AlertTriangle },
+    { href: "/escrow", label: "Escrow", Icon: Lock },
     { href: "/settings", label: "Settings", Icon: SettingsIcon },
   ];
 
@@ -94,6 +96,7 @@ function AppShell() {
           <Route path="/kyc" component={KYC} />
           <Route path="/merchants" component={Merchants} />
           <Route path="/disputes" component={Disputes} />
+          <Route path="/escrow" component={Escrow} />
           <Route path="/settings" component={Settings} />
           <Route>
             <div className="p-8 text-muted-foreground">Page not found</div>

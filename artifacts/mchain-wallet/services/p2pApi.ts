@@ -62,8 +62,10 @@ export interface P2pOrder {
   paymentDetails?: string;
   sellerPaymentDetail?: PaymentDetail | null;
   status: "pending" | "paid" | "released" | "cancelled" | "disputed" | "resolved";
+  escrowStatus: "none" | "locked" | "released" | "refunded";
   escrowTxHash?: string;
   releaseTxHash?: string;
+  escrowLockedAt?: string;
   paymentDeadline: string;
   paidAt?: string;
   releasedAt?: string;
@@ -72,6 +74,11 @@ export interface P2pOrder {
   buyerProfile?: P2pProfile;
   sellerProfile?: P2pProfile;
   createdAt: string;
+}
+
+export interface EscrowInfo {
+  configured: boolean;
+  escrowAddress: string | null;
 }
 
 export interface P2pMessage {
@@ -172,6 +179,9 @@ export const p2pApi = {
     req<P2pOrder>(`/orders/${id}/pay`, { method: "POST", body: JSON.stringify({ address }) }),
   confirmRelease: (id: string, address: string) =>
     req<P2pOrder>(`/orders/${id}/release`, { method: "POST", body: JSON.stringify({ address }) }),
+  lockEscrow: (id: string, sellerAddress: string, txHash: string) =>
+    req<P2pOrder>(`/orders/${id}/lock-escrow`, { method: "POST", body: JSON.stringify({ sellerAddress, txHash }) }),
+  getEscrowInfo: () => req<EscrowInfo>("/escrow/info"),
   cancelOrder: (id: string, address: string, reason?: string) =>
     req<P2pOrder>(`/orders/${id}/cancel`, { method: "POST", body: JSON.stringify({ address, reason }) }),
 

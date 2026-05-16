@@ -319,4 +319,101 @@ router.put("/admin/settings/volume-tiers", async (req, res) => {
   res.json({ bronze, silver, gold, platinum });
 });
 
+// ── Escrow management ─────────────────────────────────────────────────────────
+
+router.get("/admin/escrow/info", async (_req, res) => {
+  const { isEscrowConfigured, getEscrowAddress } = await import("../escrow");
+  res.json({
+    configured: isEscrowConfigured(),
+    escrowAddress: isEscrowConfigured() ? getEscrowAddress() : null,
+  });
+});
+
+router.get("/admin/escrow/orders", async (req, res) => {
+  const { escrowStatus } = req.query as { escrowStatus?: string };
+  const filter = escrowStatus ?? "locked";
+
+  const rows = await db.select().from(p2pOrders)
+    .where(
+      filter === "all"
+        ? sql`${p2pOrders.escrowStatus} != 'none'`
+        : sql`${p2pOrders.escrowStatus} = ${filter}`
+    )
+    .orderBy(desc(p2pOrders.createdAt));
+
+  const { isEscrowConfigured, getEscrowAddress } = await import("../escrow");
+  res.json({
+    orders: rows,
+    total: rows.length,
+    escrowAddress: isEscrowConfigured() ? getEscrowAddress() : null,
+  });
+});
+
+router.post("/admin/escrow/orders/:id/release", async (req, res) => {
+  const { id } = req.params;
+  const [order] = await db.select().from(p2pOrders).where(eq(p2pOrders.id, id)).limit(1);
+  if (!order) { res.status(404).json({ error: "Order not found" }); return; }
+  if (order.escrowStatus !== "locked") { res.status(400).json({ error: "No locked escrow" }); return; }
+
+  const { broadcastMcTransaction, getEscrowAddress, getEscrowPrivateKey, mcToWei, isEscrowConfigured } = await import("../escrow");
+  let releaseTxHash: string | null = null;
+
+  if (order.token === "MC" && isEscrowConfigured()) {
+    try {
+      releaseTxHash = await broadcastMcTransaction(
+        getEscrowAddress(), order.buyerAddress, mcToWei(String(order.cryptoAmount)), getEscrowPrivateKey()
+      );
+    } catch (e) {
+      res.status(502).json({ error: `Broadcast failed: ${e instanceof Error ? e.message : "Unknown"}` });
+      return;
+    }
+  }
+
+  const setData: Record<string, unknown> = { escrowStatus: "released", updatedAt: new Date() };
+  if (releaseTxHash) setData.releaseTxHash = releaseTxHash;
+  if (!["released", "cancelled"].includes(order.status)) {
+    setData.status = "released";
+    setData.releasedAt = new Date();
+  }
+  const [updated] = await db.update(p2pOrders).set(setData).where(eq(p2pOrders.id, id)).returning();
+  await db.insert(p2pMessages).values({
+    orderId: id, senderAddress: "system",
+    content: `Admin released escrow to buyer.${releaseTxHash ? ` (tx: ${releaseTxHash.slice(0, 12)}…)` : " USDT will be sent manually."}`,
+    isSystem: true,
+  });
+  res.json(updated);
+});
+
+router.post("/admin/escrow/orders/:id/refund", async (req, res) => {
+  const { id } = req.params;
+  const { reason } = req.body as { reason?: string };
+  const [order] = await db.select().from(p2pOrders).where(eq(p2pOrders.id, id)).limit(1);
+  if (!order) { res.status(404).json({ error: "Order not found" }); return; }
+  if (order.escrowStatus !== "locked") { res.status(400).json({ error: "No locked escrow" }); return; }
+
+  const { broadcastMcTransaction, getEscrowAddress, getEscrowPrivateKey, mcToWei, isEscrowConfigured } = await import("../escrow");
+  let refundTxHash: string | null = null;
+
+  if (order.token === "MC" && isEscrowConfigured()) {
+    try {
+      refundTxHash = await broadcastMcTransaction(
+        getEscrowAddress(), order.sellerAddress, mcToWei(String(order.cryptoAmount)), getEscrowPrivateKey()
+      );
+    } catch (e) {
+      res.status(502).json({ error: `Broadcast failed: ${e instanceof Error ? e.message : "Unknown"}` });
+      return;
+    }
+  }
+
+  const setData: Record<string, unknown> = { escrowStatus: "refunded", updatedAt: new Date() };
+  if (refundTxHash) setData.releaseTxHash = refundTxHash;
+  const [updated] = await db.update(p2pOrders).set(setData).where(eq(p2pOrders.id, id)).returning();
+  await db.insert(p2pMessages).values({
+    orderId: id, senderAddress: "system",
+    content: `Admin refunded escrow to seller. Reason: ${reason ?? "Dispute resolution"}.${refundTxHash ? ` (tx: ${refundTxHash.slice(0, 12)}…)` : ""}`,
+    isSystem: true,
+  });
+  res.json(updated);
+});
+
 export default router;

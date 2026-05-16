@@ -2,7 +2,9 @@ import { Icon } from "@/components/Icon";
 import { Toast } from "@/components/Toast";
 import { useWallet } from "@/context/WalletContext";
 import { useColors } from "@/hooks/useColors";
-import { p2pApi, type P2pDispute, type P2pMessage, type P2pOrder } from "@/services/p2pApi";
+import { p2pApi, type P2pDispute, type P2pMessage, type P2pOrder, type EscrowInfo } from "@/services/p2pApi";
+import { api } from "@/services/api";
+import { mcToWei, signTransaction } from "@/services/crypto";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
@@ -52,7 +54,7 @@ interface Props {
 export function TradeRoomModal({ visible, orderId, onClose }: Props) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { mxcAddress } = useWallet();
+  const { mxcAddress, getPrivateKey } = useWallet();
   const queryClient = useQueryClient();
   const scrollRef = useRef<ScrollView>(null);
 
@@ -61,6 +63,8 @@ export function TradeRoomModal({ visible, orderId, onClose }: Props) {
   const [disputeReason, setDisputeReason] = useState("payment_not_received");
   const [disputeDesc, setDisputeDesc] = useState("");
   const [toast, setToast] = useState("");
+  const [usdtTxHash, setUsdtTxHash] = useState("");
+  const [showUsdtEscrow, setShowUsdtEscrow] = useState(false);
 
   const { data: order, isLoading: orderLoading } = useQuery({
     queryKey: ["p2p_order", orderId],
@@ -83,12 +87,21 @@ export function TradeRoomModal({ visible, orderId, onClose }: Props) {
     retry: false,
   });
 
+  const { data: escrowInfo } = useQuery({
+    queryKey: ["p2p_escrow_info"],
+    queryFn: () => p2pApi.getEscrowInfo(),
+    enabled: visible,
+    staleTime: 60_000,
+  });
+
   useEffect(() => {
     if (messages.length > 0) setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
   }, [messages.length]);
 
   const isBuyer = order?.buyerAddress === mxcAddress;
   const isSeller = order?.sellerAddress === mxcAddress;
+  const escrowStatus = order?.escrowStatus ?? "none";
+  const escrowLocked = escrowStatus === "locked";
 
   const sendMsg = useMutation({
     mutationFn: () => p2pApi.sendMessage(orderId, { senderAddress: mxcAddress!, content: msgText.trim() }),
@@ -120,10 +133,57 @@ export function TradeRoomModal({ visible, orderId, onClose }: Props) {
     onError: (e) => setToast(e instanceof Error ? e.message : "Failed to open dispute"),
   });
 
+  // ── Lock escrow (MC — automatic sign+broadcast) ───────────────────────────
+  const lockEscrowMc = useMutation({
+    mutationFn: async () => {
+      if (!mxcAddress || !order) throw new Error("No wallet or order");
+      if (!escrowInfo?.escrowAddress) throw new Error("Escrow not configured — contact admin");
+
+      const pk = await getPrivateKey();
+      if (!pk) throw new Error("Cannot access private key — unlock your wallet first");
+
+      const account = await api.getAccount(mxcAddress);
+      const amountWei = mcToWei(order.cryptoAmount);
+      const signature = signTransaction(mxcAddress, escrowInfo.escrowAddress, amountWei, account.nonce, pk);
+      const result = await api.sendTransaction({ from: mxcAddress, to: escrowInfo.escrowAddress, amount: amountWei, nonce: account.nonce, signature });
+      await p2pApi.lockEscrow(orderId, mxcAddress, result.txHash);
+      return result.txHash;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["p2p_order", orderId] });
+      queryClient.invalidateQueries({ queryKey: ["p2p_messages", orderId] });
+      setToast("Funds locked in escrow ✓");
+      if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    },
+    onError: (e) => setToast(e instanceof Error ? e.message : "Failed to lock escrow"),
+  });
+
+  // ── Lock escrow (USDT — manual, seller provides tx hash) ─────────────────
+  const lockEscrowUsdt = useMutation({
+    mutationFn: async () => {
+      if (!mxcAddress || !usdtTxHash.trim()) throw new Error("Enter your transaction hash");
+      await p2pApi.lockEscrow(orderId, mxcAddress, usdtTxHash.trim());
+    },
+    onSuccess: () => {
+      setShowUsdtEscrow(false);
+      setUsdtTxHash("");
+      queryClient.invalidateQueries({ queryKey: ["p2p_order", orderId] });
+      queryClient.invalidateQueries({ queryKey: ["p2p_messages", orderId] });
+      setToast("Escrow lock recorded ✓");
+      if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    },
+    onError: (e) => setToast(e instanceof Error ? e.message : "Failed"),
+  });
+
   function handleRelease() {
-    Alert.alert(
-      "Release Crypto",
-      `Confirm you have received the payment and want to release ${order?.cryptoAmount} ${order?.token} to the buyer.`,
+    const onChain = order?.token === "MC" && escrowLocked && escrowInfo?.configured;
+    const msg = onChain
+      ? `The platform will automatically broadcast a transfer of ${order?.cryptoAmount} MC from escrow to the buyer's wallet.`
+      : order?.token === "USDT" && escrowLocked
+      ? `USDT release will be processed by the platform admin within 24 hours after you confirm.`
+      : `Confirm you have received payment and want to release ${order?.cryptoAmount} ${order?.token} to the buyer.`;
+
+    Alert.alert("Release Crypto", msg,
       [{ text: "Cancel", style: "cancel" }, { text: "Release", style: "destructive", onPress: () => release.mutate() }]
     );
   }
@@ -132,6 +192,19 @@ export function TradeRoomModal({ visible, orderId, onClose }: Props) {
     Alert.alert("Cancel Order", "Are you sure you want to cancel this order?",
       [{ text: "No" }, { text: "Cancel Order", style: "destructive", onPress: () => cancelOrder.mutate() }]
     );
+  }
+
+  function handleLockEscrow() {
+    if (!order) return;
+    if (order.token === "MC") {
+      Alert.alert(
+        "Lock Funds in Escrow",
+        `This will send ${order.cryptoAmount} MC from your wallet to the platform escrow address. The funds will be released to the buyer once you confirm receipt of payment.`,
+        [{ text: "Cancel", style: "cancel" }, { text: "Lock Now", onPress: () => lockEscrowMc.mutate() }]
+      );
+    } else {
+      setShowUsdtEscrow(true);
+    }
   }
 
   const isTerminal = ["released", "cancelled", "resolved"].includes(order?.status ?? "");
@@ -152,6 +225,8 @@ export function TradeRoomModal({ visible, orderId, onClose }: Props) {
     orderLabel: { fontSize: 11, fontFamily: "Inter_400Regular", color: colors.mutedForeground },
     orderVal: { fontSize: 12, fontFamily: "Inter_600SemiBold", color: colors.foreground },
     orderAmount: { fontSize: 20, fontFamily: "Inter_700Bold", color: colors.primary, marginBottom: 4 },
+    escrowBadge: { flexDirection: "row", alignItems: "center", gap: 5, marginTop: 8, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, borderWidth: 1 },
+    escrowBadgeText: { fontSize: 11, fontFamily: "Inter_600SemiBold" },
     chat: { flex: 1, paddingHorizontal: 14 },
     msgWrap: { marginBottom: 8, maxWidth: "80%" },
     msgBubble: { borderRadius: 14, padding: 10 },
@@ -171,6 +246,11 @@ export function TradeRoomModal({ visible, orderId, onClose }: Props) {
     actionText: { fontSize: 13, fontFamily: "Inter_700Bold", color: "#FFF" },
     ghostBtn: { flex: 1, paddingVertical: 13, borderRadius: 12, borderWidth: 1, borderColor: colors.border, alignItems: "center" },
     ghostText: { fontSize: 13, fontFamily: "Inter_600SemiBold", color: colors.mutedForeground },
+    lockBtn: { borderRadius: 12, overflow: "hidden", marginBottom: 6 },
+    lockGrad: { paddingVertical: 14, alignItems: "center", flexDirection: "row", justifyContent: "center", gap: 8 },
+    lockText: { fontSize: 14, fontFamily: "Inter_700Bold", color: "#FFF" },
+    escrowBanner: { marginHorizontal: 14, marginBottom: 0, borderRadius: 10, borderWidth: 1, padding: 10, flexDirection: "row", alignItems: "center", gap: 8 },
+    escrowBannerText: { fontSize: 12, fontFamily: "Inter_600SemiBold", flex: 1, lineHeight: 17 },
     disputeSheet: { backgroundColor: colors.background, borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, paddingBottom: insets.bottom + 16 },
     disputeTitle: { fontSize: 17, fontFamily: "Inter_700Bold", color: "#EF4444", marginBottom: 14 },
     disputeLabel: { fontSize: 11, fontFamily: "Inter_600SemiBold", color: colors.mutedForeground, letterSpacing: 1.2, marginBottom: 8 },
@@ -182,6 +262,13 @@ export function TradeRoomModal({ visible, orderId, onClose }: Props) {
     disputeBtn: { borderRadius: 12, overflow: "hidden" },
     disputeGrad: { paddingVertical: 14, alignItems: "center" },
     disputeBtnText: { fontSize: 14, fontFamily: "Inter_700Bold", color: "#FFF" },
+    usdtSheet: { backgroundColor: colors.background, borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, paddingBottom: insets.bottom + 16 },
+    usdtTitle: { fontSize: 17, fontFamily: "Inter_700Bold", color: colors.foreground, marginBottom: 6 },
+    usdtDesc: { fontSize: 13, fontFamily: "Inter_400Regular", color: colors.mutedForeground, lineHeight: 20, marginBottom: 16 },
+    usdtAddrBox: { backgroundColor: colors.card, borderRadius: 10, borderWidth: 1, borderColor: colors.border, padding: 12, marginBottom: 14 },
+    usdtAddrLabel: { fontSize: 10, fontFamily: "Inter_600SemiBold", color: colors.mutedForeground, letterSpacing: 1, marginBottom: 4 },
+    usdtAddr: { fontSize: 12, fontFamily: "Inter_400Regular", color: colors.foreground },
+    usdtInput: { backgroundColor: colors.card, borderRadius: 10, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 14, paddingVertical: 12, fontSize: 13, fontFamily: "Inter_400Regular", color: colors.foreground, marginBottom: 14 },
   });
 
   return (
@@ -229,6 +316,38 @@ export function TradeRoomModal({ visible, orderId, onClose }: Props) {
                     <Countdown deadline={order.paymentDeadline} />
                   </View>
                 )}
+
+                {/* Escrow status */}
+                {escrowStatus === "none" && isSeller && !isTerminal && (
+                  <View style={[s.escrowBadge, { backgroundColor: "#F59E0B10", borderColor: "#F59E0B30" }]}>
+                    <Icon name="alert-triangle" size={13} color="#F59E0B" />
+                    <Text style={[s.escrowBadgeText, { color: "#F59E0B" }]}>Escrow not locked — buyer funds not protected yet</Text>
+                  </View>
+                )}
+                {escrowStatus === "locked" && (
+                  <View style={[s.escrowBadge, { backgroundColor: "#10B98115", borderColor: "#10B98140" }]}>
+                    <Icon name="shield-checkmark-outline" size={13} color="#10B981" />
+                    <Text style={[s.escrowBadgeText, { color: "#10B981" }]}>
+                      {order.cryptoAmount} {order.token} locked in escrow ✓ {isBuyer ? "— Safe to pay!" : ""}
+                    </Text>
+                  </View>
+                )}
+                {escrowStatus === "released" && (
+                  <View style={[s.escrowBadge, { backgroundColor: "#0EA5E915", borderColor: "#0EA5E940" }]}>
+                    <Icon name="checkmark-circle-outline" size={13} color="#0EA5E9" />
+                    <Text style={[s.escrowBadgeText, { color: "#0EA5E9" }]}>Escrow released to buyer on-chain</Text>
+                  </View>
+                )}
+              </View>
+            )}
+
+            {/* Escrow banner for buyer (when not locked) */}
+            {order && isBuyer && escrowStatus === "none" && !isTerminal && (
+              <View style={[s.escrowBanner, { backgroundColor: "#F59E0B08", borderColor: "#F59E0B25", marginBottom: 0 }]}>
+                <Icon name="alert-triangle" size={14} color="#F59E0B" />
+                <Text style={[s.escrowBannerText, { color: "#F59E0B" }]}>
+                  Waiting for seller to lock funds in escrow before you pay
+                </Text>
               </View>
             )}
 
@@ -258,7 +377,31 @@ export function TradeRoomModal({ visible, orderId, onClose }: Props) {
               {/* Action bar */}
               {!isTerminal && order && (
                 <View style={s.actionBar}>
-                  {/* Buyer actions */}
+                  {/* Seller: Lock escrow first */}
+                  {isSeller && order.status === "pending" && escrowStatus === "none" && (
+                    <>
+                      <TouchableOpacity style={[s.lockBtn, (lockEscrowMc.isPending) && { opacity: 0.6 }]} onPress={handleLockEscrow} activeOpacity={0.85} disabled={lockEscrowMc.isPending}>
+                        <LinearGradient colors={["#8B5CF6", "#7C3AED"]} style={s.lockGrad}>
+                          {lockEscrowMc.isPending
+                            ? <ActivityIndicator color="#FFF" size="small" />
+                            : <><Icon name="lock-closed-outline" size={15} color="#FFF" /><Text style={s.lockText}>Lock {order.cryptoAmount} {order.token} in Escrow</Text></>}
+                        </LinearGradient>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={s.ghostBtn} onPress={handleCancel}>
+                        <Text style={s.ghostText}>Cancel Order</Text>
+                      </TouchableOpacity>
+                    </>
+                  )}
+
+                  {/* Seller: Escrow locked, waiting for buyer */}
+                  {isSeller && order.status === "pending" && escrowStatus === "locked" && (
+                    <View style={[s.escrowBanner, { borderColor: "#10B98130", backgroundColor: "#10B98108", marginHorizontal: 0 }]}>
+                      <Icon name="shield-checkmark-outline" size={14} color="#10B981" />
+                      <Text style={[s.escrowBannerText, { color: "#10B981" }]}>Funds locked — waiting for buyer to send payment</Text>
+                    </View>
+                  )}
+
+                  {/* Buyer: Mark paid */}
                   {isBuyer && order.status === "pending" && (
                     <View style={s.actionRow}>
                       <TouchableOpacity style={s.actionBtn} onPress={() => markPaid.mutate()} activeOpacity={0.85} disabled={markPaid.isPending}>
@@ -277,7 +420,7 @@ export function TradeRoomModal({ visible, orderId, onClose }: Props) {
                     </TouchableOpacity>
                   )}
 
-                  {/* Seller actions */}
+                  {/* Seller: Release crypto */}
                   {isSeller && order.status === "paid" && (
                     <View style={s.actionRow}>
                       <TouchableOpacity style={s.actionBtn} onPress={handleRelease} activeOpacity={0.85} disabled={release.isPending}>
@@ -289,11 +432,6 @@ export function TradeRoomModal({ visible, orderId, onClose }: Props) {
                         <Text style={[s.ghostText, { color: "#EF4444" }]}>Dispute</Text>
                       </TouchableOpacity>
                     </View>
-                  )}
-                  {isSeller && order.status === "pending" && (
-                    <TouchableOpacity style={s.ghostBtn} onPress={handleCancel}>
-                      <Text style={s.ghostText}>Cancel Order</Text>
-                    </TouchableOpacity>
                   )}
                 </View>
               )}
@@ -340,6 +478,49 @@ export function TradeRoomModal({ visible, orderId, onClose }: Props) {
               <TouchableOpacity style={[s.disputeBtn, openDispute.isPending && { opacity: 0.6 }]} onPress={() => { if (disputeDesc.length < 10) { setToast("Describe the issue (min 10 chars)"); return; } openDispute.mutate(); }} disabled={openDispute.isPending}>
                 <LinearGradient colors={["#EF4444", "#DC2626"]} style={s.disputeGrad}>
                   {openDispute.isPending ? <ActivityIndicator color="#FFF" /> : <Text style={s.disputeBtnText}>Submit Dispute</Text>}
+                </LinearGradient>
+              </TouchableOpacity>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* USDT manual escrow sheet */}
+      <Modal visible={showUsdtEscrow} animationType="slide" transparent statusBarTranslucent>
+        <Pressable style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "flex-end" }} onPress={() => setShowUsdtEscrow(false)}>
+          <Pressable onPress={() => {}}>
+            <View style={s.usdtSheet}>
+              <Text style={s.usdtTitle}>Lock USDT in Escrow</Text>
+              <Text style={s.usdtDesc}>
+                Send exactly {order?.cryptoAmount} USDT to the escrow address below using your preferred USDT wallet or exchange. Then paste your transaction hash to confirm the lock.
+              </Text>
+              {escrowInfo?.escrowAddress ? (
+                <View style={s.usdtAddrBox}>
+                  <Text style={s.usdtAddrLabel}>ESCROW ADDRESS</Text>
+                  <Text style={s.usdtAddr}>{escrowInfo.escrowAddress}</Text>
+                </View>
+              ) : (
+                <View style={[s.usdtAddrBox, { backgroundColor: "#EF444410" }]}>
+                  <Text style={[s.usdtAddr, { color: "#EF4444" }]}>Escrow not configured — contact admin</Text>
+                </View>
+              )}
+              <Text style={s.disputeLabel}>YOUR TRANSACTION HASH</Text>
+              <TextInput
+                style={s.usdtInput}
+                value={usdtTxHash}
+                onChangeText={setUsdtTxHash}
+                placeholder="0x..."
+                placeholderTextColor={colors.mutedForeground}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+              <TouchableOpacity
+                style={[s.disputeBtn, (lockEscrowUsdt.isPending || !usdtTxHash.trim()) && { opacity: 0.6 }]}
+                onPress={() => lockEscrowUsdt.mutate()}
+                disabled={lockEscrowUsdt.isPending || !usdtTxHash.trim()}
+              >
+                <LinearGradient colors={["#8B5CF6", "#7C3AED"]} style={s.disputeGrad}>
+                  {lockEscrowUsdt.isPending ? <ActivityIndicator color="#FFF" /> : <Text style={s.disputeBtnText}>Confirm Lock</Text>}
                 </LinearGradient>
               </TouchableOpacity>
             </View>

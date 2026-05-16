@@ -362,6 +362,12 @@ importers:
 
   artifacts/api-server:
     dependencies:
+      '@noble/curves':
+        specifier: ^1.9.7
+        version: 1.9.7
+      '@noble/hashes':
+        specifier: ^1.8.0
+        version: 1.8.0
       '@workspace/api-zod':
         specifier: workspace:*
         version: link:../../lib/api-zod

@@ -7,6 +7,7 @@ import { z } from "zod";
 export const p2pTokenEnum = pgEnum("p2p_token", ["MC", "USDT"]);
 export const p2pSideEnum = pgEnum("p2p_side", ["buy", "sell"]);
 export const p2pAdStatusEnum = pgEnum("p2p_ad_status", ["active", "paused", "completed", "cancelled"]);
+export const p2pEscrowStatusEnum = pgEnum("p2p_escrow_status", ["none", "locked", "released", "refunded"]);
 export const p2pOrderStatusEnum = pgEnum("p2p_order_status", [
   "pending",       // order created, waiting for buyer to pay
   "paid",          // buyer marked as paid
@@ -90,6 +91,8 @@ export const p2pOrders = pgTable("p2p_orders", {
   status: p2pOrderStatusEnum("status").notNull().default("pending"),
   escrowTxHash: text("escrow_tx_hash"),
   releaseTxHash: text("release_tx_hash"),
+  escrowStatus: p2pEscrowStatusEnum("escrow_status").notNull().default("none"),
+  escrowLockedAt: timestamp("escrow_locked_at"),
   paymentDeadline: timestamp("payment_deadline").notNull(),
   paidAt: timestamp("paid_at"),
   releasedAt: timestamp("released_at"),

@@ -7,6 +7,10 @@ import {
 } from "@workspace/db";
 import { eq, and, or, desc, sql, count } from "drizzle-orm";
 import { z } from "zod";
+import {
+  broadcastMcTransaction, mcToWei, isEscrowConfigured,
+  getEscrowAddress, getEscrowPrivateKey,
+} from "../escrow";
 
 const router = Router();
 
@@ -281,15 +285,118 @@ router.post("/p2p/orders/:id/release", async (req, res) => {
   if (order.sellerAddress !== address) { res.status(403).json({ error: "Not the seller" }); return; }
   if (!["paid", "disputed"].includes(order.status)) { res.status(400).json({ error: "Cannot release at this stage" }); return; }
 
+  let releaseTxHash: string | null = null;
+
+  // ── On-chain release for MC orders with locked escrow ─────────────────────
+  if (order.token === "MC" && order.escrowStatus === "locked" && isEscrowConfigured()) {
+    try {
+      const escrowAddr = getEscrowAddress();
+      const escrowPk = getEscrowPrivateKey();
+      const amountWei = mcToWei(String(order.cryptoAmount));
+      releaseTxHash = await broadcastMcTransaction(escrowAddr, order.buyerAddress, amountWei, escrowPk);
+    } catch (e) {
+      res.status(502).json({ error: `Escrow release failed: ${e instanceof Error ? e.message : "Unknown error"}` });
+      return;
+    }
+  }
+
+  const setData: Record<string, unknown> = {
+    status: "released",
+    releasedAt: new Date(),
+    updatedAt: new Date(),
+    escrowStatus: order.escrowStatus === "locked" ? "released" : order.escrowStatus,
+  };
+  if (releaseTxHash) setData.releaseTxHash = releaseTxHash;
+
   const [updated] = await db.update(p2pOrders)
-    .set({ status: "released", releasedAt: new Date(), updatedAt: new Date() })
+    .set(setData)
     .where(eq(p2pOrders.id, id)).returning();
 
   // Update stats
   await db.update(p2pProfiles).set({ completedTrades: sql`${p2pProfiles.completedTrades} + 1`, totalTrades: sql`${p2pProfiles.totalTrades} + 1`, updatedAt: new Date() })
     .where(or(eq(p2pProfiles.mxcAddress, order.buyerAddress), eq(p2pProfiles.mxcAddress, order.sellerAddress)));
   await db.update(p2pAds).set({ completedOrders: sql`${p2pAds.completedOrders} + 1`, updatedAt: new Date() }).where(eq(p2pAds.id, order.adId));
-  await db.insert(p2pMessages).values({ orderId: id, senderAddress: "system", content: "Trade completed. Crypto has been released to the buyer.", isSystem: true });
+
+  const releaseMsg = releaseTxHash
+    ? `Trade completed. ${order.cryptoAmount} ${order.token} released to buyer on-chain (tx: ${releaseTxHash.slice(0, 12)}…).`
+    : order.token === "USDT" && order.escrowStatus === "locked"
+    ? "Trade completed. USDT release is being processed by admin — funds will arrive within 24 hours."
+    : "Trade completed. Crypto has been released to the buyer.";
+
+  await db.insert(p2pMessages).values({ orderId: id, senderAddress: "system", content: releaseMsg, isSystem: true });
+  res.json(updated);
+});
+
+// ── Escrow ─────────────────────────────────────────────────────────────────────
+
+router.get("/p2p/escrow/info", (_req, res) => {
+  if (!isEscrowConfigured()) {
+    res.json({ configured: false, escrowAddress: null });
+    return;
+  }
+  res.json({ configured: true, escrowAddress: getEscrowAddress() });
+});
+
+router.post("/p2p/orders/:id/lock-escrow", async (req, res) => {
+  const { id } = req.params;
+  const { sellerAddress, txHash } = req.body as { sellerAddress?: string; txHash?: string };
+  if (!sellerAddress || !txHash) { res.status(400).json({ error: "sellerAddress and txHash required" }); return; }
+
+  const [order] = await db.select().from(p2pOrders).where(eq(p2pOrders.id, id)).limit(1);
+  if (!order) { res.status(404).json({ error: "Order not found" }); return; }
+  if (order.sellerAddress !== sellerAddress) { res.status(403).json({ error: "Not the seller" }); return; }
+  if (order.escrowStatus !== "none") { res.status(409).json({ error: "Escrow already locked" }); return; }
+  if (!["pending", "paid"].includes(order.status)) { res.status(400).json({ error: "Cannot lock escrow at this stage" }); return; }
+
+  const [updated] = await db.update(p2pOrders)
+    .set({ escrowTxHash: txHash, escrowStatus: "locked", escrowLockedAt: new Date(), updatedAt: new Date() })
+    .where(eq(p2pOrders.id, id)).returning();
+
+  await db.insert(p2pMessages).values({
+    orderId: id, senderAddress: "system",
+    content: `Seller has locked ${order.cryptoAmount} ${order.token} in escrow (tx: ${txHash.slice(0, 12)}…). Funds are secured — buyer can safely proceed with payment.`,
+    isSystem: true,
+  });
+
+  res.json(updated);
+});
+
+router.post("/p2p/orders/:id/refund-escrow", async (req, res) => {
+  const { id } = req.params;
+  const { adminKey, reason } = req.body as { adminKey?: string; reason?: string };
+
+  const secret = process.env["ADMIN_SECRET"];
+  if (!secret || adminKey !== secret) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+  const [order] = await db.select().from(p2pOrders).where(eq(p2pOrders.id, id)).limit(1);
+  if (!order) { res.status(404).json({ error: "Order not found" }); return; }
+  if (order.escrowStatus !== "locked") { res.status(400).json({ error: "No locked escrow to refund" }); return; }
+
+  let refundTxHash: string | null = null;
+
+  if (order.token === "MC" && isEscrowConfigured()) {
+    try {
+      const escrowAddr = getEscrowAddress();
+      const escrowPk = getEscrowPrivateKey();
+      const amountWei = mcToWei(String(order.cryptoAmount));
+      refundTxHash = await broadcastMcTransaction(escrowAddr, order.sellerAddress, amountWei, escrowPk);
+    } catch (e) {
+      res.status(502).json({ error: `Refund broadcast failed: ${e instanceof Error ? e.message : "Unknown error"}` });
+      return;
+    }
+  }
+
+  const setData: Record<string, unknown> = { escrowStatus: "refunded", updatedAt: new Date() };
+  if (refundTxHash) setData.releaseTxHash = refundTxHash;
+
+  const [updated] = await db.update(p2pOrders).set(setData).where(eq(p2pOrders.id, id)).returning();
+
+  await db.insert(p2pMessages).values({
+    orderId: id, senderAddress: "system",
+    content: `Escrow refunded to seller by admin. Reason: ${reason ?? "Dispute resolved in seller's favour"}.${refundTxHash ? ` (tx: ${refundTxHash.slice(0, 12)}…)` : ""}`,
+    isSystem: true,
+  });
+
   res.json(updated);
 });
 
