@@ -337,7 +337,10 @@ export function ProfileModal({ visible, onClose, profile }: Props) {
                     </View>
 
                     <Text style={s.label}>DISPLAY NAME</Text>
-                    <TextInput style={s.input} value={displayName} onChangeText={setDisplayName} placeholder="Your trader name" placeholderTextColor={colors.mutedForeground} maxLength={50} />
+                    <View style={[s.input, { justifyContent: "center", opacity: 0.7 }]}>
+                      <Text style={{ fontSize: 14, fontFamily: "Inter_400Regular", color: colors.foreground }}>{displayName || "—"}</Text>
+                    </View>
+                    <Text style={[s.kycSub, { marginBottom: 14, marginTop: -8 }]}>Display name cannot be changed after registration</Text>
 
                     <Text style={s.label}>PHONE NUMBER <Text style={{ color: colors.destructive }}>*</Text></Text>
                     <View style={[s.phoneRow, !phone.trim() && { borderColor: colors.border }]}>

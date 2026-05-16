@@ -222,8 +222,11 @@ export default function P2PScreen() {
   const [connectPhone, setConnectPhone] = useState("");
   const [connectErr, setConnectErr] = useState("");
 
-  // Pre-fill display name from last-used value stored locally
+  // Reset fields immediately when wallet switches, then load any saved name
   useEffect(() => {
+    setConnectName("");
+    setConnectPhone("");
+    setConnectErr("");
     if (!mxcAddress) return;
     AsyncStorage.getItem(`p2p_displayname_${mxcAddress}`)
       .then((saved) => { if (saved) setConnectName(saved); })
@@ -259,13 +262,17 @@ export default function P2PScreen() {
       setConnectErr("Enter a display name (at least 2 characters)");
       return;
     }
+    if (!connectPhone.trim()) {
+      setConnectErr("Phone number is required");
+      return;
+    }
     setConnectErr("");
     setActivating(true);
     try {
       await p2pApi.upsertProfile({
         mxcAddress,
         displayName: connectName.trim(),
-        phone: connectPhone.trim() || undefined,
+        phone: connectPhone.trim(),
       });
       // Persist display name so it pre-fills if user reconnects later
       AsyncStorage.setItem(`p2p_displayname_${mxcAddress}`, connectName.trim()).catch(() => {});
@@ -279,6 +286,16 @@ export default function P2PScreen() {
 
   const profileReady = !profileLoading;
   const hasProfile = profile != null;
+
+  // Render a neutral loading state — prevents the P2P market from flashing
+  // before the profile query resolves and the connect-wallet screen appears.
+  if (profileLoading) {
+    return (
+      <View style={{ flex: 1, backgroundColor: colors.background, alignItems: "center", justifyContent: "center", paddingTop: insets.top }}>
+        <ActivityIndicator color={colors.primary} size="large" />
+      </View>
+    );
+  }
 
   const s = StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.background },
@@ -380,9 +397,9 @@ export default function P2PScreen() {
             autoCorrect={false}
           />
 
-          <Text style={s.connectFieldLabel}>PHONE NUMBER (optional)</Text>
+          <Text style={s.connectFieldLabel}>PHONE NUMBER <Text style={{ color: "#EF4444" }}>*</Text></Text>
           <TextInput
-            style={s.connectInput}
+            style={[s.connectInput, connectErr && connectErr.includes("Phone") ? s.connectInputErr : null]}
             value={connectPhone}
             onChangeText={setConnectPhone}
             placeholder="+1 234 567 890"
