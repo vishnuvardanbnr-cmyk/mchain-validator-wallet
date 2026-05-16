@@ -95,6 +95,8 @@ export interface ValidatorInfo {
   totalActiveMinutes: number;
   lastSeenAt: string;
   commissionRate: string;
+  joinedAt: string;
+  sessionStartedAt?: string;
   createdAt: string;
 }
 
@@ -107,30 +109,88 @@ export interface HeartbeatRecord {
   timestamp: string;
 }
 
-// ─── Epoch types ─────────────────────────────────────────────────────────────
-export interface Epoch {
-  id: number;
+// ─── Epoch types ──────────────────────────────────────────────────────────────
+
+/** Minimal epoch returned inside each heartbeat response */
+export interface OpenEpoch {
   epochNumber: number;
   blockHeight: number;
   blockHash: string;
-  eligibleCount: number;
-  signatureCount: number;
-  quorumReached: boolean;
   signingWindowClosesAt: string;
+}
+
+export interface EpochSigner {
+  address: string;
+  moniker: string;
+  signedAt: string;
+  signature: string;
+}
+
+/** Rich epoch item returned by the epoch history endpoint */
+export interface EpochHistoryItem {
+  epochNumber: number;
+  blockRange: {
+    from: number;
+    to: number;
+    checkpointBlock: number;
+    checkpointHash: string;
+  };
+  blockStats: {
+    blockCount: number;
+    txCount: number;
+    gasUsed: string;
+  };
+  quorum: {
+    reached: boolean;
+    signatureCount: number;
+    eligibleCount: number;
+    pct: string;
+  };
+  myParticipation: {
+    didSign: boolean;
+    signedAt: string | null;
+    signature: string | null;
+  };
+  signers: EpochSigner[];
+  status: "open" | "expired" | "finalized";
+  signingWindowClosesAt: string;
+  finalizedAt: string | null;
   createdAt: string;
+}
+
+export interface EpochsSummary {
+  totalEpochs: number;
+  signed: number;
+  missed: number;
+  open: number;
+  participationRate: string;
+}
+
+export interface EpochsPage {
+  address: string;
+  moniker: string;
+  summary: EpochsSummary;
+  epochs: EpochHistoryItem[];
+  total: number;
+  limit: number;
+  offset: number;
 }
 
 export interface HeartbeatResponse {
   ok: boolean;
   blockHeight?: number;
   timestamp?: string;
-  openEpoch?: Epoch | null;
+  isStaked?: boolean;
+  sessionExpiresAt?: string | null;
+  openEpoch?: OpenEpoch | null;
+  epochResult?: { ok: boolean; nowFinalized?: boolean; reason?: string } | null;
 }
 
 export interface ValidatorRestartResponse {
   ok: boolean;
   status: string;
   sessionStartedAt: string;
+  message: string;
 }
 
 export type SessionRestartResponse = ValidatorRestartResponse;
@@ -267,7 +327,7 @@ export const api = {
     address: string;
     batteryLevel: number;
     isCharging: boolean;
-    activeMinutes: number;
+    deviceSignature?: string;
     epochSignature?: { epochNumber: number; signature: string };
   }) =>
     request<HeartbeatResponse>("/validators/heartbeat", {
@@ -276,7 +336,7 @@ export const api = {
     }),
 
   pauseValidator: (address: string) =>
-    request<{ ok: boolean; status: string }>("/validators/pause", {
+    request<{ ok: boolean; status: string; message: string }>("/validators/pause", {
       method: "POST",
       body: JSON.stringify({ address }),
     }),
@@ -319,6 +379,11 @@ export const api = {
       `/validators/${encodeURIComponent(address)}/blocks?limit=${limit}&offset=${offset}`
     ),
 
+  getValidatorEpochs: (address: string, limit = 50, offset = 0) =>
+    request<EpochsPage>(
+      `/validators/${encodeURIComponent(address)}/epochs?limit=${limit}&offset=${offset}`
+    ),
+
   ping: () => request<unknown>("/ping"),
 
   rpcCall: (to: string, data: string) =>
@@ -330,21 +395,5 @@ export const api = {
         method: "eth_call",
         params: [{ to, data }, "latest"],
       }),
-    }),
-
-  // ── Epoch endpoints ─────────────────────────────────────────────────────────
-  getOpenEpoch: () =>
-    request<{ openEpoch: Epoch | null }>("/epochs/open"),
-
-  getEpoch: (epochNumber: number) =>
-    request<{ epoch: Epoch }>(`/epochs/${epochNumber}`),
-
-  getEpochs: () =>
-    request<{ epochs: Epoch[] }>("/epochs"),
-
-  signEpoch: (epochNumber: number, validatorAddress: string, signature: string) =>
-    request<{ ok: boolean; nowFinalized: boolean }>(`/epochs/${epochNumber}/sign`, {
-      method: "POST",
-      body: JSON.stringify({ validatorAddress, signature }),
     }),
 };

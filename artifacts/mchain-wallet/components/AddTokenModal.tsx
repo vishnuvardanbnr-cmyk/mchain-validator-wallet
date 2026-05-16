@@ -396,7 +396,7 @@ export function AddTokenModal({ visible, onClose, onAdded }: Props) {
               autoCorrect={false}
               autoCapitalize="none"
             />
-            <Text style={s.fieldHint}>Paste the {selectedVerified.symbol} contract address deployed on MChain (Chain ID 1888).</Text>
+            <Text style={s.fieldHint}>Paste the {selectedVerified.symbol} contract address deployed on MChain (Chain ID 1729).</Text>
 
             {error ? <Text style={s.errorText}>{error}</Text> : null}
 

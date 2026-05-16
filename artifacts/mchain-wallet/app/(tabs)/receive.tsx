@@ -233,7 +233,7 @@ export default function ReceiveScreen() {
         <View style={s.qrSection}>
           <View style={s.networkBadge}>
             <Icon name="flash-outline" size={12} color={colors.primary} />
-            <Text style={s.networkBadgeText}>MChain Network · Chain 1888</Text>
+            <Text style={s.networkBadgeText}>MChain Network · Chain 1729</Text>
           </View>
 
           <View style={s.qrOuter}>

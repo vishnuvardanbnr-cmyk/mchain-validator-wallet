@@ -497,7 +497,7 @@ export default function SettingsScreen() {
             </View>
             <View style={s.chainRow}>
               <Text style={s.chainLabel}>Chain ID</Text>
-              <Text style={s.chainValue}>{chainInfo?.chainId ?? "1888"}</Text>
+              <Text style={s.chainValue}>{chainInfo?.chainId ?? "1729"}</Text>
             </View>
             <View style={s.chainRow}>
               <Text style={s.chainLabel}>Block Height</Text>

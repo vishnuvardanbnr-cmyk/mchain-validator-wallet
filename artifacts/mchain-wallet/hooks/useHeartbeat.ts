@@ -2,10 +2,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Platform } from "react-native";
 import * as SecureStore from "expo-secure-store";
 import { useWallet } from "@/context/WalletContext";
-import { api, type Epoch } from "@/services/api";
+import { api, type OpenEpoch } from "@/services/api";
 import { signEpochBlockHash } from "@/services/crypto";
 
 type ApiError = Error & { status?: number; data?: Record<string, unknown> };
+
+// Heartbeat interval: 8 minutes as per spec
+const HEARTBEAT_INTERVAL_MS = 8 * 60 * 1000;
 
 export function useHeartbeat() {
   const {
@@ -19,16 +22,18 @@ export function useHeartbeat() {
   const walletId = validatorWallet?.id ?? null;
 
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const activeMinutesRef = useRef(0);
   const validatorAddressRef = useRef(validatorAddress);
   const walletIdRef = useRef(walletId);
   const stoppedRef = useRef(false);
 
+  // 429 backoff — epoch time (ms) after which we may retry
+  const retryAfterRef = useRef<number>(0);
+
   // Epoch state — tracked in refs to avoid re-render churn in the hot path,
   // but also exposed as React state for the UI.
-  const openEpochRef = useRef<Epoch | null>(null);
+  const openEpochRef = useRef<OpenEpoch | null>(null);
   const signedEpochsRef = useRef<Set<number>>(new Set());
-  const [openEpoch, setOpenEpoch] = useState<Epoch | null>(null);
+  const [openEpoch, setOpenEpoch] = useState<OpenEpoch | null>(null);
 
   useEffect(() => {
     validatorAddressRef.current = validatorAddress;
@@ -46,10 +51,7 @@ export function useHeartbeat() {
   const startInterval = useCallback((beat: () => void) => {
     stoppedRef.current = false;
     if (intervalRef.current) clearInterval(intervalRef.current);
-    intervalRef.current = setInterval(() => {
-      activeMinutesRef.current += 1;
-      beat();
-    }, 60_000);
+    intervalRef.current = setInterval(beat, HEARTBEAT_INTERVAL_MS);
   }, []);
 
   // Build an epoch signature if an open epoch exists, hasn't been signed yet,
@@ -80,6 +82,9 @@ export function useHeartbeat() {
     const address = validatorAddressRef.current;
     if (!address || stoppedRef.current) return;
 
+    // 429 backoff — skip if we're still in the retry window
+    if (Date.now() < retryAfterRef.current) return;
+
     let batteryLevel = 85;
     let isCharging = false;
 
@@ -104,13 +109,11 @@ export function useHeartbeat() {
         address,
         batteryLevel,
         isCharging,
-        activeMinutes: activeMinutesRef.current,
         ...(epochSignature ? { epochSignature } : {}),
       });
 
       setPendingHeartbeat(false);
       setValidatorStatus("active");
-      activeMinutesRef.current = 0;
 
       // Store the open epoch from the response for the next signing cycle
       const nextEpoch = resp.openEpoch ?? null;
@@ -119,16 +122,26 @@ export function useHeartbeat() {
     } catch (err: unknown) {
       const apiErr = err as ApiError;
 
+      if (apiErr?.status === 429) {
+        const retryAfterSeconds = (apiErr.data?.retryAfterSeconds as number) ?? 60;
+        retryAfterRef.current = Date.now() + retryAfterSeconds * 1000;
+        return;
+      }
+
       if (apiErr?.status === 403) {
         const errorMsg: string =
           (apiErr.data?.error as string) ??
           (apiErr.data?.message as string) ??
           "";
 
-        if (errorMsg === "validator_paused" || errorMsg.includes("paused")) {
+        if (
+          errorMsg === "validator_paused" ||
+          errorMsg.includes("paused") ||
+          (apiErr.data?.restartRequired as boolean)
+        ) {
           stopInterval();
           setValidatorStatus("paused");
-        } else if (errorMsg.includes("pending")) {
+        } else if (errorMsg.includes("pending") || errorMsg.includes("approval")) {
           setPendingHeartbeat(true);
           setValidatorStatus("pending");
         } else if (errorMsg.includes("inactive")) {
@@ -172,7 +185,7 @@ export function useHeartbeat() {
 
     const result = await api.restartSession(address);
     setValidatorStatus("active");
-    activeMinutesRef.current = 0;
+    retryAfterRef.current = 0;
     sendHeartbeat();
     startInterval(sendHeartbeat);
     return result;

@@ -1,13 +1,17 @@
 import * as BackgroundFetch from "expo-background-fetch";
 import * as TaskManager from "expo-task-manager";
+import * as SecureStore from "expo-secure-store";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Platform } from "react-native";
+import { signEpochBlockHash } from "./crypto";
 
 export const HEARTBEAT_TASK = "mchain-validator-heartbeat";
 
-const CHAIN_BASE = "https://chain.mvault.pro/api";
-const VALIDATOR_ADDRESS_KEY = "validatorAddress";
+const CHAIN_BASE = "https://api.mxc.org/api";
+const VALIDATOR_ADDRESS_KEY = "mchain_validator_address";
 const VALIDATOR_STATUS_KEY = "validatorStatus";
+const VALIDATOR_WALLET_ID_KEY = "mchain_validator_wallet_id";
+const OPEN_EPOCH_KEY = "mchain_open_epoch_v1";
 
 // ─── Define the background task at module top-level ───────────────────────────
 TaskManager.defineTask(HEARTBEAT_TASK, async () => {
@@ -38,17 +42,51 @@ TaskManager.defineTask(HEARTBEAT_TASK, async () => {
       }
     }
 
+    // ── Epoch signing ──────────────────────────────────────────────────────────
+    let epochSignature: { epochNumber: number; signature: string } | undefined;
+    try {
+      const epochJson = await AsyncStorage.getItem(OPEN_EPOCH_KEY);
+      if (epochJson) {
+        const storedEpoch = JSON.parse(epochJson) as {
+          epochNumber: number;
+          blockHash: string;
+          signingWindowClosesAt: string;
+        };
+        const windowClose = new Date(storedEpoch.signingWindowClosesAt);
+        if (windowClose > new Date()) {
+          const walletId = await AsyncStorage.getItem(VALIDATOR_WALLET_ID_KEY);
+          if (walletId) {
+            const pk = await SecureStore.getItemAsync(`mchain_pk_${walletId}`);
+            if (pk) {
+              const sig = signEpochBlockHash(storedEpoch.blockHash, pk);
+              epochSignature = { epochNumber: storedEpoch.epochNumber, signature: sig };
+            }
+          }
+        }
+      }
+    } catch {
+      // Signing unavailable — still send heartbeat without signature
+    }
+
+    const body: Record<string, unknown> = { address, batteryLevel, isCharging };
+    if (epochSignature) body.epochSignature = epochSignature;
+
     const response = await fetch(`${CHAIN_BASE}/validators/heartbeat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ address, batteryLevel, isCharging, activeMinutes: 15 }),
+      body: JSON.stringify(body),
     });
+
+    if (response.status === 429) {
+      // Too soon — back off, but don't change status
+      return BackgroundFetch.BackgroundFetchResult.NoData;
+    }
 
     if (response.status === 403) {
       const data = await response.json().catch(() => ({}));
       const errorMsg: string = data.error ?? data.message ?? "";
 
-      if (errorMsg === "validator_paused") {
+      if (errorMsg === "validator_paused" || data.restartRequired === true) {
         await AsyncStorage.setItem(VALIDATOR_STATUS_KEY, "paused");
         try {
           // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -74,6 +112,18 @@ TaskManager.defineTask(HEARTBEAT_TASK, async () => {
       return BackgroundFetch.BackgroundFetchResult.Failed;
     }
 
+    // Store open epoch from response for the next signing cycle
+    try {
+      const result = await response.json() as { openEpoch?: { epochNumber: number; blockHash: string; signingWindowClosesAt: string } | null };
+      if (result.openEpoch) {
+        await AsyncStorage.setItem(OPEN_EPOCH_KEY, JSON.stringify(result.openEpoch));
+      } else {
+        await AsyncStorage.removeItem(OPEN_EPOCH_KEY);
+      }
+    } catch {
+      // Ignore JSON parse errors
+    }
+
     await AsyncStorage.setItem(VALIDATOR_STATUS_KEY, "active");
     return BackgroundFetch.BackgroundFetchResult.NewData;
   } catch {
@@ -88,7 +138,7 @@ export async function registerHeartbeatTask(): Promise<void> {
     const isRegistered = await TaskManager.isTaskRegisteredAsync(HEARTBEAT_TASK);
     if (!isRegistered) {
       await BackgroundFetch.registerTaskAsync(HEARTBEAT_TASK, {
-        minimumInterval: 15 * 60, // 15 minutes
+        minimumInterval: 8 * 60, // 8 minutes as per spec
         stopOnTerminate: false,   // keep running on Android when app is closed
         startOnBoot: true,        // restart after phone reboot
       });

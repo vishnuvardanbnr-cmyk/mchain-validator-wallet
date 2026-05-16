@@ -22,6 +22,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useWallet } from "@/context/WalletContext";
 import {
   api,
+  type EpochHistoryItem,
+  type EpochsSummary,
   type GasReward,
   type TreasuryReward,
   type ValidatorBlock,
@@ -36,7 +38,7 @@ import { useHeartbeat } from "@/hooks/useHeartbeat";
 import { Toast } from "@/components/Toast";
 import { useColors } from "@/hooks/useColors";
 
-type SubTab = "treasury" | "gas" | "blocks";
+type SubTab = "treasury" | "gas" | "blocks" | "epochs";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function parsePeriodLabel(period: string): string {
@@ -122,101 +124,80 @@ export default function ValidatorScreen() {
   const [blocksInitLoading, setBlocksInitLoading] = useState(false);
   const [blocksError, setBlocksError] = useState<string | null>(null);
 
+  const [epochsItems, setEpochsItems] = useState<EpochHistoryItem[]>([]);
+  const [epochsTotal, setEpochsTotal] = useState(0);
+  const [epochsPage, setEpochsPage] = useState(0);
+  const [epochsInitLoading, setEpochsInitLoading] = useState(false);
+  const [epochsError, setEpochsError] = useState<string | null>(null);
+  const [epochsSummary, setEpochsSummary] = useState<EpochsSummary | null>(null);
+
   // ── Animation refs ──────────────────────────────────────────────────────────
   const pulseScale = useRef(new Animated.Value(1)).current;
   const pulseOpacity = useRef(new Animated.Value(0.6)).current;
   const ring2Scale = useRef(new Animated.Value(1)).current;
   const ring2Opacity = useRef(new Animated.Value(0.3)).current;
-  const expiredShake = useRef(new Animated.Value(0)).current;
   const cardFade = useRef(new Animated.Value(0)).current;
+  const expiredShake = useRef(new Animated.Value(0)).current;
 
-  // ── API queries ─────────────────────────────────────────────────────────────
-  const {
-    data: validatorData,
-    isLoading: validatorLoading,
-    refetch: refetchValidator,
-  } = useQuery({
+  // ── Validator data ──────────────────────────────────────────────────────────
+  const { data: validatorData, isLoading: validatorLoading, refetch: refetchValidator } = useQuery({
     queryKey: ["validatorDetail", mxcAddress],
     queryFn: () => api.getValidatorStatus(mxcAddress!),
     enabled: !!mxcAddress,
     refetchInterval: 30_000,
-    retry: 1,
   });
 
   const { data: earningsData, refetch: refetchEarnings } = useQuery({
-    queryKey: ["earnings", mxcAddress],
+    queryKey: ["validatorEarnings", mxcAddress],
     queryFn: () => api.getValidatorEarnings(mxcAddress!),
-    enabled: !!mxcAddress && !!validatorData?.validator,
+    enabled: !!mxcAddress,
     refetchInterval: 60_000,
-    retry: 1,
   });
 
   const validator = validatorData?.validator;
   const isRegistered = !!validator;
+  const isPaused = validator?.status === "paused" || ctxValidatorStatus === "paused";
+  const isInactive = validator?.status === "inactive";
+  const isBanned = validator?.status === "banned";
   const earnings = earningsData?.earnings;
   const stats = earningsData?.stats;
 
-  // ── Pagination loaders ──────────────────────────────────────────────────────
-  const LIMIT = 50;
-
-  const loadTreasury = useCallback(async (page: number) => {
-    if (!mxcAddress) return;
-    setTreasuryInitLoading(true);
-    setTreasuryError(null);
-    try {
-      const res = await api.getTreasuryRewards(mxcAddress, LIMIT, page * LIMIT);
-      setTreasuryItems(res.rewards);
-      setTreasuryTotal(res.total);
-      setTreasuryPage(page);
-    } catch (err) {
-      setTreasuryError(err instanceof Error ? err.message : "Failed to load");
-    } finally {
-      setTreasuryInitLoading(false);
-    }
-  }, [mxcAddress]);
-
-  const loadGas = useCallback(async (page: number) => {
-    if (!mxcAddress) return;
-    setGasInitLoading(true);
-    setGasError(null);
-    try {
-      const res = await api.getGasRewards(mxcAddress, LIMIT, page * LIMIT);
-      setGasItems(res.gasRewards);
-      setGasTotal(res.total);
-      setGasPage(page);
-    } catch (err) {
-      setGasError(err instanceof Error ? err.message : "Failed to load");
-    } finally {
-      setGasInitLoading(false);
-    }
-  }, [mxcAddress]);
-
-  const loadBlocks = useCallback(async (page: number) => {
-    if (!mxcAddress) return;
-    setBlocksInitLoading(true);
-    setBlocksError(null);
-    try {
-      const res = await api.getValidatorBlocks(mxcAddress, LIMIT, page * LIMIT);
-      setBlocksItems(res.blocks);
-      setBlocksTotal(res.total);
-      setBlocksPage(page);
-    } catch (err) {
-      setBlocksError(err instanceof Error ? err.message : "Failed to load");
-    } finally {
-      setBlocksInitLoading(false);
-    }
-  }, [mxcAddress]);
-
-  // Initial load when validator is registered
+  // ── Pulse animation ─────────────────────────────────────────────────────────
   useEffect(() => {
-    if (mxcAddress && isRegistered) loadTreasury(0);
-  }, [mxcAddress, isRegistered, loadTreasury]);
+    if (!isRegistered || isPaused || isInactive || isBanned) return;
+    Animated.loop(Animated.sequence([
+      Animated.timing(pulseScale, { toValue: 1.25, duration: 1200, easing: Easing.out(Easing.ease), useNativeDriver: true }),
+      Animated.timing(pulseScale, { toValue: 1, duration: 1200, easing: Easing.in(Easing.ease), useNativeDriver: true }),
+    ])).start();
+    Animated.loop(Animated.sequence([
+      Animated.timing(pulseOpacity, { toValue: 0, duration: 1200, useNativeDriver: true }),
+      Animated.timing(pulseOpacity, { toValue: 0.6, duration: 1200, useNativeDriver: true }),
+    ])).start();
+    Animated.loop(Animated.sequence([
+      Animated.timing(ring2Scale, { toValue: 1.5, duration: 2000, easing: Easing.out(Easing.ease), useNativeDriver: true }),
+      Animated.timing(ring2Scale, { toValue: 1, duration: 2000, easing: Easing.in(Easing.ease), useNativeDriver: true }),
+    ])).start();
+    Animated.loop(Animated.sequence([
+      Animated.timing(ring2Opacity, { toValue: 0, duration: 2000, useNativeDriver: true }),
+      Animated.timing(ring2Opacity, { toValue: 0.3, duration: 2000, useNativeDriver: true }),
+    ])).start();
+  }, [isRegistered, isPaused, isInactive, isBanned, pulseScale, pulseOpacity, ring2Scale, ring2Opacity]);
+
   useEffect(() => {
-    if (mxcAddress && isRegistered && activeTab === "gas" && gasItems.length === 0) loadGas(0);
-  }, [activeTab, mxcAddress, isRegistered, gasItems.length, loadGas]);
+    if (isPaused) {
+      Animated.sequence([
+        Animated.timing(expiredShake, { toValue: 8, duration: 80, useNativeDriver: true }),
+        Animated.timing(expiredShake, { toValue: -8, duration: 80, useNativeDriver: true }),
+        Animated.timing(expiredShake, { toValue: 6, duration: 80, useNativeDriver: true }),
+        Animated.timing(expiredShake, { toValue: -6, duration: 80, useNativeDriver: true }),
+        Animated.timing(expiredShake, { toValue: 0, duration: 80, useNativeDriver: true }),
+      ]).start();
+    }
+  }, [isPaused, expiredShake]);
+
   useEffect(() => {
-    if (mxcAddress && isRegistered && activeTab === "blocks" && blocksItems.length === 0) loadBlocks(0);
-  }, [activeTab, mxcAddress, isRegistered, blocksItems.length, loadBlocks]);
+    if (validator) Animated.timing(cardFade, { toValue: 1, duration: 500, useNativeDriver: true }).start();
+  }, [!!validator, cardFade]);
 
   // ── Registration mutation ───────────────────────────────────────────────────
   const registerMutation = useMutation({
@@ -227,60 +208,15 @@ export default function ValidatorScreen() {
       if (!regMoniker.trim()) throw new Error("Moniker cannot be empty");
       return api.registerValidator({ address: mxcAddress, ethAddress, publicKey, deviceId, moniker: regMoniker.trim(), commissionRate: rate.toFixed(2) });
     },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["validatorDetail", mxcAddress] }); setRegError(""); },
-    onError: (err: Error) => { setRegError(err.message || "Registration failed."); Alert.alert("Registration Failed", err.message || "Please try again."); },
+    onSuccess: (data) => {
+      setValidatorStatus(data.validator.status ?? "pending");
+      qc.invalidateQueries({ queryKey: ["validatorDetail", mxcAddress] });
+      registerHeartbeatTask();
+    },
+    onError: (err) => {
+      setRegError(err instanceof Error ? err.message : "Registration failed");
+    },
   });
-
-  // ── Derived state — declared before animation effects ────────────────────────
-  const isPaused = validator?.status === "paused" || sessionExpired || ctxValidatorStatus === "paused";
-  const isInactive = validator?.status === "inactive" || ctxValidatorStatus === "inactive";
-  const isBanned = validator?.status === "banned" || ctxValidatorStatus === "banned";
-
-  // ── Animations ──────────────────────────────────────────────────────────────
-  useEffect(() => {
-    let anim: Animated.CompositeAnimation | null = null;
-    if (validator?.status === "active" && !isPaused) {
-      anim = Animated.loop(Animated.parallel([
-        Animated.sequence([
-          Animated.timing(pulseScale, { toValue: 1.5, duration: 2000, useNativeDriver: true, easing: Easing.inOut(Easing.ease) }),
-          Animated.timing(pulseScale, { toValue: 1, duration: 2000, useNativeDriver: true, easing: Easing.inOut(Easing.ease) }),
-        ]),
-        Animated.sequence([
-          Animated.timing(pulseOpacity, { toValue: 0, duration: 2000, useNativeDriver: true }),
-          Animated.timing(pulseOpacity, { toValue: 0.5, duration: 2000, useNativeDriver: true }),
-        ]),
-        Animated.sequence([
-          Animated.timing(ring2Scale, { toValue: 2.2, duration: 2800, useNativeDriver: true, easing: Easing.inOut(Easing.ease) }),
-          Animated.timing(ring2Scale, { toValue: 1, duration: 0, useNativeDriver: true }),
-        ]),
-        Animated.sequence([
-          Animated.timing(ring2Opacity, { toValue: 0, duration: 2800, useNativeDriver: true }),
-          Animated.timing(ring2Opacity, { toValue: 0, duration: 0, useNativeDriver: true }),
-        ]),
-      ]));
-      anim.start();
-    } else {
-      pulseScale.setValue(1); pulseOpacity.setValue(0);
-      ring2Scale.setValue(1); ring2Opacity.setValue(0);
-    }
-    return () => anim?.stop();
-  }, [validator?.status, isPaused, pulseScale, pulseOpacity, ring2Scale, ring2Opacity]);
-
-  useEffect(() => {
-    if (isPaused) {
-      Animated.sequence([
-        Animated.timing(expiredShake, { toValue: 8, duration: 60, useNativeDriver: true }),
-        Animated.timing(expiredShake, { toValue: -8, duration: 60, useNativeDriver: true }),
-        Animated.timing(expiredShake, { toValue: 6, duration: 60, useNativeDriver: true }),
-        Animated.timing(expiredShake, { toValue: -6, duration: 60, useNativeDriver: true }),
-        Animated.timing(expiredShake, { toValue: 0, duration: 60, useNativeDriver: true }),
-      ]).start();
-    }
-  }, [isPaused, expiredShake]);
-
-  useEffect(() => {
-    if (validator) Animated.timing(cardFade, { toValue: 1, duration: 500, useNativeDriver: true }).start();
-  }, [!!validator, cardFade]);
 
   // ── Helpers ─────────────────────────────────────────────────────────────────
   async function handleRestartSession() {
@@ -346,29 +282,117 @@ export default function ValidatorScreen() {
     return "shield-half-outline";
   }
 
+  // ── Pagination loaders ──────────────────────────────────────────────────────
+  const LIMIT = 50;
+
+  const loadTreasury = useCallback(async (page: number) => {
+    if (!mxcAddress) return;
+    setTreasuryInitLoading(true);
+    setTreasuryError(null);
+    try {
+      const res = await api.getTreasuryRewards(mxcAddress, LIMIT, page * LIMIT);
+      setTreasuryItems(res.rewards);
+      setTreasuryTotal(res.total);
+      setTreasuryPage(page);
+    } catch (err) {
+      setTreasuryError(err instanceof Error ? err.message : "Failed to load");
+    } finally {
+      setTreasuryInitLoading(false);
+    }
+  }, [mxcAddress]);
+
+  const loadGas = useCallback(async (page: number) => {
+    if (!mxcAddress) return;
+    setGasInitLoading(true);
+    setGasError(null);
+    try {
+      const res = await api.getGasRewards(mxcAddress, LIMIT, page * LIMIT);
+      setGasItems(res.gasRewards);
+      setGasTotal(res.total);
+      setGasPage(page);
+    } catch (err) {
+      setGasError(err instanceof Error ? err.message : "Failed to load");
+    } finally {
+      setGasInitLoading(false);
+    }
+  }, [mxcAddress]);
+
+  const loadBlocks = useCallback(async (page: number) => {
+    if (!mxcAddress) return;
+    setBlocksInitLoading(true);
+    setBlocksError(null);
+    try {
+      const res = await api.getValidatorBlocks(mxcAddress, LIMIT, page * LIMIT);
+      setBlocksItems(res.blocks);
+      setBlocksTotal(res.total);
+      setBlocksPage(page);
+    } catch (err) {
+      setBlocksError(err instanceof Error ? err.message : "Failed to load");
+    } finally {
+      setBlocksInitLoading(false);
+    }
+  }, [mxcAddress]);
+
+  const loadEpochs = useCallback(async (page: number) => {
+    if (!mxcAddress) return;
+    setEpochsInitLoading(true);
+    setEpochsError(null);
+    try {
+      const res = await api.getValidatorEpochs(mxcAddress, LIMIT, page * LIMIT);
+      setEpochsItems(res.epochs);
+      setEpochsTotal(res.total);
+      setEpochsPage(page);
+      setEpochsSummary(res.summary);
+    } catch (err) {
+      setEpochsError(err instanceof Error ? err.message : "Failed to load");
+    } finally {
+      setEpochsInitLoading(false);
+    }
+  }, [mxcAddress]);
+
+  // Initial load when validator is registered
+  useEffect(() => {
+    if (mxcAddress && isRegistered) loadTreasury(0);
+  }, [mxcAddress, isRegistered, loadTreasury]);
+  useEffect(() => {
+    if (mxcAddress && isRegistered && activeTab === "gas" && gasItems.length === 0) loadGas(0);
+  }, [activeTab, mxcAddress, isRegistered, gasItems.length, loadGas]);
+  useEffect(() => {
+    if (mxcAddress && isRegistered && activeTab === "blocks" && blocksItems.length === 0) loadBlocks(0);
+  }, [activeTab, mxcAddress, isRegistered, blocksItems.length, loadBlocks]);
+  useEffect(() => {
+    if (mxcAddress && isRegistered && activeTab === "epochs" && epochsItems.length === 0) loadEpochs(0);
+  }, [activeTab, mxcAddress, isRegistered, epochsItems.length, loadEpochs]);
+
+  // ── Active tab helpers ──────────────────────────────────────────────────────
   function activeError() {
     if (activeTab === "treasury") return treasuryError;
     if (activeTab === "gas") return gasError;
+    if (activeTab === "epochs") return epochsError;
     return blocksError;
   }
   function activeInitLoading() {
     if (activeTab === "treasury") return treasuryInitLoading;
     if (activeTab === "gas") return gasInitLoading;
+    if (activeTab === "epochs") return epochsInitLoading;
     return blocksInitLoading;
   }
-  function activeItems(): (TreasuryReward | GasReward | ValidatorBlock)[] {
+  function activeItems(): (TreasuryReward | GasReward | ValidatorBlock | EpochHistoryItem)[] {
     if (activeTab === "treasury") return treasuryItems;
     if (activeTab === "gas") return gasItems;
+    if (activeTab === "epochs") return epochsItems;
     return blocksItems;
   }
   function activeTotalPages() {
     if (activeTab === "treasury") return Math.ceil(treasuryTotal / LIMIT);
     if (activeTab === "gas") return Math.ceil(gasTotal / LIMIT);
+    if (activeTab === "epochs") return Math.ceil(epochsTotal / LIMIT);
     return Math.ceil(blocksTotal / LIMIT);
   }
   function activePage() {
     if (activeTab === "treasury") return treasuryPage;
     if (activeTab === "gas") return gasPage;
+    if (activeTab === "epochs") return epochsPage;
     return blocksPage;
   }
   function handlePrevPage() {
@@ -376,6 +400,7 @@ export default function ValidatorScreen() {
     if (p === 0) return;
     if (activeTab === "treasury") loadTreasury(p - 1);
     else if (activeTab === "gas") loadGas(p - 1);
+    else if (activeTab === "epochs") loadEpochs(p - 1);
     else loadBlocks(p - 1);
   }
   function handleNextPage() {
@@ -383,19 +408,19 @@ export default function ValidatorScreen() {
     if (p >= activeTotalPages() - 1) return;
     if (activeTab === "treasury") loadTreasury(p + 1);
     else if (activeTab === "gas") loadGas(p + 1);
+    else if (activeTab === "epochs") loadEpochs(p + 1);
     else loadBlocks(p + 1);
   }
   function handleRetry() {
     if (activeTab === "treasury") loadTreasury(0);
     else if (activeTab === "gas") loadGas(0);
+    else if (activeTab === "epochs") loadEpochs(0);
     else loadBlocks(0);
   }
 
   // ── Styles ──────────────────────────────────────────────────────────────────
   const s = StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.background },
-
-    // Header
     header: {
       paddingTop: insets.top + (Platform.OS === "web" ? 67 : 18),
       paddingHorizontal: 20,
@@ -480,7 +505,7 @@ export default function ValidatorScreen() {
     statValue: { fontSize: 14, fontFamily: "Inter_700Bold", color: "#FFFFFF" },
     statSub: { fontSize: 9, fontFamily: "Inter_400Regular", color: "rgba(255,255,255,0.4)", marginTop: 2 },
 
-    // Session expired banner
+    // Session banners
     expiredBanner: {
       marginTop: 16, backgroundColor: "rgba(245,158,11,0.10)",
       borderRadius: 14, borderWidth: 1, borderColor: "rgba(245,158,11,0.35)",
@@ -530,8 +555,37 @@ export default function ValidatorScreen() {
     },
     tabBtn: { flex: 1, paddingVertical: 9, alignItems: "center", borderRadius: 10 },
     tabBtnActive: { backgroundColor: colors.primary + "20", borderWidth: 1, borderColor: colors.primary + "45" },
-    tabBtnText: { fontSize: 12, fontFamily: "Inter_600SemiBold", color: colors.mutedForeground },
+    tabBtnText: { fontSize: 11, fontFamily: "Inter_600SemiBold", color: colors.mutedForeground },
     tabBtnTextActive: { color: colors.primary },
+
+    // Epochs summary bar
+    epochsSummaryBar: {
+      flexDirection: "row", marginHorizontal: 20, marginBottom: 4,
+      backgroundColor: colors.card, borderRadius: 14,
+      borderWidth: 1, borderColor: colors.border,
+      padding: 14,
+    },
+    epochsStatBox: { flex: 1, alignItems: "center" },
+    epochsStatValue: { fontSize: 16, fontFamily: "Inter_700Bold", color: colors.foreground },
+    epochsStatLabel: { fontSize: 9, fontFamily: "Inter_600SemiBold", color: colors.mutedForeground, letterSpacing: 1, marginTop: 3 },
+
+    // Epoch checkpoint card (current open epoch from heartbeat)
+    epochCard: {
+      marginHorizontal: 20, borderRadius: 16, overflow: "hidden",
+      marginBottom: 14, borderWidth: 1, borderColor: "#0EA5E922",
+    },
+    epochGrad: { padding: 16 },
+    epochHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 },
+    epochTitle: { fontSize: 9, fontFamily: "Inter_700Bold", color: "rgba(255,255,255,0.45)", letterSpacing: 1.8 },
+    epochBadge: {
+      paddingHorizontal: 9, paddingVertical: 3, borderRadius: 20,
+      backgroundColor: "#0EA5E920", borderWidth: 1, borderColor: "#0EA5E950",
+    },
+    epochBadgeText: { fontSize: 10, fontFamily: "Inter_600SemiBold", color: "#0EA5E9" },
+    epochRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 10 },
+    epochNumber: { fontSize: 26, fontFamily: "Inter_700Bold", color: "#FFFFFF", lineHeight: 30 },
+    epochSub: { fontSize: 10, fontFamily: "Inter_400Regular", color: "rgba(255,255,255,0.4)", marginTop: 2 },
+    epochWindow: { fontSize: 13, fontFamily: "Inter_600SemiBold", color: "#0EA5E9", textAlign: "right" },
 
     // Table header (blocks)
     tableHeader: {
@@ -554,7 +608,7 @@ export default function ValidatorScreen() {
     retryBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, backgroundColor: "#EF444420" },
     retryText: { fontSize: 12, fontFamily: "Inter_600SemiBold", color: "#F87171" },
 
-    // Row items
+    // Row items — treasury
     treasuryRow: { paddingHorizontal: 20, paddingVertical: 13, borderBottomWidth: 1, borderBottomColor: colors.border },
     treasuryTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 7 },
     treasuryPeriod: { fontSize: 13, fontFamily: "Inter_500Medium", color: colors.foreground, flex: 1 },
@@ -566,6 +620,7 @@ export default function ValidatorScreen() {
     statusChip: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 },
     statusChipText: { fontSize: 9, fontFamily: "Inter_700Bold" },
 
+    // Row items — gas
     gasRow: { paddingHorizontal: 20, paddingVertical: 13, borderBottomWidth: 1, borderBottomColor: colors.border },
     gasTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 4 },
     gasBlock: { fontSize: 13, fontFamily: "Inter_600SemiBold", color: colors.foreground },
@@ -576,32 +631,7 @@ export default function ValidatorScreen() {
     splitChipText: { fontSize: 9, fontFamily: "Inter_700Bold" },
     gasTime: { fontSize: 11, fontFamily: "Inter_400Regular", color: colors.mutedForeground, marginTop: 3 },
 
-    // Epoch checkpoint card
-    epochCard: {
-      marginHorizontal: 20, borderRadius: 16, overflow: "hidden",
-      marginBottom: 14, borderWidth: 1, borderColor: "#0EA5E922",
-    },
-    epochGrad: { padding: 16 },
-    epochHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 },
-    epochTitle: { fontSize: 9, fontFamily: "Inter_700Bold", color: "rgba(255,255,255,0.45)", letterSpacing: 1.8 },
-    epochBadge: {
-      paddingHorizontal: 9, paddingVertical: 3, borderRadius: 20,
-      backgroundColor: "#0EA5E920", borderWidth: 1, borderColor: "#0EA5E950",
-    },
-    epochBadgeText: { fontSize: 10, fontFamily: "Inter_600SemiBold", color: "#0EA5E9" },
-    epochRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 14 },
-    epochNumber: { fontSize: 26, fontFamily: "Inter_700Bold", color: "#FFFFFF", lineHeight: 30 },
-    epochSub: { fontSize: 10, fontFamily: "Inter_400Regular", color: "rgba(255,255,255,0.4)", marginTop: 2 },
-    epochWindow: { fontSize: 13, fontFamily: "Inter_600SemiBold", color: "#0EA5E9", textAlign: "right" },
-    epochProgressWrap: {
-      height: 5, borderRadius: 3,
-      backgroundColor: "rgba(255,255,255,0.08)",
-      overflow: "hidden", marginBottom: 7,
-    },
-    epochProgressBar: { height: 5, borderRadius: 3 },
-    epochProgressLabels: { flexDirection: "row", justifyContent: "space-between" },
-    epochProgressText: { fontSize: 10, fontFamily: "Inter_400Regular", color: "rgba(255,255,255,0.4)" },
-
+    // Row items — blocks
     blockRow: { flexDirection: "row", alignItems: "center", paddingHorizontal: 20, paddingVertical: 11, borderBottomWidth: 1, borderBottomColor: colors.border },
     blockRowHighlight: { borderLeftWidth: 3, borderLeftColor: "#10B98155", paddingLeft: 17 },
     blockHeight: { width: 84, fontSize: 13, fontFamily: "Inter_600SemiBold", color: colors.foreground },
@@ -609,6 +639,31 @@ export default function ValidatorScreen() {
     blockGas: { flex: 1, fontSize: 12, fontFamily: "Inter_400Regular", color: colors.mutedForeground },
     blockTime: { width: 94, fontSize: 10, fontFamily: "Inter_400Regular", color: colors.mutedForeground, textAlign: "right" },
 
+    // Row items — epoch history
+    epochHistoryRow: {
+      paddingHorizontal: 20, paddingVertical: 13,
+      borderBottomWidth: 1, borderBottomColor: colors.border,
+    },
+    epochHistoryTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 6 },
+    epochHistoryNum: { fontSize: 14, fontFamily: "Inter_700Bold", color: colors.foreground },
+    epochHistoryStatusBadge: {
+      paddingHorizontal: 7, paddingVertical: 2, borderRadius: 8,
+      borderWidth: 1,
+    },
+    epochHistoryStatusText: { fontSize: 10, fontFamily: "Inter_600SemiBold" },
+    epochHistoryParticipation: {
+      paddingHorizontal: 7, paddingVertical: 2, borderRadius: 8,
+      borderWidth: 1,
+    },
+    epochHistoryParticipationText: { fontSize: 10, fontFamily: "Inter_600SemiBold" },
+    epochHistoryMid: { flexDirection: "row", justifyContent: "space-between", marginBottom: 4 },
+    epochHistoryBlocks: { fontSize: 12, fontFamily: "Inter_400Regular", color: colors.mutedForeground },
+    epochHistoryQuorum: { fontSize: 12, fontFamily: "Inter_500Medium", color: colors.mutedForeground },
+    epochHistoryBottom: { flexDirection: "row", justifyContent: "space-between" },
+    epochHistoryStats: { fontSize: 11, fontFamily: "Inter_400Regular", color: colors.mutedForeground + "AA" },
+    epochHistoryTime: { fontSize: 11, fontFamily: "Inter_400Regular", color: colors.mutedForeground + "AA" },
+
+    // Pagination
     paginationRow: {
       flexDirection: "row", alignItems: "center", justifyContent: "space-between",
       marginHorizontal: 20, marginVertical: 16,
@@ -686,6 +741,61 @@ export default function ValidatorScreen() {
     );
   }
 
+  function EpochRowItem({ item }: { item: EpochHistoryItem }) {
+    const statusC =
+      item.status === "finalized" ? "#10B981" :
+      item.status === "open" ? "#0EA5E9" : "#6B7280";
+    const statusLbl =
+      item.status === "finalized" ? "✓ Finalized" :
+      item.status === "open" ? "⟳ Open" : "✗ Expired";
+
+    const secsLeft = item.status === "open"
+      ? Math.max(0, Math.floor((new Date(item.signingWindowClosesAt).getTime() - Date.now()) / 1000))
+      : 0;
+    const timeLabel = item.status === "open"
+      ? `${Math.floor(secsLeft / 60)}m ${(secsLeft % 60).toString().padStart(2, "0")}s`
+      : item.finalizedAt
+      ? formatTimestamp(item.finalizedAt)
+      : formatTimestamp(item.createdAt);
+
+    return (
+      <View style={s.epochHistoryRow}>
+        <View style={s.epochHistoryTop}>
+          <Text style={s.epochHistoryNum}>Epoch #{item.epochNumber}</Text>
+          <View style={{ flexDirection: "row", gap: 5 }}>
+            <View style={[s.epochHistoryStatusBadge, { backgroundColor: statusC + "15", borderColor: statusC + "40" }]}>
+              <Text style={[s.epochHistoryStatusText, { color: statusC }]}>{statusLbl}</Text>
+            </View>
+            <View style={[s.epochHistoryParticipation, {
+              backgroundColor: item.myParticipation.didSign ? "#10B98115" : "#6B728015",
+              borderColor: item.myParticipation.didSign ? "#10B98140" : "#6B728035",
+            }]}>
+              <Text style={[s.epochHistoryParticipationText, {
+                color: item.myParticipation.didSign ? "#10B981" : "#6B7280",
+              }]}>
+                {item.myParticipation.didSign ? "✓ Signed" : "— Missed"}
+              </Text>
+            </View>
+          </View>
+        </View>
+        <View style={s.epochHistoryMid}>
+          <Text style={s.epochHistoryBlocks}>
+            Blocks {item.blockRange.from.toLocaleString()}–{item.blockRange.to.toLocaleString()}
+          </Text>
+          <Text style={s.epochHistoryQuorum}>
+            {item.quorum.signatureCount}/{item.quorum.eligibleCount} sigs · {item.quorum.pct}%
+          </Text>
+        </View>
+        <View style={s.epochHistoryBottom}>
+          <Text style={s.epochHistoryStats}>
+            {item.blockStats.txCount} txs · {item.blockStats.blockCount} blocks
+          </Text>
+          <Text style={s.epochHistoryTime}>{timeLabel}</Text>
+        </View>
+      </View>
+    );
+  }
+
   // ── Loading state ────────────────────────────────────────────────────────────
   if (validatorLoading) {
     return (
@@ -710,7 +820,6 @@ export default function ValidatorScreen() {
         start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
         style={s.heroGrad}
       >
-        {/* Top row: name + status */}
         <View style={s.heroTopRow}>
           <View style={s.heroNameWrap}>
             <Text style={s.heroLabel}>VALIDATOR NODE</Text>
@@ -725,7 +834,6 @@ export default function ValidatorScreen() {
           </View>
         </View>
 
-        {/* Pulsing ring */}
         <View style={s.pulseCenter}>
           <Animated.View style={[s.pulseRing2, { borderColor: activeColor, transform: [{ scale: ring2Scale }], opacity: ring2Opacity }]} />
           <Animated.View style={[s.pulseRing, { borderColor: activeColor, transform: [{ scale: pulseScale }], opacity: pulseOpacity }]} />
@@ -734,7 +842,6 @@ export default function ValidatorScreen() {
           </View>
         </View>
 
-        {/* Stats grid */}
         <View style={s.statsGrid}>
           <View style={s.statBox}>
             <Text style={s.statLabel}>UPTIME</Text>
@@ -760,14 +867,8 @@ export default function ValidatorScreen() {
           </View>
         </View>
 
-        {/* Pause button — only when active */}
         {validator.status === "active" && !isPaused && (
-          <TouchableOpacity
-            style={s.pauseBtn}
-            onPress={handlePauseValidator}
-            disabled={restartLoading}
-            activeOpacity={0.75}
-          >
+          <TouchableOpacity style={s.pauseBtn} onPress={handlePauseValidator} disabled={restartLoading} activeOpacity={0.75}>
             {restartLoading ? (
               <ActivityIndicator color="rgba(255,255,255,0.6)" size="small" />
             ) : (
@@ -779,12 +880,11 @@ export default function ValidatorScreen() {
           </TouchableOpacity>
         )}
 
-        {/* Paused banner — restart CTA */}
         {isPaused && (
           <View style={s.expiredBanner}>
             <Text style={s.expiredTitle}>⚠ Validator Paused</Text>
             <Text style={s.expiredDesc}>
-              No heartbeat received for 3 hours. Restart to resume earning rewards.
+              No heartbeat received. Restart to resume earning rewards.
             </Text>
             <TouchableOpacity style={s.restartBtn} onPress={handleRestartSession} disabled={restartLoading} activeOpacity={0.85}>
               <LinearGradient colors={["#F59E0B", "#D97706"]} style={s.restartGrad}>
@@ -799,7 +899,6 @@ export default function ValidatorScreen() {
           </View>
         )}
 
-        {/* Inactive/banned banner */}
         {(isInactive || isBanned) && (
           <View style={[s.expiredBanner, { borderColor: "rgba(239,68,68,0.35)", backgroundColor: "rgba(239,68,68,0.08)" }]}>
             <Text style={[s.expiredTitle, { color: "#EF4444" }]}>
@@ -816,7 +915,7 @@ export default function ValidatorScreen() {
     </Animated.View>
   ) : null;
 
-  // ── Epoch checkpoint card ────────────────────────────────────────────────────
+  // ── Epoch checkpoint card (current open epoch from heartbeat) ────────────────
   const EpochCard = openEpoch ? (() => {
     const windowClose = new Date(openEpoch.signingWindowClosesAt);
     const now = new Date();
@@ -824,32 +923,26 @@ export default function ValidatorScreen() {
     const minsLeft = Math.floor(secsLeft / 60);
     const secsRem = secsLeft % 60;
     const windowOpen = secsLeft > 0;
-    const quorumPct = openEpoch.eligibleCount > 0
-      ? openEpoch.signatureCount / openEpoch.eligibleCount
-      : 0;
-    const quorumColor = openEpoch.quorumReached ? "#10B981" : windowOpen ? "#0EA5E9" : "#F59E0B";
 
     return (
       <View style={s.epochCard}>
         <LinearGradient colors={["#071A2E", "#040F1C"]} style={s.epochGrad}>
-          {/* Header */}
           <View style={s.epochHeader}>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 7 }}>
               <Icon name="checkmark-circle-outline" size={13} color="#0EA5E9" />
               <Text style={s.epochTitle}>EPOCH CHECKPOINT</Text>
             </View>
-            <View style={[s.epochBadge, openEpoch.quorumReached && { backgroundColor: "#10B98120", borderColor: "#10B98150" }]}>
-              <Text style={[s.epochBadgeText, openEpoch.quorumReached && { color: "#10B981" }]}>
-                {openEpoch.quorumReached ? "Finalized" : windowOpen ? "Open" : "Expired"}
+            <View style={[s.epochBadge, !windowOpen && { backgroundColor: "#F59E0B20", borderColor: "#F59E0B50" }]}>
+              <Text style={[s.epochBadgeText, !windowOpen && { color: "#F59E0B" }]}>
+                {windowOpen ? "Open" : "Window Closed"}
               </Text>
             </View>
           </View>
 
-          {/* Epoch number + window */}
           <View style={s.epochRow}>
             <View>
               <Text style={s.epochNumber}>#{openEpoch.epochNumber}</Text>
-              <Text style={s.epochSub}>Block {openEpoch.blockHeight.toLocaleString()}</Text>
+              <Text style={s.epochSub}>Checkpoint block {openEpoch.blockHeight.toLocaleString()}</Text>
             </View>
             <View style={{ alignItems: "flex-end" }}>
               <Text style={[s.epochWindow, !windowOpen && { color: "#F59E0B" }]}>
@@ -860,17 +953,9 @@ export default function ValidatorScreen() {
               <Text style={s.epochSub}>signing window</Text>
             </View>
           </View>
-
-          {/* Quorum progress bar */}
-          <View style={s.epochProgressWrap}>
-            <View style={[s.epochProgressBar, { width: `${Math.round(quorumPct * 100)}%` as `${number}%`, backgroundColor: quorumColor }]} />
-          </View>
-          <View style={s.epochProgressLabels}>
-            <Text style={[s.epochProgressText, { color: quorumColor }]}>
-              {openEpoch.signatureCount}/{openEpoch.eligibleCount} validators signed
-            </Text>
-            <Text style={s.epochProgressText}>51% quorum required</Text>
-          </View>
+          <Text style={{ fontSize: 10, fontFamily: "Inter_400Regular", color: "rgba(255,255,255,0.3)" }}>
+            Signing epoch with your secp256k1 key…
+          </Text>
         </LinearGradient>
       </View>
     );
@@ -920,10 +1005,15 @@ export default function ValidatorScreen() {
       </View>
       <Text style={s.registerTitle}>Become a Validator</Text>
       <Text style={s.registerDesc}>
-        Register your device on the MChain network. Keep it online to earn MC rewards through uptime-based treasury payouts and gas fee sharing.
+        Register your device on the MChain network (Chain ID 1729). Keep it online to earn MC rewards through uptime-based treasury payouts and gas fee sharing.
       </Text>
       <View style={s.featureRow}>
-        {[{ icon: "time-outline", label: "Uptime Rewards" }, { icon: "flash-outline", label: "Gas Fees" }, { icon: "hardware-chip-outline", label: "Chain ID 1888" }, { icon: "trophy-outline", label: "MC Earnings" }].map((f) => (
+        {[
+          { icon: "time-outline", label: "Uptime Rewards" },
+          { icon: "flash-outline", label: "Gas Fees" },
+          { icon: "hardware-chip-outline", label: "Chain ID 1729" },
+          { icon: "trophy-outline", label: "MC Earnings" },
+        ].map((f) => (
           <View key={f.label} style={s.featureChip}>
             <Icon name={f.icon} size={11} color={colors.primary} />
             <Text style={s.featureChipText}>{f.label}</Text>
@@ -989,8 +1079,11 @@ export default function ValidatorScreen() {
 
           {/* Sub-tabs */}
           <View style={s.tabsWrap}>
-            {(["treasury", "gas", "blocks"] as SubTab[]).map((tab) => {
-              const label = tab === "treasury" ? "Treasury" : tab === "gas" ? "Gas Fees" : "Blocks";
+            {(["treasury", "gas", "blocks", "epochs"] as SubTab[]).map((tab) => {
+              const label =
+                tab === "treasury" ? "Treasury" :
+                tab === "gas" ? "Gas" :
+                tab === "blocks" ? "Blocks" : "Epochs";
               const isActive = activeTab === tab;
               return (
                 <TouchableOpacity key={tab} style={[s.tabBtn, isActive && s.tabBtnActive]} onPress={() => setActiveTab(tab)}>
@@ -999,6 +1092,23 @@ export default function ValidatorScreen() {
               );
             })}
           </View>
+
+          {/* Epochs participation summary */}
+          {activeTab === "epochs" && epochsSummary && (
+            <View style={s.epochsSummaryBar}>
+              {[
+                { label: "SIGNED", value: String(epochsSummary.signed), color: "#10B981" },
+                { label: "MISSED", value: String(epochsSummary.missed), color: "#EF4444" },
+                { label: "RATE", value: `${epochsSummary.participationRate}%`, color: colors.primary },
+                { label: "TOTAL", value: String(epochsSummary.totalEpochs), color: colors.foreground },
+              ].map(({ label, value, color }) => (
+                <View key={label} style={s.epochsStatBox}>
+                  <Text style={[s.epochsStatValue, { color }]}>{value}</Text>
+                  <Text style={s.epochsStatLabel}>{label}</Text>
+                </View>
+              ))}
+            </View>
+          )}
 
           {activeError() && (
             <View style={s.errorBanner}>
@@ -1043,6 +1153,7 @@ export default function ValidatorScreen() {
               loadTreasury(treasuryPage);
               if (activeTab === "gas") loadGas(gasPage);
               if (activeTab === "blocks") loadBlocks(blocksPage);
+              if (activeTab === "epochs") loadEpochs(epochsPage);
             }}
             tintColor={colors.primary}
           />
@@ -1051,12 +1162,14 @@ export default function ValidatorScreen() {
         data={(isRegistered && !activeInitLoading() ? items : []) as any[]}
         keyExtractor={(item, i) => {
           if (activeTab === "treasury") return String((item as TreasuryReward).id);
-          if (activeTab === "gas") return String((item as GasReward).blockHeight);
+          if (activeTab === "gas") return String((item as GasReward).blockHeight) + String(i);
+          if (activeTab === "epochs") return String((item as EpochHistoryItem).epochNumber);
           return String((item as ValidatorBlock).height) + String(i);
         }}
         renderItem={({ item }) => {
           if (activeTab === "treasury") return <TreasuryRowItem item={item as TreasuryReward} />;
           if (activeTab === "gas") return <GasRowItem item={item as GasReward} />;
+          if (activeTab === "epochs") return <EpochRowItem item={item as EpochHistoryItem} />;
           return <BlockRowItem item={item as ValidatorBlock} />;
         }}
         ListEmptyComponent={
