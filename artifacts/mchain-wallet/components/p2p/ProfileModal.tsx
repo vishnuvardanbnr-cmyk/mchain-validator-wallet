@@ -62,6 +62,7 @@ export function ProfileModal({ visible, onClose, profile }: Props) {
   const [kycName, setKycName] = useState("");
   const [kycDoc, setKycDoc] = useState("passport");
   const [kycDocImage, setKycDocImage] = useState<string | null>(null);
+  const [kycDocTooLarge, setKycDocTooLarge] = useState(false);
   const [loading, setLoading] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
@@ -112,6 +113,8 @@ export function ProfileModal({ visible, onClose, profile }: Props) {
     }
   }
 
+  const KYC_MAX_BYTES = 10 * 1024 * 1024; // 10 MB
+
   async function pickDocument() {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) { setToast("Camera roll permission required"); return; }
@@ -122,6 +125,14 @@ export function ProfileModal({ visible, onClose, profile }: Props) {
     });
     if (!result.canceled && result.assets[0]) {
       const asset = result.assets[0];
+      // Determine size: fileSize (raw bytes) if available, otherwise estimate from base64 length
+      const rawBytes = asset.fileSize ?? (asset.base64 ? Math.round(asset.base64.length * 0.75) : 0);
+      if (rawBytes > KYC_MAX_BYTES) {
+        setKycDocImage(asset.uri); // show the preview so user sees what they picked
+        setKycDocTooLarge(true);
+        return;
+      }
+      setKycDocTooLarge(false);
       setKycDocImage(asset.base64 ? `data:image/jpeg;base64,${asset.base64}` : asset.uri);
     }
   }
@@ -404,7 +415,7 @@ export function ProfileModal({ visible, onClose, profile }: Props) {
                     </View>
 
                     <Text style={s.label}>DOCUMENT PHOTO</Text>
-                    <TouchableOpacity style={s.uploadBtn} onPress={pickDocument} activeOpacity={0.8}>
+                    <TouchableOpacity style={[s.uploadBtn, kycDocTooLarge && { borderColor: "#EF4444" }]} onPress={pickDocument} activeOpacity={0.8}>
                       {kycDocImage ? (
                         <Image source={{ uri: kycDocImage }} style={s.docPreview} contentFit="cover" />
                       ) : (
@@ -422,7 +433,16 @@ export function ProfileModal({ visible, onClose, profile }: Props) {
                       )}
                     </TouchableOpacity>
 
-                    <TouchableOpacity style={[s.btn, loading && { opacity: 0.6 }]} onPress={handleSubmitKyc} disabled={loading} activeOpacity={0.85}>
+                    {kycDocTooLarge && (
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: -12, marginBottom: 14 }}>
+                        <Icon name="alert-circle-outline" size={14} color="#EF4444" />
+                        <Text style={{ fontSize: 12, fontFamily: "Inter_500Medium", color: "#EF4444" }}>
+                          File is too large — maximum allowed size is 10 MB. Please choose a smaller image.
+                        </Text>
+                      </View>
+                    )}
+
+                    <TouchableOpacity style={[s.btn, (loading || kycDocTooLarge) && { opacity: 0.4 }]} onPress={handleSubmitKyc} disabled={loading || kycDocTooLarge} activeOpacity={0.85}>
                       <LinearGradient colors={["#10B981", "#059669"]} style={s.btnGrad}>
                         {loading ? <ActivityIndicator color="#FFF" /> : <><Icon name="shield-checkmark-outline" size={16} color="#FFF" /><Text style={s.btnText}>Submit for Verification</Text></>}
                       </LinearGradient>
