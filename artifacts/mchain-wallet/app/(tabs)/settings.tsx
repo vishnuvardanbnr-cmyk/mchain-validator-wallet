@@ -32,7 +32,7 @@ export default function SettingsScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
-  const { mxcAddress, ethAddress, publicKey, moniker, updateMoniker, getPrivateKey } = useWallet();
+  const { mxcAddress, publicKey, moniker, updateMoniker, getPrivateKey } = useWallet();
 
   const [editingMoniker, setEditingMoniker] = useState(false);
   const [monikerInput, setMonikerInput] = useState(moniker);
@@ -482,10 +482,6 @@ export default function SettingsScreen() {
             <View style={s.row}>
               <Text style={s.rowLabel}>MXC Address</Text>
               <Text style={s.rowValue} numberOfLines={1}>{mxcAddress ? shortenAddress(mxcAddress, 8) : "—"}</Text>
-            </View>
-            <View style={s.row}>
-              <Text style={s.rowLabel}>ETH Address</Text>
-              <Text style={s.rowValue} numberOfLines={1}>{ethAddress ? shortenAddress(ethAddress, 8) : "—"}</Text>
             </View>
             <View style={[s.row, s.rowLast]}>
               <Text style={s.rowLabel}>Public Key</Text>

@@ -21,7 +21,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useWallet } from "@/context/WalletContext";
 import { api } from "@/services/api";
-import { mcToWei, mxcAddressToEthAddress, shortenAddress, signEvmTransaction, weiToMc } from "@/services/crypto";
+import { mcToWei, shortenAddress, signEvmTransaction, weiToMc } from "@/services/crypto";
 import { QRScannerModal } from "@/components/QRScannerModal";
 import { Toast } from "@/components/Toast";
 import { useColors } from "@/hooks/useColors";
@@ -149,8 +149,7 @@ export default function SendScreen() {
       if (!privateKey) throw new Error("Private key not found");
       const nonce = account?.nonce ?? 0;
       const weiAmount = mcToWei(amount);
-      const ethTo = mxcAddressToEthAddress(recipient);
-      const signedTx = signEvmTransaction(ethTo, BigInt(weiAmount), nonce, privateKey);
+      const signedTx = signEvmTransaction(recipient, BigInt(weiAmount), nonce, privateKey);
       const result = await api.sendRawTransaction(signedTx);
       setTxHash(result.txHash);
       await saveRecent(recipient);

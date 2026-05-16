@@ -137,7 +137,7 @@ function rlpList(items: Uint8Array[]): Uint8Array {
 // ── EVM transaction signer (EIP-155, Type 0) ─────────────────────────────────
 
 export function signEvmTransaction(
-  toEthAddress: string,   // 0x-prefixed hex ETH address
+  toAddress: string,   // MXC bech32 (mxc1...) or 0x ETH address — both accepted
   valueWei: bigint,
   nonce: number,
   privateKeyHex: string,
@@ -149,7 +149,8 @@ export function signEvmTransaction(
     chainId = 1888,
   } = options ?? {};
 
-  const toBytes = hexToBytes(toEthAddress.startsWith("0x") ? toEthAddress.slice(2) : toEthAddress);
+  const resolved = toAddress.startsWith("mxc1") ? mxcAddressToEthAddress(toAddress) : toAddress;
+  const toBytes = hexToBytes(resolved.startsWith("0x") ? resolved.slice(2) : resolved);
   const privBytes = hexToBytes(privateKeyHex);
 
   const unsignedFields = [
