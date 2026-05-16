@@ -43,10 +43,20 @@ function AdRow({ ad, myAddress, onPress }: { ad: P2pAd; myAddress: string; onPre
     topRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 },
     nameRow: { flexDirection: "row", alignItems: "center", gap: 6 },
     name: { fontSize: 14, fontFamily: "Inter_600SemiBold", color: colors.foreground },
-    kycBadge: { paddingHorizontal: 5, paddingVertical: 1, borderRadius: 4, backgroundColor: "#0EA5E915", borderWidth: 1, borderColor: "#0EA5E940" },
-    kycText: { fontSize: 9, fontFamily: "Inter_700Bold", color: colors.primary },
-    merchantBadge: { paddingHorizontal: 5, paddingVertical: 1, borderRadius: 4, backgroundColor: "#F59E0B15", borderWidth: 1, borderColor: "#F59E0B40" },
-    merchantText: { fontSize: 9, fontFamily: "Inter_700Bold", color: "#F59E0B" },
+    kycBadge: { paddingHorizontal: 5, paddingVertical: 1, borderRadius: 4, backgroundColor: "#10B98115", borderWidth: 1, borderColor: "#10B98140" },
+    kycText: { fontSize: 9, fontFamily: "Inter_700Bold", color: "#10B981" },
+    merchantBadge: { paddingHorizontal: 5, paddingVertical: 1, borderRadius: 4, backgroundColor: "#0EA5E915", borderWidth: 1, borderColor: "#0EA5E940" },
+    merchantText: { fontSize: 9, fontFamily: "Inter_700Bold", color: colors.primary },
+    verifiedMerchantBadge: { paddingHorizontal: 5, paddingVertical: 1, borderRadius: 4, backgroundColor: "#0EA5E915", borderWidth: 1, borderColor: "#0EA5E960" },
+    verifiedMerchantText: { fontSize: 9, fontFamily: "Inter_700Bold", color: colors.primary },
+    bronzeBadge: { paddingHorizontal: 5, paddingVertical: 1, borderRadius: 4, backgroundColor: "#92400E20", borderWidth: 1, borderColor: "#92400E50" },
+    bronzeText: { fontSize: 9, fontFamily: "Inter_700Bold", color: "#D97706" },
+    silverBadge: { paddingHorizontal: 5, paddingVertical: 1, borderRadius: 4, backgroundColor: "#94A3B820", borderWidth: 1, borderColor: "#94A3B850" },
+    silverText: { fontSize: 9, fontFamily: "Inter_700Bold", color: "#CBD5E1" },
+    goldBadge: { paddingHorizontal: 5, paddingVertical: 1, borderRadius: 4, backgroundColor: "#FBBF2420", borderWidth: 1, borderColor: "#FBBF2450" },
+    goldText: { fontSize: 9, fontFamily: "Inter_700Bold", color: "#FDE68A" },
+    platinumBadge: { paddingHorizontal: 5, paddingVertical: 1, borderRadius: 4, backgroundColor: "#22D3EE20", borderWidth: 1, borderColor: "#22D3EE50" },
+    platinumText: { fontSize: 9, fontFamily: "Inter_700Bold", color: "#67E8F9" },
     statsText: { fontSize: 11, fontFamily: "Inter_400Regular", color: colors.mutedForeground },
     price: { fontSize: 22, fontFamily: "Inter_700Bold", color: colors.primary },
     priceUnit: { fontSize: 11, fontFamily: "Inter_400Regular", color: colors.mutedForeground },
@@ -67,8 +77,16 @@ function AdRow({ ad, myAddress, onPress }: { ad: P2pAd; myAddress: string; onPre
         <View>
           <View style={s.nameRow}>
             <Text style={s.name}>{ad.displayName ?? shortenAddr(ad.ownerAddress)}</Text>
-            {ad.kycVerified && <View style={s.kycBadge}><Text style={s.kycText}>KYC</Text></View>}
-            {ad.isMerchant && <View style={s.merchantBadge}><Text style={s.merchantText}>MERCHANT</Text></View>}
+            {ad.kycVerified && <View style={s.kycBadge}><Text style={s.kycText}>✓ KYC</Text></View>}
+            {ad.isMerchant && ad.kycVerified
+              ? <View style={s.verifiedMerchantBadge}><Text style={s.verifiedMerchantText}>✦ VERIFIED</Text></View>
+              : ad.isMerchant
+              ? <View style={s.merchantBadge}><Text style={s.merchantText}>MERCHANT</Text></View>
+              : null}
+            {ad.completedOrders >= 500 && <View style={s.platinumBadge}><Text style={s.platinumText}>💎</Text></View>}
+            {ad.completedOrders >= 100 && ad.completedOrders < 500 && <View style={s.goldBadge}><Text style={s.goldText}>🥇</Text></View>}
+            {ad.completedOrders >= 50 && ad.completedOrders < 100 && <View style={s.silverBadge}><Text style={s.silverText}>🥈</Text></View>}
+            {ad.completedOrders >= 10 && ad.completedOrders < 50 && <View style={s.bronzeBadge}><Text style={s.bronzeText}>🥉</Text></View>}
           </View>
           <Text style={s.statsText}>{ad.completedOrders} orders · {rate.toFixed(0)}% completion</Text>
         </View>

@@ -108,7 +108,16 @@ export function ProfileModal({ visible, onClose, profile }: Props) {
     avatarWrap: { width: 72, height: 72, borderRadius: 36, backgroundColor: colors.primary + "20", alignItems: "center", justifyContent: "center", alignSelf: "center", marginBottom: 10, borderWidth: 2, borderColor: colors.primary + "40" },
     avatarText: { fontSize: 26, fontFamily: "Inter_700Bold", color: colors.primary },
     nameText: { fontSize: 20, fontFamily: "Inter_700Bold", color: colors.foreground, textAlign: "center" },
-    addrText: { fontSize: 11, fontFamily: "Inter_400Regular", color: colors.mutedForeground, textAlign: "center", marginBottom: 14 },
+    addrText: { fontSize: 11, fontFamily: "Inter_400Regular", color: colors.mutedForeground, textAlign: "center", marginBottom: 8 },
+    badgeRow: { flexDirection: "row", justifyContent: "center", gap: 6, flexWrap: "wrap", marginBottom: 14 },
+    badgeKyc: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20, backgroundColor: "#10B98115", borderWidth: 1, borderColor: "#10B98140" },
+    badgeKycText: { fontSize: 10, fontFamily: "Inter_700Bold", color: "#10B981" },
+    badgeVerified: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20, backgroundColor: "#0EA5E915", borderWidth: 1, borderColor: "#0EA5E960" },
+    badgeVerifiedText: { fontSize: 10, fontFamily: "Inter_700Bold", color: colors.primary },
+    badgeMerchant: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20, backgroundColor: "#F59E0B15", borderWidth: 1, borderColor: "#F59E0B40" },
+    badgeMerchantText: { fontSize: 10, fontFamily: "Inter_700Bold", color: "#F59E0B" },
+    badgeVolume: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20, backgroundColor: "#FFFFFF08", borderWidth: 1, borderColor: "#FFFFFF20" },
+    badgeVolumeText: { fontSize: 10, fontFamily: "Inter_700Bold", color: colors.mutedForeground },
     statsRow: { flexDirection: "row", gap: 10, marginBottom: 18 },
     statBox: { flex: 1, backgroundColor: colors.card, borderRadius: 12, borderWidth: 1, borderColor: colors.border, padding: 12, alignItems: "center" },
     statVal: { fontSize: 18, fontFamily: "Inter_700Bold", color: colors.foreground },
@@ -162,6 +171,33 @@ export function ProfileModal({ visible, onClose, profile }: Props) {
                     </View>
                     <Text style={s.nameText}>{profile?.displayName ?? "New Trader"}</Text>
                     <Text style={s.addrText}>{mxcAddress ? `${mxcAddress.slice(0, 12)}…${mxcAddress.slice(-6)}` : "—"}</Text>
+
+                    {/* Badges row */}
+                    {(profile?.kycStatus === "verified" || profile?.isMerchant || (profile?.completedTrades ?? 0) >= 10) && (
+                      <View style={s.badgeRow}>
+                        {profile?.kycStatus === "verified" && (
+                          <View style={s.badgeKyc}><Text style={s.badgeKycText}>✓ KYC Verified</Text></View>
+                        )}
+                        {profile?.isMerchant && profile?.kycStatus === "verified" && (
+                          <View style={s.badgeVerified}><Text style={s.badgeVerifiedText}>✦ Verified Merchant</Text></View>
+                        )}
+                        {profile?.isMerchant && profile?.kycStatus !== "verified" && (
+                          <View style={s.badgeMerchant}><Text style={s.badgeMerchantText}>Merchant</Text></View>
+                        )}
+                        {(profile?.completedTrades ?? 0) >= 500 && (
+                          <View style={s.badgeVolume}><Text style={s.badgeVolumeText}>💎 Platinum</Text></View>
+                        )}
+                        {(profile?.completedTrades ?? 0) >= 100 && (profile?.completedTrades ?? 0) < 500 && (
+                          <View style={s.badgeVolume}><Text style={s.badgeVolumeText}>🥇 Gold</Text></View>
+                        )}
+                        {(profile?.completedTrades ?? 0) >= 50 && (profile?.completedTrades ?? 0) < 100 && (
+                          <View style={s.badgeVolume}><Text style={s.badgeVolumeText}>🥈 Silver</Text></View>
+                        )}
+                        {(profile?.completedTrades ?? 0) >= 10 && (profile?.completedTrades ?? 0) < 50 && (
+                          <View style={s.badgeVolume}><Text style={s.badgeVolumeText}>🥉 Bronze</Text></View>
+                        )}
+                      </View>
+                    )}
 
                     <View style={s.statsRow}>
                       <View style={s.statBox}>

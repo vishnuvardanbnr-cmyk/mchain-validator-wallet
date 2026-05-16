@@ -1,8 +1,9 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { get, post, type Profile } from "@/lib/api";
-import { BadgeCheck, XCircle, Clock, User, FileText } from "lucide-react";
+import { BadgeCheck, XCircle, Clock, User, Store } from "lucide-react";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
+import { BadgeRow } from "@/lib/badges";
 
 function statusBadge(status: Profile["kycStatus"]) {
   const map = {
@@ -38,7 +39,7 @@ export default function KYC() {
     mutationFn: (address: string) => post<Profile>(`/kyc/${address}/approve`),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["admin"] });
-      toast({ title: "KYC approved", description: "User is now verified." });
+      toast({ title: "KYC approved", description: "User is now KYC verified." });
     },
     onError: (e) => toast({ title: "Error", description: e instanceof Error ? e.message : "Failed", variant: "destructive" }),
   });
@@ -52,12 +53,27 @@ export default function KYC() {
     onError: (e) => toast({ title: "Error", description: e instanceof Error ? e.message : "Failed", variant: "destructive" }),
   });
 
+  const promoteMut = useMutation({
+    mutationFn: (address: string) => post<Profile>(`/merchant/${address}/verify`),
+    onSuccess: (updated) => {
+      qc.invalidateQueries({ queryKey: ["admin"] });
+      toast({
+        title: updated.isMerchant ? "Promoted to Verified Merchant" : "Merchant status removed",
+        description: updated.displayName,
+      });
+    },
+    onError: (e) => toast({ title: "Error", description: e instanceof Error ? e.message : "Failed", variant: "destructive" }),
+  });
+
   const profiles = tab === "pending"
     ? (pendingQ.data ?? [])
     : (allQ.data?.profiles ?? []).filter(p => p.kycStatus !== "none");
 
   const loading = tab === "pending" ? pendingQ.isLoading : allQ.isLoading;
-  const isPending = (addr: string) => approveMut.isPending || rejectMut.isPending;
+  const isBusy = (addr: string) =>
+    (approveMut.isPending && approveMut.variables === addr) ||
+    (rejectMut.isPending && rejectMut.variables === addr) ||
+    (promoteMut.isPending && promoteMut.variables === addr);
 
   return (
     <div className="p-8 max-w-5xl">
@@ -110,36 +126,52 @@ export default function KYC() {
                       <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusBadge(profile.kycStatus)}`}>
                         {profile.kycStatus}
                       </span>
-                      {profile.isMerchant && (
-                        <span className="px-2 py-0.5 rounded-full text-xs bg-primary/15 text-primary font-medium">
-                          Merchant
-                        </span>
-                      )}
                     </div>
                     <p className="text-xs text-muted-foreground mt-0.5 font-mono">{shortAddr(profile.mxcAddress)}</p>
+                    <BadgeRow
+                      kycVerified={profile.kycStatus === "verified"}
+                      isMerchant={profile.isMerchant}
+                      completedTrades={profile.completedTrades}
+                    />
                   </div>
                 </div>
 
-                {profile.kycStatus === "pending" && (
-                  <div className="flex items-center gap-2 flex-shrink-0">
+                <div className="flex items-center gap-2 flex-shrink-0 flex-wrap justify-end">
+                  {profile.kycStatus === "pending" && (
+                    <>
+                      <button
+                        onClick={() => approveMut.mutate(profile.mxcAddress)}
+                        disabled={isBusy(profile.mxcAddress)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25 disabled:opacity-50 text-sm font-medium transition-colors"
+                      >
+                        <BadgeCheck size={14} />
+                        Approve
+                      </button>
+                      <button
+                        onClick={() => rejectMut.mutate(profile.mxcAddress)}
+                        disabled={isBusy(profile.mxcAddress)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 disabled:opacity-50 text-sm font-medium transition-colors"
+                      >
+                        <XCircle size={14} />
+                        Reject
+                      </button>
+                    </>
+                  )}
+                  {profile.kycStatus === "verified" && (
                     <button
-                      onClick={() => approveMut.mutate(profile.mxcAddress)}
-                      disabled={isPending(profile.mxcAddress)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25 disabled:opacity-50 text-sm font-medium transition-colors"
+                      onClick={() => promoteMut.mutate(profile.mxcAddress)}
+                      disabled={isBusy(profile.mxcAddress)}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg disabled:opacity-50 text-sm font-medium transition-colors
+                        ${profile.isMerchant
+                          ? "bg-muted text-muted-foreground hover:bg-muted/80"
+                          : "bg-primary/15 text-primary hover:bg-primary/25"
+                        }`}
                     >
-                      <BadgeCheck size={14} />
-                      Approve
+                      <Store size={14} />
+                      {profile.isMerchant ? "Remove Merchant" : "Promote to Merchant"}
                     </button>
-                    <button
-                      onClick={() => rejectMut.mutate(profile.mxcAddress)}
-                      disabled={isPending(profile.mxcAddress)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 disabled:opacity-50 text-sm font-medium transition-colors"
-                    >
-                      <XCircle size={14} />
-                      Reject
-                    </button>
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
 
               <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 gap-3">

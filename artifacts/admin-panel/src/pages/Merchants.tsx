@@ -1,17 +1,12 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { get, post, type Profile } from "@/lib/api";
-import { Store, User, BadgeCheck, Clock, Search } from "lucide-react";
+import { Store, User, Clock, Search } from "lucide-react";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
+import { BadgeRow } from "@/lib/badges";
 
 function shortAddr(addr: string) {
   return `${addr.slice(0, 10)}…${addr.slice(-6)}`;
-}
-
-function kycBadge(status: Profile["kycStatus"]) {
-  if (status === "verified") return <span className="text-xs text-emerald-400">✓ KYC</span>;
-  if (status === "pending") return <span className="text-xs text-amber-400">⏳ KYC pending</span>;
-  return <span className="text-xs text-muted-foreground">No KYC</span>;
 }
 
 export default function Merchants() {
@@ -111,11 +106,13 @@ function Section({ title, profiles, onToggle, pending, emptyMsg }: {
                   <User size={16} className="text-primary" />
                 </div>
                 <div className="min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-medium text-foreground text-sm">{profile.displayName}</span>
-                    {kycBadge(profile.kycStatus)}
-                  </div>
-                  <p className="text-xs text-muted-foreground font-mono">{shortAddr(profile.mxcAddress)}</p>
+                  <span className="font-medium text-foreground text-sm">{profile.displayName}</span>
+                  <p className="text-xs text-muted-foreground font-mono mb-0.5">{shortAddr(profile.mxcAddress)}</p>
+                  <BadgeRow
+                    kycVerified={profile.kycStatus === "verified"}
+                    isMerchant={profile.isMerchant}
+                    completedTrades={profile.completedTrades}
+                  />
                 </div>
               </div>
 
