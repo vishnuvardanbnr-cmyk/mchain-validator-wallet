@@ -461,31 +461,60 @@ export default function OnboardingScreen() {
     verifyErrorText: { flex: 1, fontSize: 13, fontFamily: "Inter_400Regular", color: "#EF4444", lineHeight: 18 },
 
     // PIN setup step
-    pinIconWrap: {
-      width: 68, height: 68, borderRadius: 34,
-      backgroundColor: colors.primary + "18",
-      alignItems: "center", justifyContent: "center",
-      marginBottom: 8,
+    pinSection: {
+      alignItems: "center",
+      width: "100%",
     },
-    pinDotsRow: { flexDirection: "row", gap: 14, marginTop: 28, marginBottom: 4 },
-    pinDot: { width: 14, height: 14, borderRadius: 7, borderWidth: 1.5 },
+    pinIconWrap: {
+      width: 76, height: 76, borderRadius: 24,
+      alignItems: "center", justifyContent: "center",
+      marginBottom: 20, overflow: "hidden",
+    },
+    pinIconGrad: {
+      width: 76, height: 76, borderRadius: 24,
+      alignItems: "center", justifyContent: "center",
+    },
+    pinPhaseLabel: {
+      fontSize: 11, fontFamily: "Inter_700Bold",
+      color: colors.primary, letterSpacing: 2,
+      marginBottom: 6, textAlign: "center",
+    },
+    pinTitle: {
+      fontSize: 28, fontFamily: "Inter_700Bold",
+      color: colors.foreground, textAlign: "center",
+      letterSpacing: -0.3,
+    },
+    pinSubtitle: {
+      fontSize: 14, fontFamily: "Inter_400Regular",
+      color: colors.mutedForeground, textAlign: "center",
+      marginTop: 8, lineHeight: 21, paddingHorizontal: 8,
+    },
+    pinDotsRow: {
+      flexDirection: "row", gap: 16,
+      marginTop: 36, marginBottom: 0,
+      justifyContent: "center", alignSelf: "center",
+    },
+    pinDot: {
+      width: 16, height: 16, borderRadius: 8,
+      borderWidth: 1.5,
+    },
     pinDotFilled: { backgroundColor: colors.primary, borderColor: colors.primary },
-    pinDotEmpty: { backgroundColor: "transparent", borderColor: colors.border },
+    pinDotEmpty: { backgroundColor: "transparent", borderColor: "rgba(255,255,255,0.18)" },
     pinDotError: { borderColor: "#EF4444" },
     pinErrorText: {
       fontSize: 13, fontFamily: "Inter_500Medium",
-      color: "#EF4444", textAlign: "center", marginTop: 10, marginBottom: 4,
+      color: "#EF4444", textAlign: "center", marginTop: 14,
     },
-    keypad: { width: "100%", gap: 10, marginTop: 8 },
-    keyRow: { flexDirection: "row", justifyContent: "center", gap: 16 },
+    keypad: { width: "100%", gap: 10, marginTop: 32 },
+    keyRow: { flexDirection: "row", justifyContent: "center", gap: 14 },
     key: {
-      width: 78, height: 78, borderRadius: 39,
+      width: 82, height: 82, borderRadius: 41,
       alignItems: "center", justifyContent: "center",
-      backgroundColor: colors.card,
-      borderWidth: 1, borderColor: colors.border,
+      backgroundColor: "#1E2329",
     },
-    keyText: { fontSize: 24, fontFamily: "Inter_600SemiBold", color: colors.foreground },
-    keyEmpty: { backgroundColor: "transparent", borderColor: "transparent" },
+    keyText: { fontSize: 26, fontFamily: "Inter_400Regular", color: "#FFFFFF", lineHeight: 30 },
+    keySubText: { fontSize: 9, fontFamily: "Inter_600SemiBold", color: "rgba(255,255,255,0.35)", letterSpacing: 1.2, marginTop: 1 },
+    keyEmpty: { backgroundColor: "transparent" },
   });
 
   return (
@@ -813,17 +842,32 @@ export default function OnboardingScreen() {
 
           {/* ── SET PIN ──────────────────────────────────────────────── */}
           {step === "set_pin" && (
-            <>
+            <View style={s.pinSection}>
+              {/* Icon */}
               <View style={s.pinIconWrap}>
-                <Icon name="shield-checkmark" size={32} color={colors.primary} />
+                <LinearGradient
+                  colors={[colors.primary + "40", colors.primary + "18"]}
+                  style={s.pinIconGrad}
+                >
+                  <Icon name="shield-checkmark" size={34} color={colors.primary} strokeWidth={1.5} />
+                </LinearGradient>
               </View>
-              <Text style={s.title}>
+
+              {/* Phase label */}
+              <Text style={s.pinPhaseLabel}>
+                {pinPhase === "enter" ? "STEP 1 OF 2" : "STEP 2 OF 2"}
+              </Text>
+
+              {/* Title */}
+              <Text style={s.pinTitle}>
                 {pinPhase === "enter" ? "Set a PIN" : "Confirm PIN"}
               </Text>
-              <Text style={s.subtitle}>
+
+              {/* Subtitle */}
+              <Text style={s.pinSubtitle}>
                 {pinPhase === "enter"
                   ? "Add a 6-digit PIN to protect your wallet every time you open the app."
-                  : "Enter the same PIN again to confirm."}
+                  : "Re-enter your PIN to confirm it matches."}
               </Text>
 
               {/* Dots */}
@@ -844,38 +888,39 @@ export default function OnboardingScreen() {
                 })}
               </Animated.View>
 
-              {!!pinError && <Text style={s.pinErrorText}>{pinError}</Text>}
-              {!pinError && <View style={{ height: 20 }} />}
+              {!!pinError
+                ? <Text style={s.pinErrorText}>{pinError}</Text>
+                : <View style={{ height: 27 }} />
+              }
 
               {/* Keypad */}
               <View style={s.keypad}>
-                {(["1","2","3","4","5","6","7","8","9"] as string[]).reduce<string[][]>((rows, k, i) => {
-                  if (i % 3 === 0) rows.push([]);
-                  rows[rows.length - 1].push(k);
-                  return rows;
-                }, []).map((row, ri) => (
+                {([["1","2","3"],["4","5","6"],["7","8","9"]] as string[][]).map((row, ri) => (
                   <View key={ri} style={s.keyRow}>
                     {row.map(k => (
-                      <TouchableOpacity key={k} style={s.key} onPress={() => enterPinToSetPin(k)} activeOpacity={0.65}>
+                      <TouchableOpacity key={k} style={s.key} onPress={() => enterPinToSetPin(k)} activeOpacity={0.6}>
                         <Text style={s.keyText}>{k}</Text>
+                        {({"2":"ABC","3":"DEF","4":"GHI","5":"JKL","6":"MNO","7":"PQRS","8":"TUV","9":"WXYZ"} as Record<string,string>)[k]
+                          ? <Text style={s.keySubText}>{({"2":"ABC","3":"DEF","4":"GHI","5":"JKL","6":"MNO","7":"PQRS","8":"TUV","9":"WXYZ"} as Record<string,string>)[k]}</Text>
+                          : null}
                       </TouchableOpacity>
                     ))}
                   </View>
                 ))}
                 <View style={s.keyRow}>
                   <View style={[s.key, s.keyEmpty]} />
-                  <TouchableOpacity style={s.key} onPress={() => enterPinToSetPin("0")} activeOpacity={0.65}>
+                  <TouchableOpacity style={s.key} onPress={() => enterPinToSetPin("0")} activeOpacity={0.6}>
                     <Text style={s.keyText}>0</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity style={s.key} onPress={deletePinDigit} activeOpacity={0.65}>
-                    <Icon name="backspace-outline" size={22} color={colors.foreground} />
+                  <TouchableOpacity style={[s.key, s.keyEmpty]} onPress={deletePinDigit} activeOpacity={0.6}>
+                    <Icon name="backspace-outline" size={24} color="rgba(255,255,255,0.65)" strokeWidth={1.5} />
                   </TouchableOpacity>
                 </View>
               </View>
 
               {/* Skip */}
               <TouchableOpacity
-                style={s.secondaryBtn}
+                style={[s.secondaryBtn, { marginTop: 8 }]}
                 onPress={async () => { await handleFinish(); }}
                 disabled={finishing}
               >
@@ -883,7 +928,7 @@ export default function OnboardingScreen() {
                   {finishing ? "Setting up…" : "Skip for now"}
                 </Text>
               </TouchableOpacity>
-            </>
+            </View>
           )}
 
           {/* ── DONE RESTORED (existing validator re-imported) ─────────── */}
