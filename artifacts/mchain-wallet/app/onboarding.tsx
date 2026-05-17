@@ -2,7 +2,7 @@ import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -17,7 +17,6 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useWallet } from "@/context/WalletContext";
-import { api } from "@/services/api";
 import { generateMnemonic, mnemonicToKeyPair } from "@/services/crypto";
 import { useColors } from "@/hooks/useColors";
 import type { KeyPair } from "@/services/crypto";
@@ -27,39 +26,53 @@ type Mode = "create" | "import";
 type Step =
   | "welcome"
   | "backup"
+  | "verify"
   | "moniker"
-  | "register"
-  | "done"
   | "import_enter"
   | "done_restored";
+
+// Pick n unique random indices from 0..max-1
+function pickRandomIndices(max: number, n: number): number[] {
+  const pool = Array.from({ length: max }, (_, i) => i);
+  const result: number[] = [];
+  while (result.length < n) {
+    const i = Math.floor(Math.random() * pool.length);
+    result.push(pool.splice(i, 1)[0]);
+  }
+  return result.sort((a, b) => a - b);
+}
 
 export default function OnboardingScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { completeOnboarding, resolveImportMnemonic, deviceId } = useWallet();
+  const { completeOnboarding, resolveImportMnemonic } = useWallet();
 
   const [step, setStep] = useState<Step>("welcome");
   const [mode, setMode] = useState<Mode>("create");
   const [creating, setCreating] = useState(false);
 
-  // Create flow state
+  // Wallet state
   const [mnemonic, setMnemonic] = useState("");
   const [keyPair, setKeyPair] = useState<KeyPair | null>(null);
   const [backedUp, setBackedUp] = useState(false);
 
-  // Import flow state
+  // Verify step — 3 random word positions to confirm
+  const [verifyIndices, setVerifyIndices] = useState<number[]>([]);
+  const [verifyInputs, setVerifyInputs] = useState<string[]>(["", "", ""]);
+  const [verifyError, setVerifyError] = useState("");
+  const verifyRefs = [useRef<TextInput>(null), useRef<TextInput>(null), useRef<TextInput>(null)];
+
+  // Import state
   const [importInput, setImportInput] = useState("");
   const [importLoading, setImportLoading] = useState(false);
   const [restoredValidator, setRestoredValidator] = useState<ValidatorInfo | null>(null);
 
-  // Shared state
+  // Shared
   const [moniker, setMoniker] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [registrationDone, setRegistrationDone] = useState(false);
+  const [finishing, setFinishing] = useState(false);
 
   function handleCreateWallet() {
     setCreating(true);
-    // Defer heavy BIP32 derivation to next tick so the loading UI renders first
     setTimeout(() => {
       try {
         const words = generateMnemonic();
@@ -88,7 +101,6 @@ export default function OnboardingScreen() {
       Alert.alert("Invalid Phrase", "Please enter exactly 12 words.");
       return;
     }
-
     setImportLoading(true);
     try {
       const result = await resolveImportMnemonic(trimmed);
@@ -96,8 +108,6 @@ export default function OnboardingScreen() {
       setMnemonic(trimmed);
 
       if (result.isExistingValidator && result.validatorInfo) {
-        // Restore directly — no re-registration needed
-        setRestoredValidator(result.validatorInfo);
         const info = result.validatorInfo;
         await completeOnboarding(
           result.keypair.mxcAddress,
@@ -107,11 +117,11 @@ export default function OnboardingScreen() {
           info.moniker,
           info.status
         );
+        setRestoredValidator(info);
         setMoniker(info.moniker);
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         setStep("done_restored");
       } else {
-        // Not a validator yet — let them register
         setStep("moniker");
       }
     } catch (err: unknown) {
@@ -131,71 +141,68 @@ export default function OnboardingScreen() {
     Alert.alert("Copied", "Seed phrase copied. Store it somewhere safe and never share it.");
   }
 
-  async function handleRegister() {
-    if (!keyPair || !moniker.trim()) return;
-    setLoading(true);
-    try {
-      await api.registerValidator({
-        address: keyPair.mxcAddress,
-        ethAddress: keyPair.ethAddress,
-        publicKey: keyPair.publicKey,
-        deviceId,
-        moniker: moniker.trim(),
-        commissionRate: "10",
-      });
-      setRegistrationDone(true);
-      setStep("done");
-    } catch (err: unknown) {
-      const msg =
-        err instanceof Error ? err.message : "Could not connect to the chain.";
-      Alert.alert(
-        "Registration Failed",
-        `${msg}\n\nYou can retry or continue — registration can be retried from Settings.`
-      );
-    } finally {
-      setLoading(false);
+  function handleProceedToVerify() {
+    const indices = pickRandomIndices(12, 3);
+    setVerifyIndices(indices);
+    setVerifyInputs(["", "", ""]);
+    setVerifyError("");
+    setStep("verify");
+  }
+
+  function handleVerify() {
+    const words = mnemonic.split(" ");
+    const allCorrect = verifyIndices.every(
+      (idx, i) => verifyInputs[i].trim().toLowerCase() === words[idx].toLowerCase()
+    );
+    if (!allCorrect) {
+      setVerifyError("One or more words are incorrect. Check your written copy and try again.");
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      return;
     }
+    setVerifyError("");
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    setStep("moniker");
   }
 
   async function handleFinish() {
-    if (!keyPair) return;
-    await completeOnboarding(
-      keyPair.mxcAddress,
-      keyPair.ethAddress,
-      keyPair.publicKey,
-      keyPair.privateKey,
-      moniker.trim() || "Validator"
-    );
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    router.replace("/(tabs)");
-  }
-
-  async function handleRestoredEnter() {
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    router.replace("/(tabs)");
+    if (!keyPair || !moniker.trim()) return;
+    setFinishing(true);
+    try {
+      await completeOnboarding(
+        keyPair.mxcAddress,
+        keyPair.ethAddress,
+        keyPair.publicKey,
+        keyPair.privateKey,
+        moniker.trim()
+      );
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      router.replace("/(tabs)");
+    } finally {
+      setFinishing(false);
+    }
   }
 
   const mnemonicWords = mnemonic ? mnemonic.split(" ") : [];
 
-  // Step indicator config per mode
-  const createSteps: Step[] = ["backup", "moniker", "register", "done"];
-  const importSteps: Step[] = ["import_enter", "moniker", "register", "done"];
+  const createSteps: Step[] = ["backup", "verify", "moniker"];
+  const importSteps: Step[] = ["import_enter", "moniker"];
 
   function renderStepIndicator() {
     if (step === "welcome" || step === "done_restored") return null;
     const steps = mode === "create" ? createSteps : importSteps;
     const idx = steps.indexOf(step);
+    if (idx < 0) return null;
     return (
       <View style={s.stepIndicator}>
         {steps.map((_, i) => (
-          <View
-            key={i}
-            style={[s.stepDot, { backgroundColor: i <= idx ? colors.primary : colors.border }]}
-          />
+          <View key={i} style={[s.stepDot, { backgroundColor: i <= idx ? colors.primary : colors.border }]} />
         ))}
       </View>
     );
   }
+
+  const wordCount = importInput.trim() ? importInput.trim().split(/\s+/).filter(Boolean).length : 0;
+  const wordCountColor = wordCount === 12 ? colors.success : wordCount > 12 ? "#ef4444" : colors.mutedForeground;
 
   const s = StyleSheet.create({
     outer: { flex: 1, backgroundColor: colors.background },
@@ -205,298 +212,72 @@ export default function OnboardingScreen() {
       paddingTop: insets.top + (Platform.OS === "web" ? 67 : 20),
       paddingBottom: insets.bottom + (Platform.OS === "web" ? 34 : 24),
     },
-    logo: {
-      fontSize: 13,
-      fontFamily: "Inter_600SemiBold",
-      color: colors.primary,
-      letterSpacing: 3,
-      marginBottom: 8,
-    },
-    title: {
-      fontSize: 28,
-      fontFamily: "Inter_700Bold",
-      color: colors.foreground,
-      marginBottom: 8,
-    },
-    subtitle: {
-      fontSize: 15,
-      fontFamily: "Inter_400Regular",
-      color: colors.mutedForeground,
-      marginBottom: 32,
-      lineHeight: 22,
-    },
-    card: {
-      backgroundColor: colors.card,
-      borderRadius: colors.radius,
-      borderWidth: 1,
-      borderColor: colors.border,
-      padding: 20,
-      marginBottom: 20,
-    },
-    cardTitle: {
-      fontSize: 12,
-      fontFamily: "Inter_600SemiBold",
-      color: colors.mutedForeground,
-      letterSpacing: 1.5,
-      marginBottom: 12,
-    },
+    logo: { fontSize: 13, fontFamily: "Inter_600SemiBold", color: colors.primary, letterSpacing: 3, marginBottom: 8 },
+    title: { fontSize: 28, fontFamily: "Inter_700Bold", color: colors.foreground, marginBottom: 8 },
+    subtitle: { fontSize: 15, fontFamily: "Inter_400Regular", color: colors.mutedForeground, marginBottom: 32, lineHeight: 22 },
+    card: { backgroundColor: colors.card, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border, padding: 20, marginBottom: 20 },
+    cardTitle: { fontSize: 12, fontFamily: "Inter_600SemiBold", color: colors.mutedForeground, letterSpacing: 1.5, marginBottom: 12 },
     stepIndicator: { flexDirection: "row", gap: 6, marginBottom: 24 },
     stepDot: { height: 3, borderRadius: 2, flex: 1 },
     primaryBtn: { borderRadius: colors.radius, overflow: "hidden", marginBottom: 16 },
     primaryGrad: { paddingVertical: 16, alignItems: "center" },
     primaryBtnText: { fontSize: 16, fontFamily: "Inter_700Bold", color: "#FFFFFF" },
     secondaryBtn: { paddingVertical: 14, alignItems: "center" },
-    secondaryBtnText: {
-      fontSize: 15,
-      fontFamily: "Inter_500Medium",
-      color: colors.mutedForeground,
-    },
+    secondaryBtnText: { fontSize: 15, fontFamily: "Inter_500Medium", color: colors.mutedForeground },
     input: {
-      backgroundColor: colors.input,
-      borderRadius: colors.radius - 4,
-      borderWidth: 1,
-      borderColor: colors.border,
-      paddingHorizontal: 16,
-      paddingVertical: 14,
-      fontSize: 16,
-      fontFamily: "Inter_400Regular",
-      color: colors.foreground,
-      marginBottom: 20,
+      backgroundColor: colors.input, borderRadius: colors.radius - 4, borderWidth: 1,
+      borderColor: colors.border, paddingHorizontal: 16, paddingVertical: 14,
+      fontSize: 16, fontFamily: "Inter_400Regular", color: colors.foreground, marginBottom: 20,
     },
-    warningCard: {
-      backgroundColor: "#1A1000",
-      borderRadius: colors.radius,
-      borderWidth: 1,
-      borderColor: "#F59E0B40",
-      padding: 16,
-      marginBottom: 20,
-    },
-    warningTitle: {
-      fontSize: 13,
-      fontFamily: "Inter_700Bold",
-      color: colors.warning,
-      marginBottom: 8,
-    },
-    warningText: {
-      fontSize: 13,
-      fontFamily: "Inter_400Regular",
-      color: "#D4A017",
-      lineHeight: 20,
-    },
+    warningCard: { backgroundColor: "#1A1000", borderRadius: colors.radius, borderWidth: 1, borderColor: "#F59E0B40", padding: 16, marginBottom: 20 },
+    warningTitle: { fontSize: 13, fontFamily: "Inter_700Bold", color: colors.warning, marginBottom: 8 },
+    warningText: { fontSize: 13, fontFamily: "Inter_400Regular", color: "#D4A017", lineHeight: 20 },
     successIcon: { alignItems: "center", marginBottom: 24, marginTop: 8 },
-    successCircle: {
-      width: 80,
-      height: 80,
-      borderRadius: 40,
-      borderWidth: 2,
-      borderColor: colors.success,
-      alignItems: "center",
-      justifyContent: "center",
-    },
+    successCircle: { width: 80, height: 80, borderRadius: 40, borderWidth: 2, borderColor: colors.success, alignItems: "center", justifyContent: "center" },
     successCheck: { fontSize: 36 },
-    successTitle: {
-      fontSize: 24,
-      fontFamily: "Inter_700Bold",
-      color: colors.foreground,
-      textAlign: "center",
-      marginBottom: 12,
-    },
-    successText: {
-      fontSize: 15,
-      fontFamily: "Inter_400Regular",
-      color: colors.mutedForeground,
-      textAlign: "center",
-      lineHeight: 22,
-      marginBottom: 8,
-    },
-    pendingBadge: {
-      alignSelf: "center",
-      backgroundColor: "#F59E0B20",
-      borderRadius: 20,
-      borderWidth: 1,
-      borderColor: "#F59E0B60",
-      paddingHorizontal: 16,
-      paddingVertical: 6,
-      marginBottom: 24,
-    },
-    pendingBadgeText: {
-      fontSize: 13,
-      fontFamily: "Inter_600SemiBold",
-      color: colors.warning,
-    },
-    // Welcome screen
+    successTitle: { fontSize: 24, fontFamily: "Inter_700Bold", color: colors.foreground, textAlign: "center", marginBottom: 12 },
+    successText: { fontSize: 15, fontFamily: "Inter_400Regular", color: colors.mutedForeground, textAlign: "center", lineHeight: 22, marginBottom: 8 },
     welcomeHero: { alignItems: "center", paddingVertical: 32, marginBottom: 16 },
-    welcomeCircle: {
-      width: 96,
-      height: 96,
-      borderRadius: 48,
-      backgroundColor: colors.primary + "20",
-      borderWidth: 2,
-      borderColor: colors.primary + "60",
-      alignItems: "center",
-      justifyContent: "center",
-      marginBottom: 24,
-    },
+    welcomeCircle: { width: 96, height: 96, borderRadius: 48, backgroundColor: colors.primary + "20", borderWidth: 2, borderColor: colors.primary + "60", alignItems: "center", justifyContent: "center", marginBottom: 24 },
     welcomeEmoji: { fontSize: 40 },
-    welcomeTitle: {
-      fontSize: 30,
-      fontFamily: "Inter_700Bold",
-      color: colors.foreground,
-      textAlign: "center",
-      marginBottom: 12,
-    },
-    welcomeSubtitle: {
-      fontSize: 15,
-      fontFamily: "Inter_400Regular",
-      color: colors.mutedForeground,
-      textAlign: "center",
-      lineHeight: 22,
-      paddingHorizontal: 8,
-    },
-    divider: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 12,
-      marginBottom: 16,
-    },
+    welcomeTitle: { fontSize: 30, fontFamily: "Inter_700Bold", color: colors.foreground, textAlign: "center", marginBottom: 12 },
+    welcomeSubtitle: { fontSize: 15, fontFamily: "Inter_400Regular", color: colors.mutedForeground, textAlign: "center", lineHeight: 22, paddingHorizontal: 8 },
+    divider: { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 16 },
     dividerLine: { flex: 1, height: 1, backgroundColor: colors.border },
-    dividerText: {
-      fontSize: 13,
-      fontFamily: "Inter_500Medium",
-      color: colors.mutedForeground,
+    dividerText: { fontSize: 13, fontFamily: "Inter_500Medium", color: colors.mutedForeground },
+    mnemonicGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 16 },
+    wordChip: { flexDirection: "row", alignItems: "center", backgroundColor: colors.secondary, borderRadius: 8, paddingVertical: 8, paddingHorizontal: 10, minWidth: "30%", flex: 1, gap: 6 },
+    wordIndex: { fontSize: 11, fontFamily: "Inter_500Medium", color: colors.mutedForeground, minWidth: 16 },
+    wordText: { fontSize: 14, fontFamily: "Inter_600SemiBold", color: colors.foreground },
+    checkRow: { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 24, padding: 16, backgroundColor: colors.card, borderRadius: colors.radius, borderWidth: 1, borderColor: colors.border },
+    checkbox: { width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: colors.primary, alignItems: "center", justifyContent: "center" },
+    checkboxChecked: { backgroundColor: colors.primary },
+    checkboxLabel: { flex: 1, fontSize: 14, fontFamily: "Inter_400Regular", color: colors.foreground, lineHeight: 20 },
+    importTextArea: { backgroundColor: colors.input, borderRadius: colors.radius - 4, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 16, paddingVertical: 14, fontSize: 16, fontFamily: "Inter_400Regular", color: colors.foreground, marginBottom: 12, minHeight: 120, textAlignVertical: "top" },
+    wordCountBadge: { alignSelf: "flex-end", marginBottom: 20, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
+    wordCountText: { fontSize: 12, fontFamily: "Inter_500Medium" },
+    restoredBadge: { alignSelf: "center", backgroundColor: "#16a34a20", borderRadius: 20, borderWidth: 1, borderColor: "#16a34a60", paddingHorizontal: 16, paddingVertical: 6, marginBottom: 24 },
+    restoredBadgeText: { fontSize: 13, fontFamily: "Inter_600SemiBold", color: colors.success },
+    infoRow: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: colors.border },
+    infoLabel: { fontSize: 13, fontFamily: "Inter_500Medium", color: colors.mutedForeground },
+    infoValue: { fontSize: 13, fontFamily: "Inter_600SemiBold", color: colors.foreground },
+    // Verify step
+    verifyRow: { marginBottom: 18 },
+    verifyLabel: { fontSize: 13, fontFamily: "Inter_600SemiBold", color: colors.mutedForeground, marginBottom: 8, letterSpacing: 0.5 },
+    verifyInput: {
+      backgroundColor: colors.input, borderRadius: colors.radius - 4, borderWidth: 1.5,
+      borderColor: colors.border, paddingHorizontal: 16, paddingVertical: 13,
+      fontSize: 16, fontFamily: "Inter_500Medium", color: colors.foreground,
     },
-    // Seed phrase grid
-    mnemonicGrid: {
-      flexDirection: "row",
-      flexWrap: "wrap",
-      gap: 8,
-      marginBottom: 16,
-    },
-    wordChip: {
-      flexDirection: "row",
-      alignItems: "center",
-      backgroundColor: colors.secondary,
-      borderRadius: 8,
-      paddingVertical: 8,
-      paddingHorizontal: 10,
-      minWidth: "30%",
-      flex: 1,
-      gap: 6,
-    },
-    wordIndex: {
-      fontSize: 11,
-      fontFamily: "Inter_500Medium",
-      color: colors.mutedForeground,
-      minWidth: 16,
-    },
-    wordText: {
-      fontSize: 14,
-      fontFamily: "Inter_600SemiBold",
-      color: colors.foreground,
-    },
-    checkRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 12,
-      marginBottom: 24,
-      padding: 16,
-      backgroundColor: colors.card,
-      borderRadius: colors.radius,
-      borderWidth: 1,
-      borderColor: colors.border,
-    },
-    checkbox: {
-      width: 22,
-      height: 22,
-      borderRadius: 6,
-      borderWidth: 2,
-      borderColor: colors.primary,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    checkboxChecked: {
-      backgroundColor: colors.primary,
-    },
-    checkboxLabel: {
-      flex: 1,
-      fontSize: 14,
-      fontFamily: "Inter_400Regular",
-      color: colors.foreground,
-      lineHeight: 20,
-    },
-    // Import text area
-    importTextArea: {
-      backgroundColor: colors.input,
-      borderRadius: colors.radius - 4,
-      borderWidth: 1,
-      borderColor: colors.border,
-      paddingHorizontal: 16,
-      paddingVertical: 14,
-      fontSize: 16,
-      fontFamily: "Inter_400Regular",
-      color: colors.foreground,
-      marginBottom: 12,
-      minHeight: 120,
-      textAlignVertical: "top",
-    },
-    wordCountBadge: {
-      alignSelf: "flex-end",
-      marginBottom: 20,
-      paddingHorizontal: 10,
-      paddingVertical: 4,
-      borderRadius: 12,
-    },
-    wordCountText: {
-      fontSize: 12,
-      fontFamily: "Inter_500Medium",
-    },
-    restoredBadge: {
-      alignSelf: "center",
-      backgroundColor: "#16a34a20",
-      borderRadius: 20,
-      borderWidth: 1,
-      borderColor: "#16a34a60",
-      paddingHorizontal: 16,
-      paddingVertical: 6,
-      marginBottom: 24,
-    },
-    restoredBadgeText: {
-      fontSize: 13,
-      fontFamily: "Inter_600SemiBold",
-      color: colors.success,
-    },
-    infoRow: {
-      flexDirection: "row",
-      justifyContent: "space-between",
-      paddingVertical: 8,
-      borderBottomWidth: 1,
-      borderBottomColor: colors.border,
-    },
-    infoLabel: {
-      fontSize: 13,
-      fontFamily: "Inter_500Medium",
-      color: colors.mutedForeground,
-    },
-    infoValue: {
-      fontSize: 13,
-      fontFamily: "Inter_600SemiBold",
-      color: colors.foreground,
-    },
+    verifyInputError: { borderColor: "#EF4444" },
+    verifyErrorBox: { flexDirection: "row", alignItems: "flex-start", gap: 8, backgroundColor: "#EF444410", borderRadius: 10, borderWidth: 1, borderColor: "#EF444430", padding: 12, marginBottom: 18 },
+    verifyErrorText: { flex: 1, fontSize: 13, fontFamily: "Inter_400Regular", color: "#EF4444", lineHeight: 18 },
   });
-
-  const wordCount = importInput.trim()
-    ? importInput.trim().split(/\s+/).filter(Boolean).length
-    : 0;
-  const wordCountColor =
-    wordCount === 12 ? colors.success : wordCount > 12 ? "#ef4444" : colors.mutedForeground;
 
   return (
     <View style={s.outer}>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-        <ScrollView
-          contentContainerStyle={s.scroll}
-          keyboardShouldPersistTaps="handled"
-        >
+        <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled">
           <Text style={s.logo}>MCHAIN</Text>
           {renderStepIndicator()}
 
@@ -513,11 +294,7 @@ export default function OnboardingScreen() {
                 </Text>
               </View>
 
-              <TouchableOpacity
-                style={[s.primaryBtn, creating && { opacity: 0.85 }]}
-                onPress={handleCreateWallet}
-                disabled={creating}
-              >
+              <TouchableOpacity style={[s.primaryBtn, creating && { opacity: 0.85 }]} onPress={handleCreateWallet} disabled={creating}>
                 <LinearGradient colors={["#0EA5E9", "#0284C7"]} style={s.primaryGrad}>
                   {creating ? (
                     <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
@@ -537,41 +314,21 @@ export default function OnboardingScreen() {
               </View>
 
               <TouchableOpacity
-                style={[
-                  s.primaryBtn,
-                  {
-                    borderWidth: 1,
-                    borderColor: colors.border,
-                    borderRadius: colors.radius,
-                    overflow: "hidden",
-                    marginBottom: 16,
-                  },
-                ]}
+                style={[s.primaryBtn, { borderWidth: 1, borderColor: colors.border, borderRadius: colors.radius, overflow: "hidden" }]}
                 onPress={handleImportWallet}
               >
                 <View style={{ paddingVertical: 16, alignItems: "center", backgroundColor: colors.card }}>
-                  <Text style={[s.primaryBtnText, { color: colors.foreground }]}>
-                    Import Existing Wallet
-                  </Text>
+                  <Text style={[s.primaryBtnText, { color: colors.foreground }]}>Import Existing Wallet</Text>
                 </View>
               </TouchableOpacity>
 
-              <Text
-                style={{
-                  fontSize: 12,
-                  fontFamily: "Inter_400Regular",
-                  color: colors.mutedForeground,
-                  textAlign: "center",
-                  lineHeight: 18,
-                  marginTop: 8,
-                }}
-              >
-                Already a validator? Import your wallet and your validator status will be restored automatically.
+              <Text style={{ fontSize: 12, fontFamily: "Inter_400Regular", color: colors.mutedForeground, textAlign: "center", lineHeight: 18, marginTop: 12 }}>
+                Already a validator? Import your wallet and your status will be restored automatically.
               </Text>
             </>
           )}
 
-          {/* ── BACKUP SEED PHRASE (Create) ───────────────────────────── */}
+          {/* ── BACKUP SEED PHRASE ────────────────────────────────────── */}
           {step === "backup" && (
             <>
               <Text style={s.title}>Save Your Seed Phrase</Text>
@@ -596,43 +353,82 @@ export default function OnboardingScreen() {
                     </View>
                   ))}
                 </View>
-                <TouchableOpacity style={{
-                  flexDirection: "row",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  paddingVertical: 10,
-                  borderRadius: colors.radius - 4,
-                  borderWidth: 1,
-                  borderColor: colors.border,
-                  gap: 6,
-                }} onPress={handleCopyMnemonic}>
-                  <Text style={{ fontSize: 14, fontFamily: "Inter_600SemiBold", color: colors.primary }}>
-                    Copy to Clipboard
-                  </Text>
+                <TouchableOpacity
+                  style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", paddingVertical: 10, borderRadius: colors.radius - 4, borderWidth: 1, borderColor: colors.border, gap: 6 }}
+                  onPress={handleCopyMnemonic}
+                >
+                  <Text style={{ fontSize: 14, fontFamily: "Inter_600SemiBold", color: colors.primary }}>Copy to Clipboard</Text>
                 </TouchableOpacity>
               </View>
 
-              <TouchableOpacity
-                style={s.checkRow}
-                onPress={() => setBackedUp((v) => !v)}
-                activeOpacity={0.7}
-              >
+              <TouchableOpacity style={s.checkRow} onPress={() => setBackedUp(v => !v)} activeOpacity={0.7}>
                 <View style={[s.checkbox, backedUp && s.checkboxChecked]}>
                   {backedUp && <Text style={{ color: "#fff", fontSize: 14 }}>✓</Text>}
                 </View>
-                <Text style={s.checkboxLabel}>
-                  I have written down my seed phrase and stored it safely
-                </Text>
+                <Text style={s.checkboxLabel}>I have written down my seed phrase and stored it safely</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity
-                style={[s.primaryBtn, !backedUp && { opacity: 0.4 }]}
-                onPress={() => backedUp && setStep("moniker")}
-                disabled={!backedUp}
-              >
+              <TouchableOpacity style={[s.primaryBtn, !backedUp && { opacity: 0.4 }]} onPress={() => backedUp && handleProceedToVerify()} disabled={!backedUp}>
                 <LinearGradient colors={["#0EA5E9", "#0284C7"]} style={s.primaryGrad}>
                   <Text style={s.primaryBtnText}>I've Saved My Phrase</Text>
                 </LinearGradient>
+              </TouchableOpacity>
+            </>
+          )}
+
+          {/* ── VERIFY SEED PHRASE ────────────────────────────────────── */}
+          {step === "verify" && (
+            <>
+              <Text style={s.title}>Confirm Your Backup</Text>
+              <Text style={s.subtitle}>
+                Enter the words at the positions below to confirm you've saved your seed phrase correctly.
+              </Text>
+
+              {verifyIndices.map((wordIdx, i) => (
+                <View key={i} style={s.verifyRow}>
+                  <Text style={s.verifyLabel}>WORD #{wordIdx + 1}</Text>
+                  <TextInput
+                    ref={verifyRefs[i]}
+                    style={[s.verifyInput, verifyError ? s.verifyInputError : null]}
+                    value={verifyInputs[i]}
+                    onChangeText={text => {
+                      const updated = [...verifyInputs];
+                      updated[i] = text;
+                      setVerifyInputs(updated);
+                      setVerifyError("");
+                    }}
+                    placeholder={`Enter word #${wordIdx + 1}`}
+                    placeholderTextColor={colors.mutedForeground}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    returnKeyType={i < 2 ? "next" : "done"}
+                    onSubmitEditing={() => {
+                      if (i < 2) verifyRefs[i + 1].current?.focus();
+                      else handleVerify();
+                    }}
+                  />
+                </View>
+              ))}
+
+              {!!verifyError && (
+                <View style={s.verifyErrorBox}>
+                  <Text style={{ fontSize: 16 }}>⚠️</Text>
+                  <Text style={s.verifyErrorText}>{verifyError}</Text>
+                </View>
+              )}
+
+              <TouchableOpacity
+                style={[s.primaryBtn, verifyInputs.some(v => !v.trim()) && { opacity: 0.4 }]}
+                onPress={handleVerify}
+                disabled={verifyInputs.some(v => !v.trim())}
+              >
+                <LinearGradient colors={["#0EA5E9", "#0284C7"]} style={s.primaryGrad}>
+                  <Text style={s.primaryBtnText}>Verify & Continue</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={s.secondaryBtn} onPress={() => setStep("backup")}>
+                <Text style={s.secondaryBtnText}>Back to Seed Phrase</Text>
               </TouchableOpacity>
             </>
           )}
@@ -658,9 +454,7 @@ export default function OnboardingScreen() {
               />
 
               <View style={[s.wordCountBadge, { backgroundColor: wordCountColor + "20" }]}>
-                <Text style={[s.wordCountText, { color: wordCountColor }]}>
-                  {wordCount} / 12 words
-                </Text>
+                <Text style={[s.wordCountText, { color: wordCountColor }]}>{wordCount} / 12 words</Text>
               </View>
 
               <TouchableOpacity
@@ -669,11 +463,7 @@ export default function OnboardingScreen() {
                 disabled={wordCount !== 12 || importLoading}
               >
                 <LinearGradient colors={["#0EA5E9", "#0284C7"]} style={s.primaryGrad}>
-                  {importLoading ? (
-                    <ActivityIndicator color="#FFFFFF" />
-                  ) : (
-                    <Text style={s.primaryBtnText}>Import Wallet</Text>
-                  )}
+                  {importLoading ? <ActivityIndicator color="#FFFFFF" /> : <Text style={s.primaryBtnText}>Import Wallet</Text>}
                 </LinearGradient>
               </TouchableOpacity>
 
@@ -686,100 +476,31 @@ export default function OnboardingScreen() {
           {/* ── MONIKER ──────────────────────────────────────────────── */}
           {step === "moniker" && (
             <>
-              <Text style={s.title}>Name Your Validator</Text>
+              <Text style={s.title}>Name Your Wallet</Text>
               <Text style={s.subtitle}>
-                Choose a name for your validator node (max 32 characters). This is visible on the network.
+                Choose a display name for your wallet (max 32 characters). You can register as a validator anytime from the Validator tab.
               </Text>
+
               <TextInput
                 style={s.input}
                 placeholder="e.g. MyNode-001"
                 placeholderTextColor={colors.mutedForeground}
                 value={moniker}
-                onChangeText={(t) => setMoniker(t.slice(0, 32))}
+                onChangeText={t => setMoniker(t.slice(0, 32))}
                 autoCapitalize="none"
                 autoCorrect={false}
                 maxLength={32}
+                returnKeyType="done"
+                onSubmitEditing={() => moniker.trim() && handleFinish()}
               />
+
               <TouchableOpacity
-                style={[s.primaryBtn, !moniker.trim() && { opacity: 0.4 }]}
-                onPress={() => moniker.trim() && setStep("register")}
-                disabled={!moniker.trim()}
+                style={[s.primaryBtn, (!moniker.trim() || finishing) && { opacity: 0.4 }]}
+                onPress={handleFinish}
+                disabled={!moniker.trim() || finishing}
               >
                 <LinearGradient colors={["#0EA5E9", "#0284C7"]} style={s.primaryGrad}>
-                  <Text style={s.primaryBtnText}>Continue</Text>
-                </LinearGradient>
-              </TouchableOpacity>
-            </>
-          )}
-
-          {/* ── REGISTER ─────────────────────────────────────────────── */}
-          {step === "register" && keyPair && (
-            <>
-              <Text style={s.title}>Register Validator</Text>
-              <Text style={s.subtitle}>
-                Submit your node registration to the MChain network. An admin will review and activate it.
-              </Text>
-              <View style={s.card}>
-                <Text style={s.cardTitle}>REGISTRATION DETAILS</Text>
-                <View style={s.infoRow}>
-                  <Text style={s.infoLabel}>Moniker</Text>
-                  <Text style={s.infoValue}>{moniker}</Text>
-                </View>
-                <View style={[s.infoRow, { borderBottomWidth: 0 }]}>
-                  <Text style={s.infoLabel}>Commission Rate</Text>
-                  <Text style={s.infoValue}>10%</Text>
-                </View>
-                <Text
-                  style={{
-                    fontSize: 11,
-                    fontFamily: "Inter_400Regular",
-                    color: colors.mutedForeground,
-                    marginTop: 12,
-                  }}
-                  numberOfLines={2}
-                >
-                  {keyPair.mxcAddress}
-                </Text>
-              </View>
-              <TouchableOpacity
-                style={[s.primaryBtn, loading && { opacity: 0.7 }]}
-                onPress={handleRegister}
-                disabled={loading}
-              >
-                <LinearGradient colors={["#0EA5E9", "#0284C7"]} style={s.primaryGrad}>
-                  {loading ? (
-                    <ActivityIndicator color="#FFFFFF" />
-                  ) : (
-                    <Text style={s.primaryBtnText}>Register as Validator</Text>
-                  )}
-                </LinearGradient>
-              </TouchableOpacity>
-              <TouchableOpacity style={s.secondaryBtn} onPress={handleFinish}>
-                <Text style={s.secondaryBtnText}>Skip registration</Text>
-              </TouchableOpacity>
-            </>
-          )}
-
-          {/* ── DONE (new registration) ───────────────────────────────── */}
-          {step === "done" && (
-            <>
-              <View style={s.successIcon}>
-                <View style={s.successCircle}>
-                  <Text style={s.successCheck}>✓</Text>
-                </View>
-              </View>
-              <Text style={s.successTitle}>Application Submitted</Text>
-              <View style={s.pendingBadge}>
-                <Text style={s.pendingBadgeText}>Waiting for Admin Approval</Text>
-              </View>
-              <Text style={s.successText}>
-                Your validator node registration has been submitted to the MChain network.
-                {"\n\n"}
-                Heartbeats will begin automatically once an admin activates your node. You can track status on the Validator tab.
-              </Text>
-              <TouchableOpacity style={s.primaryBtn} onPress={handleFinish}>
-                <LinearGradient colors={["#0EA5E9", "#0284C7"]} style={s.primaryGrad}>
-                  <Text style={s.primaryBtnText}>Enter Wallet</Text>
+                  {finishing ? <ActivityIndicator color="#FFFFFF" /> : <Text style={s.primaryBtnText}>Enter Wallet</Text>}
                 </LinearGradient>
               </TouchableOpacity>
             </>
@@ -795,9 +516,7 @@ export default function OnboardingScreen() {
               </View>
               <Text style={s.successTitle}>Validator Restored</Text>
               <View style={s.restoredBadge}>
-                <Text style={s.restoredBadgeText}>
-                  {restoredValidator.status.toUpperCase()}
-                </Text>
+                <Text style={s.restoredBadgeText}>{restoredValidator.status.toUpperCase()}</Text>
               </View>
               <Text style={s.successText}>
                 Your validator wallet has been recovered. All your validator history, earnings, and status are intact.
@@ -819,7 +538,7 @@ export default function OnboardingScreen() {
                 </View>
               </View>
 
-              <TouchableOpacity style={s.primaryBtn} onPress={handleRestoredEnter}>
+              <TouchableOpacity style={s.primaryBtn} onPress={() => router.replace("/(tabs)")}>
                 <LinearGradient colors={["#16a34a", "#15803d"]} style={s.primaryGrad}>
                   <Text style={s.primaryBtnText}>Enter Wallet</Text>
                 </LinearGradient>
