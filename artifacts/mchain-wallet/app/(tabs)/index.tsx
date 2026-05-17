@@ -37,13 +37,17 @@ import { useColors } from "@/hooks/useColors";
 function TokenBalanceRow({
   token,
   userEthAddress,
+  price,
   onRemove,
   onPress,
+  onBalanceChange,
 }: {
   token: CustomToken;
   userEthAddress: string | null;
+  price?: number;
   onRemove: () => void;
   onPress: () => void;
+  onBalanceChange?: (bal: string) => void;
 }) {
   const colors = useColors();
   const s = StyleSheet.create({
@@ -71,9 +75,10 @@ function TokenBalanceRow({
     tokenInfo: { flex: 1, justifyContent: "center", gap: 3 },
     tokenName: { fontSize: 14, fontFamily: "Inter_600SemiBold", color: colors.foreground, lineHeight: 18 },
     tokenSymbol: { fontSize: 11, fontFamily: "Inter_400Regular", color: colors.mutedForeground, lineHeight: 15 },
-    tokenAmountCol: { alignItems: "flex-end", justifyContent: "center", gap: 3, flexShrink: 0 },
+    tokenAmountCol: { alignItems: "flex-end", justifyContent: "center", gap: 2, flexShrink: 0 },
     tokenAmount: { fontSize: 14, fontFamily: "Inter_600SemiBold", color: colors.foreground, lineHeight: 18 },
     tokenSub: { fontSize: 11, fontFamily: "Inter_400Regular", color: colors.mutedForeground, lineHeight: 15 },
+    tokenUsd: { fontSize: 11, fontFamily: "Inter_400Regular", color: colors.mutedForeground, lineHeight: 15 },
     tokenLogoImg: { width: 44, height: 44, borderRadius: 22 },
     verifiedBadge: { paddingHorizontal: 5, paddingVertical: 1, borderRadius: 5, backgroundColor: "#10B98115", borderWidth: 1, borderColor: "#10B98140" },
     verifiedText: { fontSize: 9, fontFamily: "Inter_700Bold", color: "#10B981" },
@@ -97,6 +102,16 @@ function TokenBalanceRow({
     refetchInterval: 30_000,
     staleTime: 15_000,
   });
+
+  const prevBalRef = React.useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (balance !== undefined && balance !== prevBalRef.current) {
+      prevBalRef.current = balance;
+      onBalanceChange?.(balance);
+    }
+  }, [balance, onBalanceChange]);
+
+  const usdValue = price && balance ? parseFloat(balance) * price : 0;
 
   function renderRightActions() {
     return (
@@ -137,6 +152,7 @@ function TokenBalanceRow({
             </Text>
           )}
           <Text style={s.tokenSub}>{token.symbol}</Text>
+          {usdValue > 0 && <Text style={s.tokenUsd}>$ {usdValue.toFixed(2)}</Text>}
         </View>
         <Icon name="chevron-forward" size={14} color={colors.border} />
       </TouchableOpacity>
@@ -171,6 +187,7 @@ export default function DashboardScreen() {
   const [rpcPinging, setRpcPinging] = React.useState(false);
   const [showRpcBadge, setShowRpcBadge] = React.useState(false);
   const [selectedAsset, setSelectedAsset] = React.useState<AssetItem | null>(null);
+  const [tokenBalancesMap, setTokenBalancesMap] = React.useState<Record<string, string>>({});
   const rpcBadgeOpacity = useRef(new Animated.Value(0)).current;
   const rpcHideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scrollRef = useRef<ScrollView>(null);
@@ -296,7 +313,13 @@ export default function DashboardScreen() {
     refetchInterval: 5 * 60_000,
   });
   const mcPrice = prices["MC"] ?? 0;
-  const usdtValue = (parseFloat(balance) * mcPrice).toFixed(2);
+  const mcUsdValue = parseFloat(balance) * mcPrice;
+  const tokenUsdTotal = customTokens.reduce((sum, t) => {
+    const tokenBal = parseFloat(tokenBalancesMap[t.contractAddress] ?? "0") || 0;
+    const tokenPrice = prices[t.symbol.toUpperCase()] ?? 0;
+    return sum + tokenBal * tokenPrice;
+  }, 0);
+  const totalUsdValue = (mcUsdValue + tokenUsdTotal).toFixed(2);
 
   const s = StyleSheet.create({
     container: {
@@ -770,10 +793,7 @@ export default function DashboardScreen() {
             {acctLoading ? (
               <ActivityIndicator color="#FFFFFF" style={{ marginBottom: 4 }} />
             ) : (
-              <>
-                <Text style={s.balanceAmount}>$ {usdtValue}</Text>
-                <Text style={[s.balanceSub, { marginBottom: 8, color: "rgba(255,255,255,0.65)" }]}>{balance} MC</Text>
-              </>
+              <Text style={s.balanceAmount}>$ {totalUsdValue}</Text>
             )}
 
             <TouchableOpacity style={s.addressRow} onPress={copyAddress}>
@@ -846,6 +866,7 @@ export default function DashboardScreen() {
                 <View style={s.tokenAmountCol}>
                   <Text style={s.tokenAmount}>{balance}</Text>
                   <Text style={s.tokenSub}>MC</Text>
+                  {mcUsdValue > 0 && <Text style={s.tokenSub}>$ {mcUsdValue.toFixed(2)}</Text>}
                 </View>
                 <Icon name="chevron-forward" size={14} color={colors.border} style={{ marginLeft: 4 }} />
               </TouchableOpacity>
@@ -856,11 +877,15 @@ export default function DashboardScreen() {
                   key={token.id}
                   token={token}
                   userEthAddress={ethAddress ?? null}
+                  price={prices[token.symbol.toUpperCase()] ?? 0}
                   onRemove={async () => {
                     await removeCustomToken(token.contractAddress);
                     refetchTokens();
                   }}
                   onPress={() => setSelectedAsset({ kind: "token", token, balance: "—", address: ethAddress ?? "" })}
+                  onBalanceChange={(bal) =>
+                    setTokenBalancesMap(prev => ({ ...prev, [token.contractAddress]: bal }))
+                  }
                 />
               ))}
 
