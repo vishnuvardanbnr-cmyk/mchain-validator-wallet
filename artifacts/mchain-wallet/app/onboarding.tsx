@@ -57,11 +57,12 @@ export default function OnboardingScreen() {
   const [keyPair, setKeyPair] = useState<KeyPair | null>(null);
   const [backedUp, setBackedUp] = useState(false);
 
-  // Verify step — 3 random word positions to confirm
+  // Verify step — tap-to-fill chip puzzle
   const [verifyIndices, setVerifyIndices] = useState<number[]>([]);
-  const [verifyInputs, setVerifyInputs] = useState<string[]>(["", "", ""]);
+  const [verifySlots, setVerifySlots] = useState<(string | null)[]>([null, null, null]);
+  const [verifyPool, setVerifyPool] = useState<string[]>([]);
   const [verifyError, setVerifyError] = useState("");
-  const verifyRefs = [useRef<TextInput>(null), useRef<TextInput>(null), useRef<TextInput>(null)];
+  const shakeAnim = useRef(new Animated.Value(0)).current;
 
   // Import state
   const [importInput, setImportInput] = useState("");
@@ -157,8 +158,16 @@ export default function OnboardingScreen() {
 
   function handleProceedToVerify() {
     const indices = pickRandomIndices(12, 3);
+    const words = mnemonic.split(" ");
+    // Build a pool: the 3 correct words + 9 random distractors, all shuffled
+    const correctWords = indices.map(i => words[i]);
+    const others = words.filter((_, i) => !indices.includes(i));
+    // Pick 9 distractors from remaining 9 words
+    const distractors = others.sort(() => Math.random() - 0.5).slice(0, 9);
+    const pool = [...correctWords, ...distractors].sort(() => Math.random() - 0.5);
     setVerifyIndices(indices);
-    setVerifyInputs(["", "", ""]);
+    setVerifySlots([null, null, null]);
+    setVerifyPool(pool);
     setVerifyError("");
     setStep("verify");
   }
@@ -166,16 +175,47 @@ export default function OnboardingScreen() {
   function handleVerify() {
     const words = mnemonic.split(" ");
     const allCorrect = verifyIndices.every(
-      (idx, i) => verifyInputs[i].trim().toLowerCase() === words[idx].toLowerCase()
+      (idx, i) => verifySlots[i]?.toLowerCase() === words[idx].toLowerCase()
     );
     if (!allCorrect) {
-      setVerifyError("One or more words are incorrect. Check your written copy and try again.");
+      setVerifyError("Some words are wrong. Tap a filled slot to remove it and try again.");
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      // Shake animation
+      Animated.sequence([
+        Animated.timing(shakeAnim, { toValue: 8, duration: 60, useNativeDriver: true }),
+        Animated.timing(shakeAnim, { toValue: -8, duration: 60, useNativeDriver: true }),
+        Animated.timing(shakeAnim, { toValue: 6, duration: 60, useNativeDriver: true }),
+        Animated.timing(shakeAnim, { toValue: -6, duration: 60, useNativeDriver: true }),
+        Animated.timing(shakeAnim, { toValue: 0, duration: 60, useNativeDriver: true }),
+      ]).start();
       return;
     }
     setVerifyError("");
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setStep("moniker");
+  }
+
+  function tapPoolChip(word: string) {
+    // Place into next empty slot
+    const nextEmpty = verifySlots.findIndex(s => s === null);
+    if (nextEmpty === -1) return;
+    const newSlots = [...verifySlots];
+    newSlots[nextEmpty] = word;
+    setVerifySlots(newSlots);
+    setVerifyPool(verifyPool.filter(w => w !== word));
+    setVerifyError("");
+    if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  }
+
+  function tapFilledSlot(slotIdx: number) {
+    const word = verifySlots[slotIdx];
+    if (!word) return;
+    const newSlots = [...verifySlots];
+    newSlots[slotIdx] = null;
+    setVerifySlots(newSlots);
+    setVerifyPool([...verifyPool, word]);
+    setVerifyError("");
+    if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   }
 
   async function handleFinish() {
@@ -311,16 +351,34 @@ export default function OnboardingScreen() {
     infoRow: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: colors.border },
     infoLabel: { fontSize: 13, fontFamily: "Inter_500Medium", color: colors.mutedForeground },
     infoValue: { fontSize: 13, fontFamily: "Inter_600SemiBold", color: colors.foreground },
-    // Verify step
-    verifyRow: { marginBottom: 18 },
-    verifyLabel: { fontSize: 13, fontFamily: "Inter_600SemiBold", color: colors.mutedForeground, marginBottom: 8, letterSpacing: 0.5 },
-    verifyInput: {
-      backgroundColor: colors.input, borderRadius: colors.radius - 4, borderWidth: 1.5,
-      borderColor: colors.border, paddingHorizontal: 16, paddingVertical: 13,
-      fontSize: 16, fontFamily: "Inter_500Medium", color: colors.foreground,
+    // Verify step — chip puzzle
+    slotsContainer: { gap: 10, marginBottom: 4 },
+    slot: {
+      flexDirection: "row", alignItems: "center",
+      backgroundColor: colors.card, borderRadius: 12,
+      borderWidth: 1.5, borderColor: colors.border,
+      borderStyle: "dashed" as const,
+      paddingHorizontal: 14, paddingVertical: 14, gap: 8,
     },
-    verifyInputError: { borderColor: "#EF4444" },
-    verifyErrorBox: { flexDirection: "row", alignItems: "flex-start", gap: 8, backgroundColor: "#EF444410", borderRadius: 10, borderWidth: 1, borderColor: "#EF444430", padding: 12, marginBottom: 18 },
+    slotFilled: {
+      borderStyle: "solid" as const,
+      borderColor: colors.primary + "60",
+      backgroundColor: colors.primary + "0C",
+    },
+    slotError: { borderColor: "#EF444460", backgroundColor: "#EF44440C" },
+    slotIndex: { fontSize: 11, fontFamily: "Inter_700Bold", color: colors.primary, minWidth: 26 },
+    slotWord: { flex: 1, fontSize: 15, fontFamily: "Inter_600SemiBold", color: colors.foreground },
+    slotPlaceholder: { flex: 1, fontSize: 13, fontFamily: "Inter_400Regular", color: colors.mutedForeground + "80" },
+    slotX: { fontSize: 18, fontFamily: "Inter_400Regular", color: colors.mutedForeground, lineHeight: 20 },
+    chipPool: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+    poolChip: {
+      paddingHorizontal: 14, paddingVertical: 10,
+      borderRadius: 20, borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.card,
+    },
+    poolChipText: { fontSize: 14, fontFamily: "Inter_500Medium", color: colors.foreground },
+    verifyErrorBox: { flexDirection: "row", alignItems: "flex-start", gap: 8, backgroundColor: "#EF444410", borderRadius: 10, borderWidth: 1, borderColor: "#EF444430", padding: 12 },
     verifyErrorText: { flex: 1, fontSize: 13, fontFamily: "Inter_400Regular", color: "#EF4444", lineHeight: 18 },
   });
 
@@ -491,48 +549,79 @@ export default function OnboardingScreen() {
             <>
               <Text style={s.title}>Confirm Your Backup</Text>
               <Text style={s.subtitle}>
-                Enter the words at the positions below to confirm you've saved your seed phrase correctly.
+                Tap the words below to fill slots {verifyIndices.map(i => `#${i + 1}`).join(", ")} of your seed phrase in order.
               </Text>
 
-              {verifyIndices.map((wordIdx, i) => (
-                <View key={i} style={s.verifyRow}>
-                  <Text style={s.verifyLabel}>WORD #{wordIdx + 1}</Text>
-                  <TextInput
-                    ref={verifyRefs[i]}
-                    style={[s.verifyInput, verifyError ? s.verifyInputError : null]}
-                    value={verifyInputs[i]}
-                    onChangeText={text => {
-                      const updated = [...verifyInputs];
-                      updated[i] = text;
-                      setVerifyInputs(updated);
-                      setVerifyError("");
-                    }}
-                    placeholder={`Enter word #${wordIdx + 1}`}
-                    placeholderTextColor={colors.mutedForeground}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    returnKeyType={i < 2 ? "next" : "done"}
-                    onSubmitEditing={() => {
-                      if (i < 2) verifyRefs[i + 1].current?.focus();
-                      else handleVerify();
-                    }}
-                  />
-                </View>
-              ))}
+              {/* Slots */}
+              <Animated.View style={[s.slotsContainer, { transform: [{ translateX: shakeAnim }] }]}>
+                {verifyIndices.map((wordIdx, i) => {
+                  const filled = !!verifySlots[i];
+                  const wrong = verifyError && filled;
+                  return (
+                    <TouchableOpacity
+                      key={i}
+                      style={[
+                        s.slot,
+                        filled && s.slotFilled,
+                        wrong ? s.slotError : null,
+                      ]}
+                      onPress={() => tapFilledSlot(i)}
+                      disabled={!filled}
+                      activeOpacity={0.75}
+                    >
+                      <Text style={s.slotIndex}>#{wordIdx + 1}</Text>
+                      {filled ? (
+                        <Text style={s.slotWord}>{verifySlots[i]}</Text>
+                      ) : (
+                        <Text style={s.slotPlaceholder}>tap a word below</Text>
+                      )}
+                      {filled && (
+                        <Text style={s.slotX}>×</Text>
+                      )}
+                    </TouchableOpacity>
+                  );
+                })}
+              </Animated.View>
+
+              {/* Divider */}
+              <View style={[s.divider, { marginVertical: 20 }]}>
+                <View style={s.dividerLine} />
+                <Text style={s.dividerText}>word pool</Text>
+                <View style={s.dividerLine} />
+              </View>
+
+              {/* Word chip pool */}
+              <View style={s.chipPool}>
+                {verifyPool.map((word) => (
+                  <TouchableOpacity
+                    key={word}
+                    style={s.poolChip}
+                    onPress={() => tapPoolChip(word)}
+                    activeOpacity={0.75}
+                  >
+                    <Text style={s.poolChipText}>{word}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
 
               {!!verifyError && (
-                <View style={s.verifyErrorBox}>
-                  <Text style={{ fontSize: 16 }}>⚠️</Text>
+                <View style={[s.verifyErrorBox, { marginTop: 16 }]}>
+                  <Text style={{ fontSize: 14 }}>⚠️</Text>
                   <Text style={s.verifyErrorText}>{verifyError}</Text>
                 </View>
               )}
 
               <TouchableOpacity
-                style={[s.primaryBtn, verifyInputs.some(v => !v.trim()) && { opacity: 0.4 }]}
+                style={[s.primaryBtn, { marginTop: 20 }, verifySlots.some(v => !v) && { opacity: 0.4 }]}
                 onPress={handleVerify}
-                disabled={verifyInputs.some(v => !v.trim())}
+                disabled={verifySlots.some(v => !v)}
+                activeOpacity={0.88}
               >
-                <LinearGradient colors={["#0EA5E9", "#0284C7"]} style={s.primaryGrad}>
+                <LinearGradient
+                  colors={["#0EA5E9", "#0284C7"]}
+                  start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+                  style={s.primaryGrad}
+                >
                   <Text style={s.primaryBtnText}>Verify & Continue</Text>
                 </LinearGradient>
               </TouchableOpacity>
