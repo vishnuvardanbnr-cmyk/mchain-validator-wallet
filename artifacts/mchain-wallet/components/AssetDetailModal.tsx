@@ -407,28 +407,24 @@ export function AssetDetailModal({
     ? (tokenData ?? []).map((t) => normalizeToken(t, tokenSymbol, tokenDecimals))
     : (nativeData?.transactions ?? []).map(normalizeNative);
 
-  // Derive the user's ETH address used for send/receive detection
-  // For native: find it from the first tx that matches our mxc address
-  // For token: it's directly asset.address
-  const myEthAddress = isToken
-    ? ethAddr.toLowerCase()
-    : allEntries.find(e => e.fromMxc === mxcAddr || e.toMxc === mxcAddr)
-        ? allEntries.reduce((found, e) => {
-            if (found) return found;
-            if (e.fromMxc === mxcAddr) return e.fromEth.toLowerCase();
-            if (e.toMxc === mxcAddr) return e.toEth.toLowerCase();
-            return found;
-          }, "")
-        : "";
+  // For token txs we match by ETH address; for native we match by MXC address directly.
+  const myEthAddress = ethAddr.toLowerCase();
 
   const filtered = allEntries.filter((e) => {
-    const from = e.fromEth.toLowerCase();
-    const to = e.toEth.toLowerCase();
-    const mine = myEthAddress.toLowerCase();
-    if (filter === "send") return from === mine && to !== mine;
-    if (filter === "receive") return to === mine && from !== mine;
-    // "all": only show transactions where this wallet is the sender or receiver
-    return !mine || from === mine || to === mine;
+    if (isToken) {
+      const from = e.fromEth.toLowerCase();
+      const to   = e.toEth.toLowerCase();
+      if (filter === "send")    return from === myEthAddress && to !== myEthAddress;
+      if (filter === "receive") return to === myEthAddress && from !== myEthAddress;
+      return from === myEthAddress || to === myEthAddress;
+    } else {
+      // Native: always filter strictly by MXC address so a fresh wallet shows nothing
+      const isSender   = e.fromMxc === mxcAddr;
+      const isReceiver = e.toMxc   === mxcAddr;
+      if (filter === "send")    return isSender && !isReceiver;
+      if (filter === "receive") return isReceiver && !isSender;
+      return isSender || isReceiver;
+    }
   });
 
   const s = StyleSheet.create({
