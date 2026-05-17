@@ -75,6 +75,13 @@ router.post("/admin/tokens", adminAuth, async (req, res) => {
     sortOrder: sortOrder ?? 0,
     active: active ?? true,
   }).returning();
+  // Auto-create a default price row so the token appears in Prices immediately
+  await pool.query(
+    `INSERT INTO coin_prices (symbol, price_type, fixed_price)
+     VALUES ($1, 'fixed', 0)
+     ON CONFLICT (symbol) DO NOTHING`,
+    [symbol.toUpperCase().trim()]
+  );
   await invalidate(TOKENS_CACHE_KEY);
   res.status(201).json({ token: row });
 });
