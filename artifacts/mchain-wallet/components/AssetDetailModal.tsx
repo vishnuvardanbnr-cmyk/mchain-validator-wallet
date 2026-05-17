@@ -6,6 +6,7 @@ import { ethAddressToMxc, shortenAddress } from "@/services/crypto";
 import type { CustomToken } from "@/services/tokens";
 import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
+import { router } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 import React, { useState } from "react";
 import {
@@ -484,9 +485,32 @@ export function AssetDetailModal({
                   <Text style={s.balance}>{displayBalance}</Text>
                 </View>
               </View>
-              <TouchableOpacity style={s.closeBtn} onPress={onClose}>
-                <Icon name="close" size={14} color={colors.mutedForeground} />
-              </TouchableOpacity>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                {isToken && (
+                  <TouchableOpacity
+                    style={{
+                      flexDirection: "row", alignItems: "center", gap: 6,
+                      backgroundColor: colors.primary + "15", borderWidth: 1,
+                      borderColor: colors.primary + "40", borderRadius: 10,
+                      paddingHorizontal: 12, paddingVertical: 7,
+                    }}
+                    onPress={() => {
+                      onClose();
+                      router.push({
+                        pathname: "/(tabs)/send",
+                        params: { tokenContract: contractAddr },
+                      });
+                    }}
+                    activeOpacity={0.75}
+                  >
+                    <Icon name="paper-plane-outline" size={13} color={colors.primary} />
+                    <Text style={{ fontSize: 13, fontFamily: "Inter_600SemiBold", color: colors.primary }}>Send</Text>
+                  </TouchableOpacity>
+                )}
+                <TouchableOpacity style={s.closeBtn} onPress={onClose}>
+                  <Icon name="close" size={14} color={colors.mutedForeground} />
+                </TouchableOpacity>
+              </View>
             </View>
 
             <View style={s.tabs}>
