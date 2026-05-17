@@ -833,6 +833,8 @@ export default function DashboardScreen() {
           </PressableScale>
         </View>
 
+        <NfcWalletCard />
+
         {/* ── Portfolio tabs ─────────────────────────────────── */}
         <View style={s.tabsContainer}>
           {/* Tab bar */}
@@ -943,7 +945,6 @@ export default function DashboardScreen() {
         visible={showNewWallet}
         onClose={() => setShowNewWallet(false)}
       />
-      <NfcWalletCard />
       <AddTokenModal
         visible={showAddToken}
         onClose={() => setShowAddToken(false)}
