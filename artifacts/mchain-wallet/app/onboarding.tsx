@@ -19,7 +19,9 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useWallet } from "@/context/WalletContext";
 import { generateMnemonic, mnemonicToKeyPair } from "@/services/crypto";
+import { setPin } from "@/services/pin";
 import { useColors } from "@/hooks/useColors";
+import { Icon } from "@/components/Icon";
 import type { KeyPair } from "@/services/crypto";
 import type { ValidatorInfo } from "@/services/api";
 
@@ -29,6 +31,7 @@ type Step =
   | "backup"
   | "verify"
   | "moniker"
+  | "set_pin"
   | "import_enter"
   | "done_restored";
 
@@ -72,6 +75,78 @@ export default function OnboardingScreen() {
   // Shared
   const [moniker, setMoniker] = useState("");
   const [finishing, setFinishing] = useState(false);
+
+  // PIN setup step
+  const PIN_LEN = 6;
+  const [pinDigits, setPinDigits] = useState("");
+  const [pinConfirm, setPinConfirm] = useState("");
+  const [pinPhase, setPinPhase] = useState<"enter" | "confirm">("enter");
+  const [pinError, setPinError] = useState("");
+  const pinShake = useRef(new Animated.Value(0)).current;
+
+  function doPinShake() {
+    pinShake.setValue(0);
+    Animated.sequence([
+      Animated.timing(pinShake, { toValue: 10, duration: 60, useNativeDriver: true }),
+      Animated.timing(pinShake, { toValue: -10, duration: 60, useNativeDriver: true }),
+      Animated.timing(pinShake, { toValue: 8, duration: 60, useNativeDriver: true }),
+      Animated.timing(pinShake, { toValue: -8, duration: 60, useNativeDriver: true }),
+      Animated.timing(pinShake, { toValue: 0, duration: 60, useNativeDriver: true }),
+    ]).start();
+  }
+
+  function enterPinToSetPin(key: string) {
+    setPinError("");
+    const active = pinPhase === "enter" ? pinDigits : pinConfirm;
+    if (active.length >= PIN_LEN) return;
+    const next = active + key;
+    if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (pinPhase === "enter") {
+      setPinDigits(next);
+      if (next.length === PIN_LEN) {
+        // Advance to confirm phase
+        setTimeout(() => setPinPhase("confirm"), 180);
+      }
+    } else {
+      setPinConfirm(next);
+      if (next.length === PIN_LEN) {
+        // Auto-verify
+        setTimeout(() => confirmPin(pinDigits, next), 180);
+      }
+    }
+  }
+
+  function deletePinDigit() {
+    setPinError("");
+    if (pinPhase === "enter") {
+      setPinDigits(d => d.slice(0, -1));
+    } else {
+      setPinConfirm(d => d.slice(0, -1));
+    }
+  }
+
+  async function confirmPin(entered: string, confirmed: string) {
+    if (entered !== confirmed) {
+      if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      doPinShake();
+      setPinError("PINs don't match — try again");
+      setPinConfirm("");
+      setPinPhase("enter");
+      setPinDigits("");
+      return;
+    }
+    await setPin(entered);
+    if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    await handleFinish();
+  }
+
+  function goToSetPin() {
+    setPinDigits("");
+    setPinConfirm("");
+    setPinPhase("enter");
+    setPinError("");
+    setStep("set_pin");
+  }
 
   // Pulsing glow animation for the welcome logo
   const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -238,8 +313,8 @@ export default function OnboardingScreen() {
 
   const mnemonicWords = mnemonic ? mnemonic.split(" ") : [];
 
-  const createSteps: Step[] = ["backup", "verify", "moniker"];
-  const importSteps: Step[] = ["import_enter", "moniker"];
+  const createSteps: Step[] = ["backup", "verify", "moniker", "set_pin"];
+  const importSteps: Step[] = ["import_enter", "moniker", "set_pin"];
 
   function renderStepIndicator() {
     if (step === "welcome" || step === "done_restored") return null;
@@ -380,6 +455,33 @@ export default function OnboardingScreen() {
     poolChipText: { fontSize: 14, fontFamily: "Inter_500Medium", color: colors.foreground },
     verifyErrorBox: { flexDirection: "row", alignItems: "flex-start", gap: 8, backgroundColor: "#EF444410", borderRadius: 10, borderWidth: 1, borderColor: "#EF444430", padding: 12 },
     verifyErrorText: { flex: 1, fontSize: 13, fontFamily: "Inter_400Regular", color: "#EF4444", lineHeight: 18 },
+
+    // PIN setup step
+    pinIconWrap: {
+      width: 68, height: 68, borderRadius: 34,
+      backgroundColor: colors.primary + "18",
+      alignItems: "center", justifyContent: "center",
+      marginBottom: 8,
+    },
+    pinDotsRow: { flexDirection: "row", gap: 14, marginTop: 28, marginBottom: 4 },
+    pinDot: { width: 14, height: 14, borderRadius: 7, borderWidth: 1.5 },
+    pinDotFilled: { backgroundColor: colors.primary, borderColor: colors.primary },
+    pinDotEmpty: { backgroundColor: "transparent", borderColor: colors.border },
+    pinDotError: { borderColor: "#EF4444" },
+    pinErrorText: {
+      fontSize: 13, fontFamily: "Inter_500Medium",
+      color: "#EF4444", textAlign: "center", marginTop: 10, marginBottom: 4,
+    },
+    keypad: { width: "100%", gap: 10, marginTop: 8 },
+    keyRow: { flexDirection: "row", justifyContent: "center", gap: 16 },
+    key: {
+      width: 78, height: 78, borderRadius: 39,
+      alignItems: "center", justifyContent: "center",
+      backgroundColor: colors.card,
+      borderWidth: 1, borderColor: colors.border,
+    },
+    keyText: { fontSize: 24, fontFamily: "Inter_600SemiBold", color: colors.foreground },
+    keyEmpty: { backgroundColor: "transparent", borderColor: "transparent" },
   });
 
   return (
@@ -694,13 +796,88 @@ export default function OnboardingScreen() {
               />
 
               <TouchableOpacity
-                style={[s.primaryBtn, (!moniker.trim() || finishing) && { opacity: 0.4 }]}
-                onPress={handleFinish}
-                disabled={!moniker.trim() || finishing}
+                style={[s.primaryBtn, !moniker.trim() && { opacity: 0.4 }]}
+                onPress={goToSetPin}
+                disabled={!moniker.trim()}
               >
                 <LinearGradient colors={["#0EA5E9", "#0284C7"]} style={s.primaryGrad}>
-                  {finishing ? <ActivityIndicator color="#FFFFFF" /> : <Text style={s.primaryBtnText}>Enter Wallet</Text>}
+                  <Text style={s.primaryBtnText}>Continue</Text>
                 </LinearGradient>
+              </TouchableOpacity>
+            </>
+          )}
+
+          {/* ── SET PIN ──────────────────────────────────────────────── */}
+          {step === "set_pin" && (
+            <>
+              <View style={s.pinIconWrap}>
+                <Icon name="shield-checkmark" size={32} color={colors.primary} />
+              </View>
+              <Text style={s.title}>
+                {pinPhase === "enter" ? "Set a PIN" : "Confirm PIN"}
+              </Text>
+              <Text style={s.subtitle}>
+                {pinPhase === "enter"
+                  ? "Add a 6-digit PIN to protect your wallet every time you open the app."
+                  : "Enter the same PIN again to confirm."}
+              </Text>
+
+              {/* Dots */}
+              <Animated.View style={[s.pinDotsRow, { transform: [{ translateX: pinShake }] }]}>
+                {Array.from({ length: PIN_LEN }).map((_, i) => {
+                  const active = pinPhase === "enter" ? pinDigits : pinConfirm;
+                  const filled = i < active.length;
+                  return (
+                    <View
+                      key={i}
+                      style={[
+                        s.pinDot,
+                        filled ? s.pinDotFilled : s.pinDotEmpty,
+                        pinError ? s.pinDotError : null,
+                      ]}
+                    />
+                  );
+                })}
+              </Animated.View>
+
+              {!!pinError && <Text style={s.pinErrorText}>{pinError}</Text>}
+              {!pinError && <View style={{ height: 20 }} />}
+
+              {/* Keypad */}
+              <View style={s.keypad}>
+                {(["1","2","3","4","5","6","7","8","9"] as string[]).reduce<string[][]>((rows, k, i) => {
+                  if (i % 3 === 0) rows.push([]);
+                  rows[rows.length - 1].push(k);
+                  return rows;
+                }, []).map((row, ri) => (
+                  <View key={ri} style={s.keyRow}>
+                    {row.map(k => (
+                      <TouchableOpacity key={k} style={s.key} onPress={() => enterPinToSetPin(k)} activeOpacity={0.65}>
+                        <Text style={s.keyText}>{k}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                ))}
+                <View style={s.keyRow}>
+                  <View style={[s.key, s.keyEmpty]} />
+                  <TouchableOpacity style={s.key} onPress={() => enterPinToSetPin("0")} activeOpacity={0.65}>
+                    <Text style={s.keyText}>0</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={s.key} onPress={deletePinDigit} activeOpacity={0.65}>
+                    <Icon name="backspace-outline" size={22} color={colors.foreground} />
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {/* Skip */}
+              <TouchableOpacity
+                style={s.secondaryBtn}
+                onPress={async () => { await handleFinish(); }}
+                disabled={finishing}
+              >
+                <Text style={s.secondaryBtnText}>
+                  {finishing ? "Setting up…" : "Skip for now"}
+                </Text>
               </TouchableOpacity>
             </>
           )}
