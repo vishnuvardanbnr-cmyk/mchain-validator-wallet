@@ -1,5 +1,6 @@
 import { Platform } from "react-native";
 import { getNodeUrl, isDefaultNode } from "./node";
+import { getPublicApiBase } from "./api";
 import { ethAddressToMxc } from "./crypto";
 
 // Re-export types used across the P2P UI
@@ -167,10 +168,14 @@ function cvtEscrowInfo(info: EscrowInfo): EscrowInfo {
 // ── API base URL ──────────────────────────────────────────────────────────────
 
 function getApiBase(): string {
-  const domain = typeof process !== "undefined" ? process.env.EXPO_PUBLIC_DOMAIN : undefined;
-  if (domain) return `https://${domain}/api/p2p`;
-  if (Platform.OS !== "web") return `${getNodeUrl()}/p2p`;
-  return "/api/p2p";
+  // Web: use domain env or relative path
+  if (Platform.OS === "web") {
+    const domain = typeof process !== "undefined" ? process.env.EXPO_PUBLIC_DOMAIN : undefined;
+    if (domain) return `https://${domain}/api/p2p`;
+    return "/api/p2p";
+  }
+  // Native: P2P lives on the VPS, not the chain node
+  return `${getPublicApiBase()}/p2p`;
 }
 
 async function req<T>(path: string, options?: RequestInit): Promise<T> {
