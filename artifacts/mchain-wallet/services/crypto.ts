@@ -155,18 +155,35 @@ function rlpList(items: Uint8Array[]): Uint8Array {
 // Matches MetaMask's default format: maxFeePerGas = maxPriorityFeePerGas = 1 Gwei
 // (MChain has base fee = 0, so these values are identical to gasPrice)
 
+/** Build ABI-encoded calldata for ERC-20 transfer(address,uint256).
+ *  toAddress: mxc1... bech32 or 0x ETH hex — both accepted. */
+export function buildErc20TransferData(toAddress: string, amountRaw: bigint): Uint8Array {
+  const toEth = toAddress.startsWith("mxc1") ? mxcAddressToEthAddress(toAddress) : toAddress;
+  const addrHex = (toEth.startsWith("0x") ? toEth.slice(2) : toEth).toLowerCase().padStart(40, "0");
+  const addrBytes = hexToBytes(addrHex);
+  const amtHex = amountRaw === 0n ? "00" : amountRaw.toString(16).padStart(64, "0");
+  const amtBytes = hexToBytes(amtHex);
+  const data = new Uint8Array(4 + 32 + 32);
+  // selector: keccak256("transfer(address,uint256)")[0:4] = 0xa9059cbb
+  data[0] = 0xa9; data[1] = 0x05; data[2] = 0x9c; data[3] = 0xbb;
+  data.set(addrBytes, 4 + (32 - addrBytes.length));   // right-aligned in first slot
+  data.set(amtBytes, 4 + 32 + (32 - amtBytes.length)); // right-aligned in second slot
+  return data;
+}
+
 export function signEvmTransaction(
   toAddress: string,   // MXC bech32 (mxc1...) or 0x ETH address — both accepted
   valueWei: bigint,
   nonce: number,
   privateKeyHex: string,
-  options?: { maxPriorityFeePerGas?: bigint; maxFeePerGas?: bigint; gasLimit?: bigint; chainId?: number }
+  options?: { maxPriorityFeePerGas?: bigint; maxFeePerGas?: bigint; gasLimit?: bigint; chainId?: number; data?: Uint8Array }
 ): string {
   const {
     maxPriorityFeePerGas = 1_000_000_000n, // 1 Gwei
     maxFeePerGas         = 1_000_000_000n, // 1 Gwei (base fee = 0 on MChain)
     gasLimit             = 21_000n,
     chainId              = 1888,
+    data                 = new Uint8Array(0),
   } = options ?? {};
 
   const resolved = toAddress.startsWith("mxc1") ? mxcAddressToEthAddress(toAddress) : toAddress;
@@ -182,8 +199,8 @@ export function signEvmTransaction(
     rlpItem(bigintToMinimalBytes(gasLimit)),
     rlpItem(toBytes),
     rlpItem(bigintToMinimalBytes(valueWei)),
-    rlpItem(new Uint8Array(0)), // data (empty)
-    rlpList([]),                 // accessList (empty)
+    rlpItem(data),   // data (empty for native, ABI-encoded for ERC-20)
+    rlpList([]),     // accessList (empty)
   ];
   const unsignedRlp = rlpList(fields);
   const payload = new Uint8Array(1 + unsignedRlp.length);
@@ -204,8 +221,8 @@ export function signEvmTransaction(
     rlpItem(bigintToMinimalBytes(gasLimit)),
     rlpItem(toBytes),
     rlpItem(bigintToMinimalBytes(valueWei)),
-    rlpItem(new Uint8Array(0)), // data
-    rlpList([]),                 // accessList
+    rlpItem(data),   // data
+    rlpList([]),     // accessList
     rlpItem(bigintToMinimalBytes(v)),
     rlpItem(bigintToMinimalBytes(sig.r)),
     rlpItem(bigintToMinimalBytes(sig.s)),
