@@ -25,6 +25,7 @@ import {
   fetchTokenMetadata,
   type TokenMetadata,
 } from "@/services/tokens";
+
 import { api, type ApiVerifiedToken } from "@/services/api";
 import { useQuery } from "@tanstack/react-query";
 
@@ -39,7 +40,7 @@ type Props = {
 export function AddTokenModal({ visible, onClose, onAdded }: Props) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { ethAddress } = useWallet();
+  const { ethAddress, activeWallet } = useWallet();
 
   const [panel, setPanel] = useState<Panel>("popular");
   const [search, setSearch] = useState("");
@@ -171,7 +172,7 @@ export function AddTokenModal({ visible, onClose, onAdded }: Props) {
         decimals: selectedVerified.decimals,
         logoUrl: selectedVerified.logoUrl,
         verified: true,
-      });
+      }, activeWallet?.id ?? "", activeWallet?.nfcTemporary, activeWallet?.mxcAddress);
       if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       onAdded();
       onClose();
@@ -196,7 +197,7 @@ export function AddTokenModal({ visible, onClose, onAdded }: Props) {
         name: cName.trim(),
         decimals: dec,
         verified: false,
-      });
+      }, activeWallet?.id ?? "", activeWallet?.nfcTemporary, activeWallet?.mxcAddress);
       if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       onAdded();
       onClose();
@@ -359,7 +360,7 @@ export function AddTokenModal({ visible, onClose, onAdded }: Props) {
                         decimals: token.decimals,
                         logoUrl: token.logoUrl,
                         verified: true,
-                      });
+                      }, activeWallet?.id ?? "", activeWallet?.nfcTemporary, activeWallet?.mxcAddress);
                       if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
                       onAdded();
                       onClose();
