@@ -289,6 +289,15 @@ export default function DashboardScreen() {
   const balance = account?.balance ? weiToMc(account.balance) : "0.00";
   const vStatus = validatorData?.validator?.status ?? validatorStatus;
 
+  const { data: prices = {} } = useQuery({
+    queryKey: ["prices"],
+    queryFn: () => api.getPrices(),
+    staleTime: 60_000,
+    refetchInterval: 5 * 60_000,
+  });
+  const mcPrice = prices["MC"] ?? 0;
+  const usdtValue = (parseFloat(balance) * mcPrice).toFixed(2);
+
   const s = StyleSheet.create({
     container: {
       flex: 1,
@@ -757,11 +766,14 @@ export default function DashboardScreen() {
             end={{ x: 1, y: 1 }}
             style={s.balanceGrad}
           >
-            <Text style={s.balanceLabel}>MC BALANCE</Text>
+            <Text style={s.balanceLabel}>BALANCE</Text>
             {acctLoading ? (
               <ActivityIndicator color="#FFFFFF" style={{ marginBottom: 4 }} />
             ) : (
-              <Text style={s.balanceAmount}>{balance}</Text>
+              <>
+                <Text style={s.balanceAmount}>$ {usdtValue}</Text>
+                <Text style={[s.balanceSub, { marginBottom: 8, color: "rgba(255,255,255,0.65)" }]}>{balance} MC</Text>
+              </>
             )}
 
             <TouchableOpacity style={s.addressRow} onPress={copyAddress}>

@@ -478,6 +478,19 @@ export const api = {
     return data.tokens ?? [];
   },
 
+  getPrices: async (): Promise<Record<string, number>> => {
+    const domain = typeof process !== "undefined" ? process.env.EXPO_PUBLIC_DOMAIN : undefined;
+    const base = domain ? `https://${domain}/api` : "/api";
+    try {
+      const res = await fetch(`${base}/prices`);
+      if (!res.ok) return {};
+      const data = (await res.json()) as { prices: { symbol: string; priceUsd: number }[] };
+      return Object.fromEntries((data.prices ?? []).map(p => [p.symbol, p.priceUsd]));
+    } catch {
+      return {};
+    }
+  },
+
   getFeaturedDapps: async (): Promise<FeaturedDapp[]> => {
     const domain = typeof process !== "undefined" ? process.env.EXPO_PUBLIC_DOMAIN : undefined;
     const base = domain ? `https://${domain}/api` : "/api";

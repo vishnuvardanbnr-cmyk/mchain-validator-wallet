@@ -7,6 +7,7 @@ import adminRouter from "./admin";
 import legalRouter from "./legal";
 import dappsRouter, { ensureDappsTable } from "./dapps";
 import tokensRouter, { ensureTokensTable } from "./tokens";
+import pricesRouter, { ensurePricesTable } from "./prices";
 
 const router: IRouter = Router();
 
@@ -18,9 +19,11 @@ router.use(adminRouter);
 router.use(legalRouter);
 router.use(dappsRouter);
 router.use(tokensRouter);
+router.use(pricesRouter);
 
 // Auto-create tables on startup
 ensureDappsTable().catch(console.error);
 ensureTokensTable().catch(console.error);
+ensurePricesTable().catch(console.error);
 
 export default router;
