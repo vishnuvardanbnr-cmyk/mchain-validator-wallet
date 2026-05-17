@@ -420,8 +420,8 @@ export default function P2PScreen() {
           <View style={s.connectTrustRow}>
             {[
               { icon: "shield-checkmark-outline", label: "Non-custodial" },
-              { icon: "person-outline", label: "Pseudonymous" },
               { icon: "flash-outline", label: "Instant Settlement" },
+              { icon: "lock-closed-outline", label: "Private Keys Local" },
             ].map(p => (
               <View key={p.label} style={s.connectTrustPill}>
                 <Icon name={p.icon} size={11} color={colors.primary} />

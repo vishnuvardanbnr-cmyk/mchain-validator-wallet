@@ -1025,7 +1025,7 @@ export default function ValidatorScreen() {
             <Icon name="shield-outline" size={26} color={colors.primary} />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={s.registerTitle}>Become a{"\n"}Validator</Text>
+            <Text style={s.registerTitle}>Become a Validator</Text>
             <View style={s.registerBadge}>
               <Icon name="radio-button-on-outline" size={9} color="#10B981" />
               <Text style={s.registerBadgeText}>Chain ID 1888</Text>
