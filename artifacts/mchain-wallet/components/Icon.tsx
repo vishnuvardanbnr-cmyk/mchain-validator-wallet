@@ -25,6 +25,9 @@ import {
   CloudUpload,
   Copy,
   Cpu,
+  Bell,
+  BellOff,
+  Delete,
   Diamond,
   Download,
   Edit2,
@@ -88,6 +91,16 @@ const MAP: Record<string, LucideIcon> = {
   "alert-circle-outline": AlertCircle,
   "alert-triangle": AlertTriangle,
   "warning-outline": AlertTriangle,
+
+  // bell / notifications
+  "bell": Bell,
+  "bell-outline": Bell,
+  "notifications-outline": Bell,
+  "bell-off": BellOff,
+
+  // backspace / delete
+  "backspace-outline": Delete,
+  "backspace": Delete,
 
   // arrows / navigation
   "arrow-back": ArrowLeft,
@@ -198,6 +211,7 @@ const MAP: Record<string, LucideIcon> = {
 
   // lock
   "lock": Lock,
+  "lock-closed": Lock,
   "lock-closed-outline": Lock,
   "lock-open-outline": LockOpen,
 

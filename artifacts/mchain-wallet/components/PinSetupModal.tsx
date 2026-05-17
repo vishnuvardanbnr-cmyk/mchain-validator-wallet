@@ -2,6 +2,7 @@ import { Icon } from "@/components/Icon";
 import { useColors } from "@/hooks/useColors";
 import { clearPin, setPin, verifyPin } from "@/services/pin";
 import * as Haptics from "expo-haptics";
+import { LinearGradient } from "expo-linear-gradient";
 import React, { useEffect, useRef, useState } from "react";
 import {
   Animated,
@@ -26,6 +27,11 @@ interface Props {
   onCancel: () => void;
 }
 
+const KEYPAD_LETTERS: Record<string, string> = {
+  "2": "ABC", "3": "DEF", "4": "GHI", "5": "JKL",
+  "6": "MNO", "7": "PQRS", "8": "TUV", "9": "WXYZ",
+};
+
 export function PinSetupModal({ visible, mode, onDone, onCancel }: Props) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
@@ -35,6 +41,7 @@ export function PinSetupModal({ visible, mode, onDone, onCancel }: Props) {
   const [error, setError] = useState("");
   const [checking, setChecking] = useState(false);
   const shakeAnim = useRef(new Animated.Value(0)).current;
+  const dotScale = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     if (visible) {
@@ -52,14 +59,25 @@ export function PinSetupModal({ visible, mode, onDone, onCancel }: Props) {
     }
   }, [digits]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Animate dot fill
+  useEffect(() => {
+    if (digits.length > 0 && digits.length < PIN_LENGTH) {
+      Animated.sequence([
+        Animated.timing(dotScale, { toValue: 1.2, duration: 60, useNativeDriver: true }),
+        Animated.timing(dotScale, { toValue: 1, duration: 60, useNativeDriver: true }),
+      ]).start();
+    }
+  }, [digits.length, dotScale]);
+
   function shake() {
     shakeAnim.setValue(0);
     Animated.sequence([
-      Animated.timing(shakeAnim, { toValue: 10, duration: 60, useNativeDriver: true }),
-      Animated.timing(shakeAnim, { toValue: -10, duration: 60, useNativeDriver: true }),
-      Animated.timing(shakeAnim, { toValue: 8, duration: 60, useNativeDriver: true }),
-      Animated.timing(shakeAnim, { toValue: -8, duration: 60, useNativeDriver: true }),
-      Animated.timing(shakeAnim, { toValue: 0, duration: 60, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: 12, duration: 55, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: -12, duration: 55, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: 9, duration: 55, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: -9, duration: 55, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: 5, duration: 55, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: 0, duration: 55, useNativeDriver: true }),
     ]).start();
   }
 
@@ -71,7 +89,7 @@ export function PinSetupModal({ visible, mode, onDone, onCancel }: Props) {
       if (!ok) {
         if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
         shake();
-        setError("Incorrect PIN. Try again.");
+        setError("Incorrect PIN. Please try again.");
         setDigits("");
         setChecking(false);
         return;
@@ -102,9 +120,9 @@ export function PinSetupModal({ visible, mode, onDone, onCancel }: Props) {
       if (pin !== firstPin) {
         if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
         shake();
-        setError("PINs don't match. Start again.");
+        setError("PINs don't match. Please try again.");
         setFirstPin("");
-        setPhase(mode === "setup" ? "new1" : "new1");
+        setPhase("new1");
         setDigits("");
         setChecking(false);
         return;
@@ -128,108 +146,248 @@ export function PinSetupModal({ visible, mode, onDone, onCancel }: Props) {
   function pressDelete() {
     if (checking) return;
     setError("");
+    if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setDigits((d) => d.slice(0, -1));
+  }
+
+  function handleBack() {
+    if (phase === "new2") {
+      setPhase("new1");
+      setDigits("");
+      setFirstPin("");
+      setError("");
+    } else {
+      onCancel();
+    }
   }
 
   function getTitle() {
     if (phase === "current") return mode === "remove" ? "Confirm Removal" : "Verify Current PIN";
-    if (phase === "new1") return "Set New PIN";
-    return "Confirm New PIN";
+    if (phase === "new1") return mode === "change" ? "Set New PIN" : "Set PIN";
+    return "Confirm PIN";
   }
 
   function getSubtitle() {
     if (phase === "current") return mode === "remove" ? "Enter your current PIN to remove it." : "Enter your current PIN to continue.";
-    if (phase === "new1") return "Choose a 6-digit PIN for your wallet.";
-    return "Re-enter the PIN to confirm.";
+    if (phase === "new1") return "Choose a 6-digit PIN to secure your wallet.";
+    return "Re-enter your PIN to confirm.";
   }
 
-  const s = StyleSheet.create({
-    overlay: { flex: 1, backgroundColor: colors.background },
-    inner: {
-      flex: 1, alignItems: "center", justifyContent: "space-between",
-      paddingTop: insets.top + 24, paddingBottom: insets.bottom + 16,
-      paddingHorizontal: 32,
-    },
-    topSection: { alignItems: "center", width: "100%", gap: 8 },
-    lockIcon: {
-      width: 64, height: 64, borderRadius: 32,
-      backgroundColor: colors.primary + "18",
-      alignItems: "center", justifyContent: "center", marginBottom: 16,
-    },
-    title: { fontSize: 22, fontFamily: "Inter_700Bold", color: colors.foreground, textAlign: "center" },
-    subtitle: { fontSize: 14, fontFamily: "Inter_400Regular", color: colors.mutedForeground, textAlign: "center", marginTop: 4 },
-    dotsRow: { flexDirection: "row", gap: 14, marginTop: 36 },
-    dot: { width: 14, height: 14, borderRadius: 7, borderWidth: 1.5 },
-    dotFilled: { backgroundColor: colors.primary, borderColor: colors.primary },
-    dotEmpty: { backgroundColor: "transparent", borderColor: colors.border },
-    dotError: { borderColor: "#EF4444" },
-    error: { fontSize: 13, fontFamily: "Inter_500Medium", color: "#EF4444", textAlign: "center", marginTop: 16, minHeight: 18 },
-    keypad: { width: "100%", gap: 12 },
-    keyRow: { flexDirection: "row", justifyContent: "center", gap: 20 },
-    key: {
-      width: 76, height: 76, borderRadius: 38,
-      alignItems: "center", justifyContent: "center",
-      backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
-    },
-    keyText: { fontSize: 24, fontFamily: "Inter_600SemiBold", color: colors.foreground },
-    keyEmpty: { backgroundColor: "transparent", borderColor: "transparent" },
-    cancelBtn: { marginTop: 8, paddingVertical: 10, alignSelf: "center" },
-    cancelText: { fontSize: 15, fontFamily: "Inter_500Medium", color: colors.mutedForeground },
-  });
+  function getStep(): { current: number; total: number } | null {
+    if (mode === "setup") return { current: phase === "new1" ? 1 : 2, total: 2 };
+    if (mode === "change") return { current: phase === "current" ? 1 : phase === "new1" ? 2 : 3, total: 3 };
+    return null;
+  }
 
+  const step = getStep();
   const hasError = !!error;
+  const showBack = phase === "new2" || (mode === "change" && phase === "new1");
+
+  const BG = "#0B0E11";
+  const SURFACE = "#1E2329";
+  const SURFACE2 = "#2B3139";
+  const PRIMARY = colors.primary;
+
+  const s = StyleSheet.create({
+    overlay: { flex: 1, backgroundColor: BG },
+    header: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      paddingHorizontal: 16,
+      paddingTop: insets.top + 12,
+      paddingBottom: 12,
+    },
+    headerBtn: {
+      width: 40, height: 40, borderRadius: 20,
+      backgroundColor: SURFACE,
+      alignItems: "center", justifyContent: "center",
+    },
+    headerTitle: {
+      fontSize: 16, fontFamily: "Inter_600SemiBold", color: "#FFFFFF",
+    },
+    headerStep: {
+      flexDirection: "row", alignItems: "center", gap: 4,
+    },
+    stepDot: {
+      width: 6, height: 6, borderRadius: 3,
+    },
+    inner: {
+      flex: 1,
+      alignItems: "center",
+      justifyContent: "space-between",
+      paddingBottom: insets.bottom + 20,
+      paddingHorizontal: 28,
+    },
+    topSection: { alignItems: "center", width: "100%", paddingTop: 24, gap: 0 },
+    iconWrap: {
+      width: 80, height: 80, borderRadius: 24, marginBottom: 24,
+      alignItems: "center", justifyContent: "center",
+    },
+    iconGrad: {
+      width: 80, height: 80, borderRadius: 24,
+      alignItems: "center", justifyContent: "center",
+    },
+    title: {
+      fontSize: 26, fontFamily: "Inter_700Bold",
+      color: "#FFFFFF", textAlign: "center", letterSpacing: -0.3,
+    },
+    subtitle: {
+      fontSize: 14, fontFamily: "Inter_400Regular",
+      color: "rgba(255,255,255,0.45)", textAlign: "center",
+      marginTop: 8, lineHeight: 20,
+    },
+    dotsRow: {
+      flexDirection: "row", gap: 16, marginTop: 40,
+    },
+    dotOuter: {
+      width: 18, height: 18, borderRadius: 9,
+      alignItems: "center", justifyContent: "center",
+      borderWidth: 1.5,
+    },
+    dotInner: {
+      width: 10, height: 10, borderRadius: 5,
+    },
+    error: {
+      fontSize: 13, fontFamily: "Inter_500Medium",
+      color: "#F6465D", textAlign: "center",
+      marginTop: 18, minHeight: 20,
+      letterSpacing: 0.1,
+    },
+
+    // ── Keypad ──────────────────────────────────────────────────────────────────
+    keypad: { width: "100%", gap: 10 },
+    keyRow: { flexDirection: "row", justifyContent: "center", gap: 16 },
+    key: {
+      width: 88, height: 88, borderRadius: 44,
+      alignItems: "center", justifyContent: "center",
+      backgroundColor: SURFACE,
+    },
+    keyPressed: { backgroundColor: SURFACE2 },
+    keyEmpty: { backgroundColor: "transparent" },
+    keyNum: {
+      fontSize: 26, fontFamily: "Inter_400Regular", color: "#FFFFFF",
+      lineHeight: 30,
+    },
+    keyLetters: {
+      fontSize: 9, fontFamily: "Inter_600SemiBold",
+      color: "rgba(255,255,255,0.35)", letterSpacing: 1.2, marginTop: 1,
+    },
+    deleteKey: {
+      width: 88, height: 88, borderRadius: 44,
+      alignItems: "center", justifyContent: "center",
+      backgroundColor: "transparent",
+    },
+  });
 
   return (
     <Modal visible={visible} animationType="slide" statusBarTranslucent>
       <View style={s.overlay}>
-        <View style={s.inner}>
-          <View style={s.topSection}>
-            <View style={s.lockIcon}>
-              <Icon
-                name={mode === "remove" ? "lock-open-outline" : "lock-closed"}
-                size={28}
-                color={colors.primary}
-              />
-            </View>
-            <Text style={s.title}>{getTitle()}</Text>
-            <Text style={s.subtitle}>{getSubtitle()}</Text>
-            <Animated.View style={[s.dotsRow, { transform: [{ translateX: shakeAnim }] }]}>
-              {Array.from({ length: PIN_LENGTH }).map((_, i) => (
+        {/* ── Header ───────────────────────────────────────────── */}
+        <View style={s.header}>
+          <TouchableOpacity style={s.headerBtn} onPress={handleBack} activeOpacity={0.7}>
+            <Icon name={showBack ? "arrow-back" : "x"} size={18} color="rgba(255,255,255,0.7)" />
+          </TouchableOpacity>
+          <Text style={s.headerTitle}>{getTitle()}</Text>
+          {step ? (
+            <View style={s.headerStep}>
+              {Array.from({ length: step.total }).map((_, i) => (
                 <View
                   key={i}
                   style={[
-                    s.dot,
-                    i < digits.length ? s.dotFilled : s.dotEmpty,
-                    hasError ? s.dotError : undefined,
+                    s.stepDot,
+                    { backgroundColor: i < step.current ? PRIMARY : SURFACE2 },
                   ]}
                 />
               ))}
+            </View>
+          ) : (
+            <View style={{ width: 40 }} />
+          )}
+        </View>
+
+        <View style={s.inner}>
+          {/* ── Top ──────────────────────────────────────────────── */}
+          <View style={s.topSection}>
+            <View style={s.iconWrap}>
+              <LinearGradient
+                colors={[PRIMARY + "40", PRIMARY + "18"]}
+                style={s.iconGrad}
+              >
+                <Icon
+                  name={mode === "remove" ? "lock-open-outline" : "shield-checkmark-outline"}
+                  size={34}
+                  color={PRIMARY}
+                  strokeWidth={1.5}
+                />
+              </LinearGradient>
+            </View>
+
+            <Text style={s.title}>{getTitle()}</Text>
+            <Text style={s.subtitle}>{getSubtitle()}</Text>
+
+            <Animated.View style={[s.dotsRow, { transform: [{ translateX: shakeAnim }] }]}>
+              {Array.from({ length: PIN_LENGTH }).map((_, i) => {
+                const filled = i < digits.length;
+                return (
+                  <Animated.View
+                    key={i}
+                    style={[
+                      s.dotOuter,
+                      {
+                        borderColor: hasError
+                          ? "#F6465D"
+                          : filled
+                          ? PRIMARY
+                          : "rgba(255,255,255,0.15)",
+                        transform: [{ scale: filled && i === digits.length - 1 ? dotScale : 1 }],
+                      },
+                    ]}
+                  >
+                    {filled && (
+                      <View
+                        style={[
+                          s.dotInner,
+                          { backgroundColor: hasError ? "#F6465D" : PRIMARY },
+                        ]}
+                      />
+                    )}
+                  </Animated.View>
+                );
+              })}
             </Animated.View>
+
             <Text style={s.error}>{error}</Text>
           </View>
 
+          {/* ── Keypad ───────────────────────────────────────────── */}
           <View style={s.keypad}>
-            {([["1", "2", "3"], ["4", "5", "6"], ["7", "8", "9"]] as string[][]).map((row, ri) => (
+            {(["123", "456", "789"] as string[]).map((row, ri) => (
               <View key={ri} style={s.keyRow}>
-                {row.map((k) => (
-                  <TouchableOpacity key={k} style={s.key} onPress={() => pressKey(k)} activeOpacity={0.65}>
-                    <Text style={s.keyText}>{k}</Text>
+                {row.split("").map((k) => (
+                  <TouchableOpacity
+                    key={k}
+                    style={s.key}
+                    onPress={() => pressKey(k)}
+                    activeOpacity={0.6}
+                  >
+                    <Text style={s.keyNum}>{k}</Text>
+                    {KEYPAD_LETTERS[k] ? (
+                      <Text style={s.keyLetters}>{KEYPAD_LETTERS[k]}</Text>
+                    ) : null}
                   </TouchableOpacity>
                 ))}
               </View>
             ))}
             <View style={s.keyRow}>
               <View style={[s.key, s.keyEmpty]} />
-              <TouchableOpacity style={s.key} onPress={() => pressKey("0")} activeOpacity={0.65}>
-                <Text style={s.keyText}>0</Text>
+              <TouchableOpacity style={s.key} onPress={() => pressKey("0")} activeOpacity={0.6}>
+                <Text style={s.keyNum}>0</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={s.key} onPress={pressDelete} activeOpacity={0.65}>
-                <Icon name="backspace-outline" size={22} color={colors.foreground} />
+              <TouchableOpacity style={s.deleteKey} onPress={pressDelete} activeOpacity={0.6}>
+                <Icon name="backspace-outline" size={24} color="rgba(255,255,255,0.6)" strokeWidth={1.5} />
               </TouchableOpacity>
             </View>
-            <TouchableOpacity style={s.cancelBtn} onPress={onCancel} activeOpacity={0.7}>
-              <Text style={s.cancelText}>Cancel</Text>
-            </TouchableOpacity>
           </View>
         </View>
       </View>
