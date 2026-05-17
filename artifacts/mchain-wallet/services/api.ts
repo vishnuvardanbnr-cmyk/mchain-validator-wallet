@@ -3,7 +3,7 @@ import { getNodeUrl, isDefaultNode } from "./node";
 
 /** Returns the base URL for public API endpoints (tokens, prices, dapps, p2p).
  *  Priority: EXPO_PUBLIC_API_URL → EXPO_PUBLIC_DOMAIN (web dev) → fallback */
-function getPublicApiBase(): string {
+export function getPublicApiBase(): string {
   const apiUrl = typeof process !== "undefined" ? process.env.EXPO_PUBLIC_API_URL : undefined;
   if (apiUrl) return `${apiUrl.replace(/\/$/, "")}/api`;
   if (Platform.OS === "web") {
