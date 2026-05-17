@@ -38,6 +38,102 @@ interface Props {
 
 const PIN_LENGTH = 6;
 
+const KEYS = [
+  ["1", "2", "3"],
+  ["4", "5", "6"],
+  ["7", "8", "9"],
+  ["", "0", "DEL"],
+];
+const SUB: Record<string, string> = {
+  "2": "ABC", "3": "DEF", "4": "GHI", "5": "JKL",
+  "6": "MNO", "7": "PQRS", "8": "TUV", "9": "WXYZ",
+};
+
+function NfcRings({ color }: { color: string }) {
+  const ring1 = useRef(new Animated.Value(0)).current;
+  const ring2 = useRef(new Animated.Value(0)).current;
+  const ring3 = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    function animateRing(val: Animated.Value, delay: number) {
+      return Animated.loop(
+        Animated.sequence([
+          Animated.delay(delay),
+          Animated.timing(val, {
+            toValue: 1,
+            duration: 1800,
+            easing: Easing.out(Easing.ease),
+            useNativeDriver: true,
+          }),
+          Animated.timing(val, { toValue: 0, duration: 0, useNativeDriver: true }),
+        ])
+      );
+    }
+    const a1 = animateRing(ring1, 0);
+    const a2 = animateRing(ring2, 550);
+    const a3 = animateRing(ring3, 1100);
+    a1.start(); a2.start(); a3.start();
+    return () => { a1.stop(); a2.stop(); a3.stop(); };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const ringStyle = (val: Animated.Value) => ({
+    position: "absolute" as const,
+    width: 200,
+    height: 200,
+    borderRadius: 100,
+    borderWidth: 1.5,
+    borderColor: color,
+    opacity: val.interpolate({ inputRange: [0, 0.15, 1], outputRange: [0, 0.55, 0] }),
+    transform: [{ scale: val.interpolate({ inputRange: [0, 1], outputRange: [0.25, 1] }) }],
+  });
+
+  return (
+    <View style={{ width: 200, height: 200, alignItems: "center", justifyContent: "center" }}>
+      <Animated.View style={ringStyle(ring1)} />
+      <Animated.View style={ringStyle(ring2)} />
+      <Animated.View style={ringStyle(ring3)} />
+    </View>
+  );
+}
+
+function CardIllustration({ colors }: { colors: ReturnType<typeof useColors> }) {
+  const floatAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(floatAnim, { toValue: -7, duration: 1600, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+        Animated.timing(floatAnim, { toValue: 7, duration: 1600, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+      ])
+    ).start();
+    return () => floatAnim.stopAnimation();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return (
+    <Animated.View style={{ transform: [{ translateY: floatAnim }], marginBottom: 4 }}>
+      <LinearGradient
+        colors={["#1e1b4b", "#312e81", "#4338ca"]}
+        start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+        style={{
+          width: 130, height: 82, borderRadius: 12,
+          padding: 12, justifyContent: "space-between",
+          shadowColor: "#6366F1", shadowOpacity: 0.5,
+          shadowRadius: 16, shadowOffset: { width: 0, height: 8 },
+          elevation: 12,
+        }}
+      >
+        <View style={{ flexDirection: "row", justifyContent: "flex-end" }}>
+          <Icon name="wifi-outline" size={20} color="rgba(255,255,255,0.7)" />
+        </View>
+        <View>
+          <View style={{ width: 28, height: 4, borderRadius: 2, backgroundColor: "rgba(255,255,255,0.3)", marginBottom: 4 }} />
+          <View style={{ width: 48, height: 4, borderRadius: 2, backgroundColor: "rgba(255,255,255,0.15)" }} />
+        </View>
+      </LinearGradient>
+    </Animated.View>
+  );
+}
+
 export function NfcWriteModal({ visible, privateKey, mxcAddress, publicKey, label, onClose, onSuccess }: Props) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
@@ -48,40 +144,45 @@ export function NfcWriteModal({ visible, privateKey, mxcAddress, publicKey, labe
   const [pinStep, setPinStep] = useState<"enter" | "confirm">("enter");
   const [errorMsg, setErrorMsg] = useState("");
 
-  const slideAnim = useRef(new Animated.Value(500)).current;
+  const slideAnim = useRef(new Animated.Value(600)).current;
   const overlayOpacity = useRef(new Animated.Value(0)).current;
-  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const shakeAnim = useRef(new Animated.Value(0)).current;
+  const successScale = useRef(new Animated.Value(0)).current;
+  const contentOpacity = useRef(new Animated.Value(1)).current;
+  const lockScale = useRef(new Animated.Value(1)).current;
+  const lockGlow = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     if (visible) {
       setStatus("pin");
-      setPin("");
-      setConfirmPin("");
-      setPinStep("enter");
-      setErrorMsg("");
+      setPin(""); setConfirmPin(""); setPinStep("enter"); setErrorMsg("");
+      successScale.setValue(0);
       Animated.parallel([
-        Animated.timing(slideAnim, { toValue: 0, duration: 320, useNativeDriver: true, easing: Easing.out(Easing.cubic) }),
-        Animated.timing(overlayOpacity, { toValue: 1, duration: 250, useNativeDriver: true }),
+        Animated.timing(slideAnim, { toValue: 0, duration: 380, useNativeDriver: true, easing: Easing.out(Easing.back(1.1)) }),
+        Animated.timing(overlayOpacity, { toValue: 1, duration: 280, useNativeDriver: true }),
       ]).start();
       checkNfcSupport();
     } else {
       Animated.parallel([
-        Animated.timing(slideAnim, { toValue: 500, duration: 260, useNativeDriver: true, easing: Easing.in(Easing.ease) }),
-        Animated.timing(overlayOpacity, { toValue: 0, duration: 200, useNativeDriver: true }),
+        Animated.timing(slideAnim, { toValue: 600, duration: 280, useNativeDriver: true, easing: Easing.in(Easing.ease) }),
+        Animated.timing(overlayOpacity, { toValue: 0, duration: 220, useNativeDriver: true }),
       ]).start();
     }
   }, [visible]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (status === "waiting") {
-      const pulse = Animated.loop(
+    if (status === "pin") {
+      Animated.loop(
         Animated.sequence([
-          Animated.timing(pulseAnim, { toValue: 1.18, duration: 900, useNativeDriver: true, easing: Easing.inOut(Easing.ease) }),
-          Animated.timing(pulseAnim, { toValue: 1, duration: 900, useNativeDriver: true, easing: Easing.inOut(Easing.ease) }),
+          Animated.timing(lockGlow, { toValue: 1, duration: 1200, useNativeDriver: true, easing: Easing.inOut(Easing.ease) }),
+          Animated.timing(lockGlow, { toValue: 0, duration: 1200, useNativeDriver: true, easing: Easing.inOut(Easing.ease) }),
         ])
-      );
-      pulse.start();
-      return () => pulse.stop();
+      ).start();
+    } else {
+      lockGlow.stopAnimation();
+    }
+    if (status === "success") {
+      Animated.spring(successScale, { toValue: 1, useNativeDriver: true, tension: 80, friction: 6 }).start();
     }
   }, [status]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -92,48 +193,62 @@ export function NfcWriteModal({ visible, privateKey, mxcAddress, publicKey, labe
     if (!enabled) { setStatus("unsupported"); setErrorMsg("NFC is disabled. Enable it in your phone settings."); }
   }
 
+  function shakeError() {
+    shakeAnim.setValue(0);
+    Animated.sequence([
+      Animated.timing(shakeAnim, { toValue: 10, duration: 60, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: -10, duration: 60, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: 8, duration: 60, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: -8, duration: 60, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: 4, duration: 60, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: 0, duration: 60, useNativeDriver: true }),
+    ]).start();
+  }
+
+  function crossfadeTo(nextStatus: Status) {
+    Animated.timing(contentOpacity, { toValue: 0, duration: 150, useNativeDriver: true }).start(() => {
+      setStatus(nextStatus);
+      Animated.timing(contentOpacity, { toValue: 1, duration: 200, useNativeDriver: true }).start();
+    });
+  }
+
   function handleKeyPress(key: string) {
     if (pinStep === "enter") {
       if (key === "DEL") { setPin(p => p.slice(0, -1)); return; }
       if (pin.length >= PIN_LENGTH) return;
       const next = pin + key;
       setPin(next);
-      if (next.length === PIN_LENGTH) {
-        setTimeout(() => setPinStep("confirm"), 150);
-      }
+      if (next.length === PIN_LENGTH) setTimeout(() => setPinStep("confirm"), 180);
     } else {
       if (key === "DEL") { setConfirmPin(p => p.slice(0, -1)); return; }
       if (confirmPin.length >= PIN_LENGTH) return;
       const next = confirmPin + key;
       setConfirmPin(next);
-      if (next.length === PIN_LENGTH) {
-        setTimeout(() => handlePinConfirmed(pin, next), 150);
-      }
+      if (next.length === PIN_LENGTH) setTimeout(() => handlePinConfirmed(pin, next), 180);
     }
   }
 
   async function handlePinConfirmed(enteredPin: string, confirmed: string) {
     if (enteredPin !== confirmed) {
       if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      shakeError();
       setErrorMsg("PINs don't match. Try again.");
-      setPin("");
-      setConfirmPin("");
-      setPinStep("enter");
+      setPin(""); setConfirmPin(""); setPinStep("enter");
       return;
     }
     setErrorMsg("");
-    setStatus("waiting");
+    crossfadeTo("waiting");
     try {
       const { enc, iv } = await encryptPrivateKey(privateKey, enteredPin);
       const payload: NfcWalletPayload = { v: 1, enc, iv, addr: mxcAddress, pub: publicKey, label };
-      setStatus("writing");
+      crossfadeTo("writing");
       await writeWalletToNfc(payload);
-      setStatus("success");
       if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      crossfadeTo("success");
     } catch (e) {
-      setStatus("error");
-      setErrorMsg(e instanceof Error ? e.message : "Write failed. Try again.");
       if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      setErrorMsg(e instanceof Error ? e.message : "Write failed. Try again.");
+      crossfadeTo("error");
     }
   }
 
@@ -142,64 +257,105 @@ export function NfcWriteModal({ visible, privateKey, mxcAddress, publicKey, labe
     onClose();
   }
 
-  const s = StyleSheet.create({
-    overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.75)", justifyContent: "flex-end" },
-    sheet: {
-      backgroundColor: colors.background, borderTopLeftRadius: 28, borderTopRightRadius: 28,
-      borderTopWidth: 1, borderColor: colors.border, paddingBottom: insets.bottom + 8, maxHeight: "90%",
-    },
-    handle: { width: 36, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: "center", marginTop: 12, marginBottom: 4 },
-    header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: colors.border },
-    title: { fontSize: 17, fontFamily: "Inter_700Bold", color: colors.foreground },
-    closeBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, alignItems: "center", justifyContent: "center" },
-    body: { padding: 24, alignItems: "center" },
-    pinLabel: { fontSize: 13, fontFamily: "Inter_600SemiBold", color: colors.mutedForeground, marginBottom: 6, textAlign: "center" },
-    pinTitle: { fontSize: 20, fontFamily: "Inter_700Bold", color: colors.foreground, marginBottom: 20, textAlign: "center" },
-    dots: { flexDirection: "row", gap: 14, marginBottom: 28 },
-    dot: { width: 14, height: 14, borderRadius: 7 },
-    dotFilled: { backgroundColor: colors.primary },
-    dotEmpty: { backgroundColor: colors.border },
-    keypad: { width: "100%", gap: 10 },
-    keyRow: { flexDirection: "row", justifyContent: "center", gap: 10 },
-    key: { width: 88, height: 72, borderRadius: 18, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, alignItems: "center", justifyContent: "center" },
-    keyNum: { fontSize: 22, fontFamily: "Inter_700Bold", color: colors.foreground },
-    keySub: { fontSize: 9, fontFamily: "Inter_600SemiBold", color: colors.mutedForeground, letterSpacing: 1.5 },
-    keyDel: { backgroundColor: "transparent", borderColor: "transparent" },
-    errorText: { fontSize: 12, fontFamily: "Inter_500Medium", color: "#EF4444", textAlign: "center", marginBottom: 12 },
-    nfcIcon: { width: 80, height: 80, borderRadius: 40, alignItems: "center", justifyContent: "center", marginBottom: 20 },
-    waitingText: { fontSize: 16, fontFamily: "Inter_600SemiBold", color: colors.foreground, textAlign: "center", marginBottom: 8 },
-    waitingSubtext: { fontSize: 13, fontFamily: "Inter_400Regular", color: colors.mutedForeground, textAlign: "center", lineHeight: 20, marginBottom: 24 },
-    successIcon: { width: 80, height: 80, borderRadius: 40, backgroundColor: "#10B98120", borderWidth: 1, borderColor: "#10B98140", alignItems: "center", justifyContent: "center", marginBottom: 20 },
-    successText: { fontSize: 18, fontFamily: "Inter_700Bold", color: colors.foreground, textAlign: "center", marginBottom: 8 },
-    successSub: { fontSize: 13, fontFamily: "Inter_400Regular", color: colors.mutedForeground, textAlign: "center", marginBottom: 28, lineHeight: 20 },
-    doneBtn: { width: "100%", borderRadius: 14, overflow: "hidden" },
-    doneGrad: { paddingVertical: 15, alignItems: "center", justifyContent: "center" },
-    doneBtnText: { fontSize: 15, fontFamily: "Inter_700Bold", color: "#FFF" },
-    retryBtn: { width: "100%", borderRadius: 14, borderWidth: 1.5, borderColor: colors.border, paddingVertical: 14, alignItems: "center", marginBottom: 12 },
-    retryText: { fontSize: 15, fontFamily: "Inter_600SemiBold", color: colors.foreground },
-    cancelText: { fontSize: 14, fontFamily: "Inter_500Medium", color: colors.mutedForeground, paddingVertical: 10 },
-  });
-
-  const KEYS = [
-    ["1", "2", "3"],
-    ["4", "5", "6"],
-    ["7", "8", "9"],
-    ["", "0", "DEL"],
-  ];
-
-  const SUB: Record<string, string> = { "2": "ABC", "3": "DEF", "4": "GHI", "5": "JKL", "6": "MNO", "7": "PQRS", "8": "TUV", "9": "WXYZ" };
-
   const currentPin = pinStep === "enter" ? pin : confirmPin;
+
+  const s = StyleSheet.create({
+    overlay: { flex: 1, justifyContent: "flex-end" },
+    sheet: {
+      backgroundColor: colors.background,
+      borderTopLeftRadius: 32, borderTopRightRadius: 32,
+      borderTopWidth: 1, borderColor: colors.border,
+      paddingBottom: insets.bottom + 12,
+    },
+    handle: { width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: "center", marginTop: 14, marginBottom: 4 },
+    header: {
+      flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+      paddingHorizontal: 24, paddingVertical: 18,
+      borderBottomWidth: 1, borderBottomColor: colors.border,
+    },
+    title: { fontSize: 17, fontFamily: "Inter_700Bold", color: colors.foreground },
+    closeBtn: {
+      width: 34, height: 34, borderRadius: 17, backgroundColor: colors.card,
+      borderWidth: 1, borderColor: colors.border, alignItems: "center", justifyContent: "center",
+    },
+    body: { paddingHorizontal: 24, paddingTop: 8, paddingBottom: 8, alignItems: "center" },
+
+    securityBadge: {
+      flexDirection: "row", alignItems: "center", gap: 6,
+      backgroundColor: "#6366F110", borderWidth: 1, borderColor: "#6366F125",
+      borderRadius: 20, paddingHorizontal: 12, paddingVertical: 5, marginBottom: 20, marginTop: 8,
+    },
+    securityBadgeText: { fontSize: 11, fontFamily: "Inter_600SemiBold", color: "#818CF8", letterSpacing: 0.4 },
+
+    pinLabel: { fontSize: 11, fontFamily: "Inter_600SemiBold", color: colors.mutedForeground, letterSpacing: 1.5, marginBottom: 4, textAlign: "center" },
+    pinTitle: { fontSize: 22, fontFamily: "Inter_700Bold", color: colors.foreground, marginBottom: 6, textAlign: "center" },
+    pinSubtitle: { fontSize: 13, fontFamily: "Inter_400Regular", color: colors.mutedForeground, textAlign: "center", marginBottom: 20, lineHeight: 19 },
+    dots: { flexDirection: "row", gap: 12, marginBottom: 28 },
+    dot: { width: 14, height: 14, borderRadius: 7 },
+    dotFilled: { backgroundColor: "#6366F1" },
+    dotEmpty: { backgroundColor: colors.border },
+    dotError: { backgroundColor: "#EF4444" },
+
+    keypad: { width: "100%", gap: 8 },
+    keyRow: { flexDirection: "row", justifyContent: "center", gap: 8 },
+    key: {
+      width: 92, height: 68, borderRadius: 20,
+      backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
+      alignItems: "center", justifyContent: "center",
+    },
+    keyNum: { fontSize: 24, fontFamily: "Inter_600SemiBold", color: colors.foreground },
+    keySub: { fontSize: 8, fontFamily: "Inter_700Bold", color: colors.mutedForeground, letterSpacing: 2 },
+    keyDel: { backgroundColor: "transparent", borderColor: "transparent" },
+    errorText: { fontSize: 12, fontFamily: "Inter_500Medium", color: "#EF4444", textAlign: "center", marginBottom: 8 },
+    cancelText: { fontSize: 14, fontFamily: "Inter_500Medium", color: colors.mutedForeground, paddingVertical: 12 },
+
+    nfcLabel: { fontSize: 11, fontFamily: "Inter_700Bold", color: colors.mutedForeground, letterSpacing: 1.5, marginBottom: 6 },
+    nfcTitle: { fontSize: 22, fontFamily: "Inter_700Bold", color: colors.foreground, textAlign: "center", marginBottom: 6 },
+    nfcSubtitle: { fontSize: 13, fontFamily: "Inter_400Regular", color: colors.mutedForeground, textAlign: "center", lineHeight: 20, marginBottom: 20, paddingHorizontal: 16 },
+
+    successWrap: { alignItems: "center", paddingVertical: 20 },
+    successCircle: {
+      width: 88, height: 88, borderRadius: 44,
+      backgroundColor: "#10B98115", borderWidth: 1.5, borderColor: "#10B98140",
+      alignItems: "center", justifyContent: "center", marginBottom: 20,
+    },
+    successTitle: { fontSize: 22, fontFamily: "Inter_700Bold", color: colors.foreground, textAlign: "center", marginBottom: 8 },
+    successSub: { fontSize: 13, fontFamily: "Inter_400Regular", color: colors.mutedForeground, textAlign: "center", lineHeight: 20, marginBottom: 28, paddingHorizontal: 8 },
+    successPill: {
+      flexDirection: "row", alignItems: "center", gap: 6,
+      backgroundColor: "#10B98110", borderWidth: 1, borderColor: "#10B98130",
+      borderRadius: 20, paddingHorizontal: 14, paddingVertical: 7, marginBottom: 28,
+    },
+    successPillText: { fontSize: 12, fontFamily: "Inter_600SemiBold", color: "#10B981" },
+
+    primaryBtn: { width: "100%", borderRadius: 16, overflow: "hidden", marginBottom: 10 },
+    primaryGrad: { paddingVertical: 16, alignItems: "center", justifyContent: "center" },
+    primaryBtnText: { fontSize: 15, fontFamily: "Inter_700Bold", color: "#FFF" },
+    ghostBtn: { paddingVertical: 10 },
+    ghostBtnText: { fontSize: 14, fontFamily: "Inter_500Medium", color: colors.mutedForeground, textAlign: "center" },
+
+    errorWrap: { alignItems: "center", paddingVertical: 12 },
+    errorCircle: {
+      width: 88, height: 88, borderRadius: 44,
+      backgroundColor: "#EF444415", borderWidth: 1.5, borderColor: "#EF444435",
+      alignItems: "center", justifyContent: "center", marginBottom: 20,
+    },
+    retryBtn: {
+      width: "100%", borderRadius: 16, borderWidth: 1.5,
+      borderColor: colors.border, paddingVertical: 15, alignItems: "center", marginBottom: 10,
+    },
+    retryText: { fontSize: 15, fontFamily: "Inter_600SemiBold", color: colors.foreground },
+  });
 
   function renderContent() {
     if (status === "unsupported") {
       return (
         <View style={s.body}>
-          <View style={[s.successIcon, { backgroundColor: "#EF444420", borderColor: "#EF444440" }]}>
-            <Icon name="wifi-outline" size={36} color="#EF4444" />
+          <View style={[s.errorCircle, { marginTop: 16 }]}>
+            <Icon name="wifi-outline" size={40} color="#EF4444" />
           </View>
-          <Text style={s.waitingText}>NFC Not Available</Text>
-          <Text style={s.waitingSubtext}>{errorMsg || "This device doesn't support NFC or it's not enabled."}</Text>
+          <Text style={s.nfcTitle}>NFC Not Available</Text>
+          <Text style={s.nfcSubtitle}>{errorMsg || "This device doesn't support NFC or it's not enabled."}</Text>
           <TouchableOpacity style={s.retryBtn} onPress={handleClose}>
             <Text style={s.retryText}>Close</Text>
           </TouchableOpacity>
@@ -208,23 +364,48 @@ export function NfcWriteModal({ visible, privateKey, mxcAddress, publicKey, labe
     }
 
     if (status === "pin") {
+      const isError = !!errorMsg;
       return (
         <View style={s.body}>
-          <Text style={s.pinLabel}>{pinStep === "enter" ? "STEP 1 OF 2" : "STEP 2 OF 2"}</Text>
-          <Text style={s.pinTitle}>{pinStep === "enter" ? "Set NFC Card PIN" : "Confirm PIN"}</Text>
-          {!!errorMsg && <Text style={s.errorText}>{errorMsg}</Text>}
-          <View style={s.dots}>
-            {Array.from({ length: PIN_LENGTH }).map((_, i) => (
-              <View key={i} style={[s.dot, i < currentPin.length ? s.dotFilled : s.dotEmpty]} />
-            ))}
+          <View style={s.securityBadge}>
+            <Icon name="shield-checkmark-outline" size={12} color="#818CF8" />
+            <Text style={s.securityBadgeText}>AES-256 ENCRYPTION</Text>
           </View>
+          <Animated.View style={{
+            opacity: lockGlow.interpolate({ inputRange: [0, 1], outputRange: [0.7, 1] }),
+            transform: [{ scale: lockGlow.interpolate({ inputRange: [0, 1], outputRange: [0.97, 1.03] }) }],
+            marginBottom: 16,
+          }}>
+            <LinearGradient colors={["#6366F120", "#6366F108"]} style={{
+              width: 72, height: 72, borderRadius: 24, alignItems: "center", justifyContent: "center",
+              borderWidth: 1, borderColor: "#6366F130",
+            }}>
+              <Icon name={pinStep === "confirm" ? "lock-closed" : "lock-open-outline"} size={32} color="#6366F1" />
+            </LinearGradient>
+          </Animated.View>
+          <Text style={s.pinLabel}>{pinStep === "enter" ? "STEP 1 OF 2" : "STEP 2 OF 2"}</Text>
+          <Text style={s.pinTitle}>{pinStep === "enter" ? "Set Card PIN" : "Confirm PIN"}</Text>
+          <Text style={s.pinSubtitle}>
+            {pinStep === "enter"
+              ? "Choose a 6-digit PIN to encrypt your wallet on the card."
+              : "Re-enter your PIN to confirm. This cannot be recovered."}
+          </Text>
+          {!!errorMsg && <Text style={s.errorText}>{errorMsg}</Text>}
+          <Animated.View style={[s.dots, { transform: [{ translateX: shakeAnim }] }]}>
+            {Array.from({ length: PIN_LENGTH }).map((_, i) => (
+              <View key={i} style={[
+                s.dot,
+                i < currentPin.length ? (isError ? s.dotError : s.dotFilled) : s.dotEmpty,
+              ]} />
+            ))}
+          </Animated.View>
           <View style={s.keypad}>
             {KEYS.map((row, ri) => (
               <View key={ri} style={s.keyRow}>
                 {row.map((k, ki) => {
                   if (!k) return <View key={ki} style={s.key} />;
                   return (
-                    <TouchableOpacity key={ki} style={[s.key, k === "DEL" && s.keyDel]} onPress={() => handleKeyPress(k)} activeOpacity={0.65}>
+                    <TouchableOpacity key={ki} style={[s.key, k === "DEL" && s.keyDel]} onPress={() => handleKeyPress(k)} activeOpacity={0.6}>
                       {k === "DEL" ? (
                         <Icon name="backspace-outline" size={22} color={colors.foreground} />
                       ) : (
@@ -239,8 +420,8 @@ export function NfcWriteModal({ visible, privateKey, mxcAddress, publicKey, labe
               </View>
             ))}
           </View>
-          <TouchableOpacity onPress={handleClose} style={{ marginTop: 16 }}>
-            <Text style={s.cancelText}>Cancel</Text>
+          <TouchableOpacity onPress={handleClose} style={s.ghostBtn}>
+            <Text style={s.ghostBtnText}>Cancel</Text>
           </TouchableOpacity>
         </View>
       );
@@ -249,40 +430,48 @@ export function NfcWriteModal({ visible, privateKey, mxcAddress, publicKey, labe
     if (status === "waiting" || status === "writing") {
       return (
         <View style={s.body}>
-          <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
-            <LinearGradient colors={["#0EA5E9", "#6366F1"]} style={s.nfcIcon}>
-              {status === "writing"
-                ? <ActivityIndicator color="#FFF" size="large" />
-                : <Icon name="wifi-outline" size={36} color="#FFF" />
-              }
-            </LinearGradient>
-          </Animated.View>
-          <Text style={s.waitingText}>{status === "writing" ? "Writing to card…" : "Hold card to phone"}</Text>
-          <Text style={s.waitingSubtext}>
+          <View style={{ alignItems: "center", justifyContent: "center", marginTop: 8, marginBottom: 0 }}>
+            <NfcRings color="#6366F1" />
+            <View style={{ position: "absolute", alignItems: "center", justifyContent: "center" }}>
+              <CardIllustration colors={colors} />
+            </View>
+          </View>
+          <Text style={s.nfcLabel}>{status === "writing" ? "WRITING…" : "READY TO WRITE"}</Text>
+          <Text style={s.nfcTitle}>{status === "writing" ? "Writing to card…" : "Hold card to phone"}</Text>
+          <Text style={s.nfcSubtitle}>
             {status === "writing"
-              ? "Keep the card still until writing is complete."
-              : "Place your NFC card flat against the back of your phone to write the encrypted wallet."}
+              ? "Keep the card flat against the back of your phone. Don't move."
+              : "Place your NFC card flat against the back of your phone near the camera."}
           </Text>
-          <TouchableOpacity onPress={handleClose}>
-            <Text style={s.cancelText}>Cancel</Text>
-          </TouchableOpacity>
+          {status === "writing" && (
+            <ActivityIndicator color="#6366F1" size="small" style={{ marginBottom: 16 }} />
+          )}
+          {status === "waiting" && (
+            <TouchableOpacity onPress={handleClose} style={s.ghostBtn}>
+              <Text style={s.ghostBtnText}>Cancel</Text>
+            </TouchableOpacity>
+          )}
         </View>
       );
     }
 
     if (status === "success") {
       return (
-        <View style={s.body}>
-          <View style={s.successIcon}>
-            <Icon name="checkmark-circle" size={40} color="#10B981" />
-          </View>
-          <Text style={s.successText}>Wallet saved to card!</Text>
+        <View style={[s.body, s.successWrap]}>
+          <Animated.View style={[s.successCircle, { transform: [{ scale: successScale }] }]}>
+            <Icon name="checkmark-circle" size={48} color="#10B981" />
+          </Animated.View>
+          <Text style={s.successTitle}>Wallet Saved to Card!</Text>
           <Text style={s.successSub}>
-            Your encrypted wallet is now on the NFC card. Tap it on the home screen to load it. Never lose your PIN — without it the card cannot be decrypted.
+            Your encrypted wallet is stored on the NFC card. Tap it on the home screen anytime to load it.
           </Text>
-          <TouchableOpacity style={s.doneBtn} onPress={() => { onSuccess(); onClose(); }} activeOpacity={0.85}>
-            <LinearGradient colors={["#10B981", "#059669"]} style={s.doneGrad}>
-              <Text style={s.doneBtnText}>Done</Text>
+          <View style={s.successPill}>
+            <Icon name="shield-checkmark" size={14} color="#10B981" />
+            <Text style={s.successPillText}>PIN-protected · AES-256 encrypted</Text>
+          </View>
+          <TouchableOpacity style={s.primaryBtn} onPress={() => { onSuccess(); onClose(); }} activeOpacity={0.85}>
+            <LinearGradient colors={["#10B981", "#059669"]} style={s.primaryGrad}>
+              <Text style={s.primaryBtnText}>Done</Text>
             </LinearGradient>
           </TouchableOpacity>
         </View>
@@ -291,17 +480,20 @@ export function NfcWriteModal({ visible, privateKey, mxcAddress, publicKey, labe
 
     if (status === "error") {
       return (
-        <View style={s.body}>
-          <View style={[s.successIcon, { backgroundColor: "#EF444420", borderColor: "#EF444440" }]}>
-            <Icon name="close-circle" size={40} color="#EF4444" />
-          </View>
-          <Text style={s.waitingText}>Write Failed</Text>
-          <Text style={s.waitingSubtext}>{errorMsg}</Text>
-          <TouchableOpacity style={s.retryBtn} onPress={() => { setStatus("waiting"); setConfirmPin(""); setPinStep("enter"); setPin(""); }}>
+        <View style={[s.body, s.errorWrap]}>
+          <Animated.View style={[s.errorCircle, { transform: [{ translateX: shakeAnim }] }]}>
+            <Icon name="close-circle" size={48} color="#EF4444" />
+          </Animated.View>
+          <Text style={s.nfcTitle}>Write Failed</Text>
+          <Text style={s.nfcSubtitle}>{errorMsg}</Text>
+          <TouchableOpacity style={s.retryBtn} onPress={() => {
+            setPin(""); setConfirmPin(""); setPinStep("enter"); setErrorMsg("");
+            crossfadeTo("pin");
+          }}>
             <Text style={s.retryText}>Try Again</Text>
           </TouchableOpacity>
-          <TouchableOpacity onPress={handleClose}>
-            <Text style={s.cancelText}>Cancel</Text>
+          <TouchableOpacity onPress={handleClose} style={s.ghostBtn}>
+            <Text style={s.ghostBtnText}>Cancel</Text>
           </TouchableOpacity>
         </View>
       );
@@ -312,7 +504,7 @@ export function NfcWriteModal({ visible, privateKey, mxcAddress, publicKey, labe
 
   return (
     <Modal visible={visible} transparent animationType="none" onRequestClose={handleClose} statusBarTranslucent>
-      <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: "rgba(0,0,0,0.75)", opacity: overlayOpacity }]} pointerEvents="none" />
+      <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: "rgba(0,0,0,0.8)", opacity: overlayOpacity }]} pointerEvents="none" />
       <View style={s.overlay}>
         <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={handleClose} />
         <Animated.View style={[s.sheet, { transform: [{ translateY: slideAnim }] }]}>
@@ -323,7 +515,9 @@ export function NfcWriteModal({ visible, privateKey, mxcAddress, publicKey, labe
               <Icon name="close" size={14} color={colors.mutedForeground} />
             </TouchableOpacity>
           </View>
-          {renderContent()}
+          <Animated.View style={{ opacity: contentOpacity }}>
+            {renderContent()}
+          </Animated.View>
         </Animated.View>
       </View>
     </Modal>
