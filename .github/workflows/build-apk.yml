@@ -1,101 +1,66 @@
 name: Build Android APK
 
 on:
-  # Run manually from the Actions tab whenever you want a new APK
-  workflow_dispatch:
-    inputs:
-      profile:
-        description: "EAS build profile"
-        required: true
-        default: "preview"
-        type: choice
-        options:
-          - preview
-          - production
-
-  # Also run automatically on every push to main
   push:
     branches:
       - main
-    paths:
-      # Only trigger when wallet code actually changed
-      - "artifacts/mchain-wallet/**"
-      - ".github/workflows/build-apk.yml"
+      - master
+  workflow_dispatch:
 
 jobs:
   build:
-    name: Build APK (${{ github.event.inputs.profile || 'preview' }})
+    name: Build APK
     runs-on: ubuntu-latest
 
     steps:
-      # ── 1. Checkout ────────────────────────────────────────────────────────────
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # ── 2. Node.js + pnpm ──────────────────────────────────────────────────────
-      - name: Setup Node.js
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Set up Node.js 22
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: '22'
 
-      - name: Setup pnpm
+      - name: Install pnpm
         uses: pnpm/action-setup@v4
         with:
           version: 10
 
-      - name: Get pnpm store directory
-        id: pnpm-cache
-        run: echo "STORE_PATH=$(pnpm store path)" >> $GITHUB_OUTPUT
-
       - name: Cache pnpm store
         uses: actions/cache@v4
         with:
-          path: ${{ steps.pnpm-cache.outputs.STORE_PATH }}
+          path: ~/.local/share/pnpm/store
           key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-pnpm-
+          restore-keys: ${{ runner.os }}-pnpm-
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # ── 3. EAS Build ───────────────────────────────────────────────────────────
-      - name: Setup EAS
-        uses: expo/expo-github-action@v8
-        with:
-          eas-version: latest
-          token: ${{ secrets.EXPO_TOKEN }}
-
-      - name: Build APK via EAS
+      - name: Run Expo prebuild (generate native Android project)
         working-directory: artifacts/mchain-wallet
-        run: |
-          eas build \
-            --platform android \
-            --profile ${{ github.event.inputs.profile || 'preview' }} \
-            --non-interactive \
-            --wait
+        run: pnpm exec expo prebuild --platform android --clean --no-install
         env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          EXPO_NO_TELEMETRY: 1
 
-      # ── 4. Download & upload APK as artifact ───────────────────────────────────
-      - name: Download built APK
-        working-directory: artifacts/mchain-wallet
-        run: |
-          # Get the URL of the latest completed build and download the APK
-          BUILD_URL=$(eas build:list \
-            --platform android \
-            --status finished \
-            --limit 1 \
-            --non-interactive \
-            --json \
-            | node -e "const d=require('fs').readFileSync('/dev/stdin','utf8'); console.log(JSON.parse(d)[0].artifacts.buildUrl)")
-          echo "APK URL: $BUILD_URL"
-          curl -L "$BUILD_URL" -o mchain-wallet.apk
+      - name: Make gradlew executable
+        working-directory: artifacts/mchain-wallet/android
+        run: chmod +x gradlew
+
+      - name: Build release APK
+        working-directory: artifacts/mchain-wallet/android
+        run: ./gradlew assembleRelease --no-daemon
         env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4g -Dorg.gradle.daemon=false"
 
-      - name: Upload APK to GitHub Artifacts
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: mchain-wallet-${{ github.event.inputs.profile || 'preview' }}-${{ github.run_number }}
-          path: artifacts/mchain-wallet/mchain-wallet.apk
+          name: mchain-wallet-${{ github.run_number }}
+          path: artifacts/mchain-wallet/android/app/build/outputs/apk/release/*.apk
           retention-days: 30
