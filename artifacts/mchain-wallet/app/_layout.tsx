@@ -46,7 +46,8 @@ function AppReadyGate({
   children: React.ReactNode;
 }) {
   const { isReady } = usePinContext();
-  const ready = (fontsLoaded || !!fontError) && isReady;
+  const { isLoading: walletLoading } = useWallet();
+  const ready = (fontsLoaded || !!fontError) && isReady && !walletLoading;
 
   useEffect(() => {
     if (ready) SplashScreen.hideAsync();
@@ -120,15 +121,15 @@ export default function RootLayout() {
       <ErrorBoundary>
         <QueryClientProvider client={queryClient}>
           <GestureHandlerRootView style={{ flex: 1 }}>
-            <PinProvider>
-              <AppReadyGate fontsLoaded={fontsLoaded} fontError={fontError}>
-                <PinGate>
-                  <WalletProvider>
+            <WalletProvider>
+              <PinProvider>
+                <AppReadyGate fontsLoaded={fontsLoaded} fontError={fontError}>
+                  <PinGate>
                     <RootLayoutNav />
-                  </WalletProvider>
-                </PinGate>
-              </AppReadyGate>
-            </PinProvider>
+                  </PinGate>
+                </AppReadyGate>
+              </PinProvider>
+            </WalletProvider>
           </GestureHandlerRootView>
         </QueryClientProvider>
       </ErrorBoundary>
