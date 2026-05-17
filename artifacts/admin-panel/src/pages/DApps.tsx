@@ -45,6 +45,71 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
 const emptyForm = { name: "", description: "", url: "", icon: "globe-outline", color: "#0EA5E9", sortOrder: 0, comingSoon: false };
 type DappForm = typeof emptyForm;
 
+function DappFormFields({ value, onChange }: { value: DappForm; onChange: (v: DappForm) => void }) {
+  const set = (k: keyof DappForm, v: string | number | boolean) => onChange({ ...value, [k]: v });
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="text-xs font-medium text-muted-foreground mb-1 block">Name *</label>
+          <input value={value.name} onChange={e => set("name", e.target.value)}
+            className="w-full text-sm bg-background border border-border rounded-md px-3 py-2 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+            placeholder="MChain Explorer" />
+        </div>
+        <div>
+          <label className="text-xs font-medium text-muted-foreground mb-1 block">URL *</label>
+          <input value={value.url} onChange={e => set("url", e.target.value)}
+            className="w-full text-sm bg-background border border-border rounded-md px-3 py-2 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+            placeholder="https://example.com" />
+        </div>
+      </div>
+      <div>
+        <label className="text-xs font-medium text-muted-foreground mb-1 block">Description</label>
+        <input value={value.description} onChange={e => set("description", e.target.value)}
+          className="w-full text-sm bg-background border border-border rounded-md px-3 py-2 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+          placeholder="Browse blocks, transactions and addresses" />
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="text-xs font-medium text-muted-foreground mb-1 block">Icon</label>
+          <select value={value.icon} onChange={e => set("icon", e.target.value)}
+            className="w-full text-sm bg-background border border-border rounded-md px-3 py-2 text-foreground focus:outline-none focus:ring-1 focus:ring-primary">
+            {ICON_OPTIONS.map(i => <option key={i} value={i}>{i}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="text-xs font-medium text-muted-foreground mb-1 block">Sort Order</label>
+          <input type="number" value={value.sortOrder} onChange={e => set("sortOrder", parseInt(e.target.value) || 0)}
+            className="w-full text-sm bg-background border border-border rounded-md px-3 py-2 text-foreground focus:outline-none focus:ring-1 focus:ring-primary" />
+        </div>
+      </div>
+      <div>
+        <label className="text-xs font-medium text-muted-foreground mb-1 block">Accent Color</label>
+        <div className="flex items-center gap-2 flex-wrap">
+          {COLOR_PRESETS.map(c => (
+            <button key={c} type="button"
+              onClick={() => set("color", c)}
+              style={{ backgroundColor: c }}
+              className={`w-7 h-7 rounded-full border-2 flex items-center justify-center transition-transform ${value.color === c ? "border-white scale-110" : "border-transparent"}`}>
+              {value.color === c && <Check size={12} className="text-white" />}
+            </button>
+          ))}
+          <input type="color" value={value.color} onChange={e => set("color", e.target.value)}
+            className="w-7 h-7 rounded cursor-pointer border border-border bg-transparent p-0.5" title="Custom color" />
+        </div>
+      </div>
+      <label className="flex items-center gap-2.5 cursor-pointer select-none">
+        <div onClick={() => set("comingSoon", !value.comingSoon)}
+          className={`w-9 h-5 rounded-full transition-colors flex items-center px-0.5 ${value.comingSoon ? "bg-amber-500" : "bg-muted"}`}>
+          <div className={`w-4 h-4 rounded-full bg-white shadow transition-transform ${value.comingSoon ? "translate-x-4" : "translate-x-0"}`} />
+        </div>
+        <span className="text-sm text-foreground">Mark as Coming Soon</span>
+        {value.comingSoon && <span className="text-xs font-medium text-amber-500 bg-amber-500/10 px-2 py-0.5 rounded-full">COMING SOON</span>}
+      </label>
+    </div>
+  );
+}
+
 export default function DApps() {
   const { toast } = useToast();
   const qc = useQueryClient();
@@ -91,71 +156,6 @@ export default function DApps() {
 
   function shiftOrder(d: FeaturedDapp, dir: -1 | 1) {
     updateMut.mutate({ id: d.id, body: { sortOrder: d.sortOrder + dir } });
-  }
-
-  function DappFormFields({ value, onChange }: { value: DappForm; onChange: (v: DappForm) => void }) {
-    const set = (k: keyof DappForm, v: string | number | boolean) => onChange({ ...value, [k]: v });
-    return (
-      <div className="space-y-3">
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="text-xs font-medium text-muted-foreground mb-1 block">Name *</label>
-            <input value={value.name} onChange={e => set("name", e.target.value)}
-              className="w-full text-sm bg-background border border-border rounded-md px-3 py-2 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-              placeholder="MChain Explorer" />
-          </div>
-          <div>
-            <label className="text-xs font-medium text-muted-foreground mb-1 block">URL *</label>
-            <input value={value.url} onChange={e => set("url", e.target.value)}
-              className="w-full text-sm bg-background border border-border rounded-md px-3 py-2 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-              placeholder="https://example.com" />
-          </div>
-        </div>
-        <div>
-          <label className="text-xs font-medium text-muted-foreground mb-1 block">Description</label>
-          <input value={value.description} onChange={e => set("description", e.target.value)}
-            className="w-full text-sm bg-background border border-border rounded-md px-3 py-2 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-            placeholder="Browse blocks, transactions and addresses" />
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="text-xs font-medium text-muted-foreground mb-1 block">Icon</label>
-            <select value={value.icon} onChange={e => set("icon", e.target.value)}
-              className="w-full text-sm bg-background border border-border rounded-md px-3 py-2 text-foreground focus:outline-none focus:ring-1 focus:ring-primary">
-              {ICON_OPTIONS.map(i => <option key={i} value={i}>{i}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="text-xs font-medium text-muted-foreground mb-1 block">Sort Order</label>
-            <input type="number" value={value.sortOrder} onChange={e => set("sortOrder", parseInt(e.target.value) || 0)}
-              className="w-full text-sm bg-background border border-border rounded-md px-3 py-2 text-foreground focus:outline-none focus:ring-1 focus:ring-primary" />
-          </div>
-        </div>
-        <div>
-          <label className="text-xs font-medium text-muted-foreground mb-1 block">Accent Color</label>
-          <div className="flex items-center gap-2 flex-wrap">
-            {COLOR_PRESETS.map(c => (
-              <button key={c} type="button"
-                onClick={() => set("color", c)}
-                style={{ backgroundColor: c }}
-                className={`w-7 h-7 rounded-full border-2 flex items-center justify-center transition-transform ${value.color === c ? "border-white scale-110" : "border-transparent"}`}>
-                {value.color === c && <Check size={12} className="text-white" />}
-              </button>
-            ))}
-            <input type="color" value={value.color} onChange={e => set("color", e.target.value)}
-              className="w-7 h-7 rounded cursor-pointer border border-border bg-transparent p-0.5" title="Custom color" />
-          </div>
-        </div>
-        <label className="flex items-center gap-2.5 cursor-pointer select-none">
-          <div onClick={() => set("comingSoon", !value.comingSoon)}
-            className={`w-9 h-5 rounded-full transition-colors flex items-center px-0.5 ${value.comingSoon ? "bg-amber-500" : "bg-muted"}`}>
-            <div className={`w-4 h-4 rounded-full bg-white shadow transition-transform ${value.comingSoon ? "translate-x-4" : "translate-x-0"}`} />
-          </div>
-          <span className="text-sm text-foreground">Mark as Coming Soon</span>
-          {value.comingSoon && <span className="text-xs font-medium text-amber-500 bg-amber-500/10 px-2 py-0.5 rounded-full">COMING SOON</span>}
-        </label>
-      </div>
-    );
   }
 
   return (
