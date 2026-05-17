@@ -54,14 +54,17 @@ export function PressableScale({
     onPress?.(e);
   }
 
+  const styleArray = Array.isArray(style) ? style : style ? [style] : [];
+
   return (
     <Pressable
       onPressIn={pressIn}
       onPressOut={pressOut}
       onPress={handlePress}
+      style={styleArray}
       {...rest}
     >
-      <Animated.View style={[Array.isArray(style) ? style : style ? [style] : [], { transform: [{ scale }] }]}>
+      <Animated.View style={[{ flex: 1 }, { transform: [{ scale }] }]}>
         {children}
       </Animated.View>
     </Pressable>
