@@ -57,8 +57,15 @@
       "expo-secure-store",
       "expo-task-manager",
       "expo-background-fetch",
-      "react-native-nfc-manager"
+      "react-native-nfc-manager",
+      "expo-updates"
     ],
+    "updates": {
+      "url": "https://u.expo.dev/e6ecd8bb-e7d4-47a5-a6f3-eb91508afe1a"
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
