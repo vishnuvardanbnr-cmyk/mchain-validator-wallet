@@ -39,14 +39,20 @@ export async function resetNodeUrl(): Promise<void> {
 
 export async function testNodeConnection(url: string): Promise<number> {
   const cleaned = url.trim().replace(/\/$/, "");
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 6000);
   const start = Date.now();
-  const res = await fetch(`${cleaned}/ping`, {
-    method: "GET",
-    headers: { Accept: "application/json" },
-    signal: AbortSignal.timeout(6000),
-  });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return Date.now() - start;
+  try {
+    const res = await fetch(`${cleaned}/ping`, {
+      method: "GET",
+      headers: { Accept: "application/json" },
+      signal: controller.signal,
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return Date.now() - start;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 // Auto-initialize on first import so getNodeUrl() is ready before any API call
