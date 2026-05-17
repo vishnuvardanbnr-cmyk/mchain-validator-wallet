@@ -1,5 +1,4 @@
 import { Platform } from "react-native";
-import { getNodeUrl, isDefaultNode } from "./node";
 import { getPublicApiBase } from "./api";
 import { ethAddressToMxc } from "./crypto";
 
@@ -180,11 +179,9 @@ function getApiBase(): string {
 
 async function req<T>(path: string, options?: RequestInit): Promise<T> {
   const base = getApiBase();
-  const extraHeaders: Record<string, string> =
-    Platform.OS === "web" && !isDefaultNode() ? { "X-MChain-Node": getNodeUrl() } : {};
 
   const res = await fetch(`${base}${path}`, {
-    headers: { "Content-Type": "application/json", ...extraHeaders, ...(options?.headers ?? {}) },
+    headers: { "Content-Type": "application/json", ...(options?.headers ?? {}) },
     ...options,
   });
 
