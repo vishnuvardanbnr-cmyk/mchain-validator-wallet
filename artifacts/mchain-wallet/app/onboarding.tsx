@@ -2,10 +2,11 @@ import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Animated,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -70,6 +71,19 @@ export default function OnboardingScreen() {
   // Shared
   const [moniker, setMoniker] = useState("");
   const [finishing, setFinishing] = useState(false);
+
+  // Pulsing glow animation for the welcome logo
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, { toValue: 1.08, duration: 2200, useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 1, duration: 2200, useNativeDriver: true }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [pulseAnim]);
 
   function handleCreateWallet() {
     setCreating(true);
@@ -237,14 +251,50 @@ export default function OnboardingScreen() {
     successCheck: { fontSize: 36 },
     successTitle: { fontSize: 24, fontFamily: "Inter_700Bold", color: colors.foreground, textAlign: "center", marginBottom: 12 },
     successText: { fontSize: 15, fontFamily: "Inter_400Regular", color: colors.mutedForeground, textAlign: "center", lineHeight: 22, marginBottom: 8 },
-    welcomeHero: { alignItems: "center", paddingVertical: 32, marginBottom: 16 },
-    welcomeCircle: { width: 96, height: 96, borderRadius: 48, backgroundColor: colors.primary + "20", borderWidth: 2, borderColor: colors.primary + "60", alignItems: "center", justifyContent: "center", marginBottom: 24 },
-    welcomeEmoji: { fontSize: 40 },
-    welcomeTitle: { fontSize: 30, fontFamily: "Inter_700Bold", color: colors.foreground, textAlign: "center", marginBottom: 12 },
-    welcomeSubtitle: { fontSize: 15, fontFamily: "Inter_400Regular", color: colors.mutedForeground, textAlign: "center", lineHeight: 22, paddingHorizontal: 8 },
-    divider: { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 16 },
+    welcomeHero: { alignItems: "center", paddingTop: 16, paddingBottom: 36 },
+    welcomeRingOuter: {
+      width: 160, height: 160, borderRadius: 80,
+      borderWidth: 1, borderColor: "#0EA5E918",
+      alignItems: "center", justifyContent: "center", marginBottom: 32,
+    },
+    welcomeRingMid: {
+      width: 128, height: 128, borderRadius: 64,
+      borderWidth: 1, borderColor: "#0EA5E930",
+      alignItems: "center", justifyContent: "center",
+    },
+    welcomeRingInner: {
+      width: 100, height: 100, borderRadius: 50,
+      borderWidth: 1.5, borderColor: "#0EA5E950",
+      backgroundColor: "#0EA5E910",
+      alignItems: "center", justifyContent: "center",
+    },
+    welcomeIconGrad: { width: 76, height: 76, borderRadius: 38, alignItems: "center", justifyContent: "center" },
+    welcomeEmoji: { fontSize: 32 },
+    welcomeBrand: { alignItems: "center", marginBottom: 14 },
+    welcomeChain: {
+      fontSize: 11, fontFamily: "Inter_700Bold",
+      color: colors.primary, letterSpacing: 5, marginBottom: 10,
+    },
+    welcomeTitle: {
+      fontSize: 28, fontFamily: "Inter_700Bold",
+      color: colors.foreground, textAlign: "center",
+      lineHeight: 34, marginBottom: 12,
+    },
+    welcomeSubtitle: {
+      fontSize: 14, fontFamily: "Inter_400Regular",
+      color: colors.mutedForeground, textAlign: "center",
+      lineHeight: 22, paddingHorizontal: 4,
+    },
+    trustRow: { flexDirection: "row", justifyContent: "center", gap: 8, marginTop: 24 },
+    trustChip: {
+      flexDirection: "row", alignItems: "center", gap: 5,
+      paddingHorizontal: 10, paddingVertical: 6, borderRadius: 20,
+      backgroundColor: "#0EA5E90C", borderWidth: 1, borderColor: "#0EA5E922",
+    },
+    trustText: { fontSize: 11, fontFamily: "Inter_500Medium", color: colors.mutedForeground },
+    divider: { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 14 },
     dividerLine: { flex: 1, height: 1, backgroundColor: colors.border },
-    dividerText: { fontSize: 13, fontFamily: "Inter_500Medium", color: colors.mutedForeground },
+    dividerText: { fontSize: 12, fontFamily: "Inter_500Medium", color: colors.mutedForeground },
     mnemonicGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 16 },
     wordChip: { flexDirection: "row", alignItems: "center", backgroundColor: colors.secondary, borderRadius: 8, paddingVertical: 8, paddingHorizontal: 10, minWidth: "30%", flex: 1, gap: 6 },
     wordIndex: { fontSize: 11, fontFamily: "Inter_500Medium", color: colors.mutedForeground, minWidth: 16 },
@@ -278,28 +328,75 @@ export default function OnboardingScreen() {
     <View style={s.outer}>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
         <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled">
-          <Text style={s.logo}>MCHAIN</Text>
+          {step !== "welcome" && <Text style={s.logo}>MCHAIN</Text>}
           {renderStepIndicator()}
 
           {/* ── WELCOME ──────────────────────────────────────────────── */}
           {step === "welcome" && (
             <>
+              {/* Hero — concentric glow rings + icon */}
               <View style={s.welcomeHero}>
-                <View style={s.welcomeCircle}>
-                  <Text style={s.welcomeEmoji}>🔐</Text>
+                <Animated.View style={[s.welcomeRingOuter, { transform: [{ scale: pulseAnim }] }]}>
+                  <View style={s.welcomeRingMid}>
+                    <View style={s.welcomeRingInner}>
+                      <LinearGradient
+                        colors={["#0EA5E9", "#0369A1"]}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={s.welcomeIconGrad}
+                      >
+                        <Text style={s.welcomeEmoji}>⛓</Text>
+                      </LinearGradient>
+                    </View>
+                  </View>
+                </Animated.View>
+
+                {/* Brand text */}
+                <View style={s.welcomeBrand}>
+                  <Text style={s.welcomeChain}>MCHAIN</Text>
+                  <Text style={s.welcomeTitle}>Validator Wallet</Text>
+                  <Text style={s.welcomeSubtitle}>
+                    Secure your validator identity with a{"\n"}12-word seed phrase. You're always in control.
+                  </Text>
                 </View>
-                <Text style={s.welcomeTitle}>MChain Validator Wallet</Text>
-                <Text style={s.welcomeSubtitle}>
-                  Secure your validator identity with a 12-word seed phrase. You're always in control.
-                </Text>
+
+                {/* Trust pills */}
+                <View style={s.trustRow}>
+                  {[
+                    { icon: "🔒", label: "Non-custodial" },
+                    { icon: "🛡", label: "256-bit" },
+                    { icon: "⚡", label: "On-chain" },
+                  ].map(({ icon, label }) => (
+                    <View key={label} style={s.trustChip}>
+                      <Text style={{ fontSize: 10 }}>{icon}</Text>
+                      <Text style={s.trustText}>{label}</Text>
+                    </View>
+                  ))}
+                </View>
               </View>
 
-              <TouchableOpacity style={[s.primaryBtn, creating && { opacity: 0.85 }]} onPress={handleCreateWallet} disabled={creating}>
-                <LinearGradient colors={["#0EA5E9", "#0284C7"]} style={s.primaryGrad}>
+              {/* Primary CTA */}
+              <TouchableOpacity
+                style={[s.primaryBtn, creating && { opacity: 0.85 }]}
+                onPress={handleCreateWallet}
+                disabled={creating}
+                activeOpacity={0.88}
+              >
+                <LinearGradient
+                  colors={["#0EA5E9", "#0284C7"]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={[s.primaryGrad, {
+                    shadowColor: "#0EA5E9",
+                    shadowOpacity: 0.45,
+                    shadowRadius: 16,
+                    shadowOffset: { width: 0, height: 6 },
+                  }]}
+                >
                   {creating ? (
                     <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
                       <ActivityIndicator color="#FFFFFF" size="small" />
-                      <Text style={s.primaryBtnText}>Generating Wallet…</Text>
+                      <Text style={s.primaryBtnText}>Generating…</Text>
                     </View>
                   ) : (
                     <Text style={s.primaryBtnText}>Create New Wallet</Text>
@@ -307,23 +404,36 @@ export default function OnboardingScreen() {
                 </LinearGradient>
               </TouchableOpacity>
 
+              {/* Divider */}
               <View style={s.divider}>
                 <View style={s.dividerLine} />
                 <Text style={s.dividerText}>or</Text>
                 <View style={s.dividerLine} />
               </View>
 
+              {/* Secondary CTA */}
               <TouchableOpacity
-                style={[s.primaryBtn, { borderWidth: 1, borderColor: colors.border, borderRadius: colors.radius, overflow: "hidden" }]}
+                style={[
+                  s.primaryBtn,
+                  { borderWidth: 1.5, borderColor: colors.border, borderRadius: colors.radius, overflow: "hidden" },
+                ]}
                 onPress={handleImportWallet}
+                activeOpacity={0.88}
               >
                 <View style={{ paddingVertical: 16, alignItems: "center", backgroundColor: colors.card }}>
-                  <Text style={[s.primaryBtnText, { color: colors.foreground }]}>Import Existing Wallet</Text>
+                  <Text style={[s.primaryBtnText, { color: colors.foreground, fontFamily: "Inter_600SemiBold" }]}>
+                    Import Existing Wallet
+                  </Text>
                 </View>
               </TouchableOpacity>
 
-              <Text style={{ fontSize: 12, fontFamily: "Inter_400Regular", color: colors.mutedForeground, textAlign: "center", lineHeight: 18, marginTop: 12 }}>
-                Already a validator? Import your wallet and your status will be restored automatically.
+              {/* Footer note */}
+              <Text style={{
+                fontSize: 12, fontFamily: "Inter_400Regular",
+                color: colors.mutedForeground, textAlign: "center",
+                lineHeight: 18, marginTop: 16, paddingHorizontal: 16,
+              }}>
+                Already a validator? Import your wallet and your status{"\n"}will be restored automatically.
               </Text>
             </>
           )}
