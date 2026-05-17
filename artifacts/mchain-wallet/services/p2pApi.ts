@@ -36,6 +36,7 @@ export interface P2pAd {
   terms?: string;
   status: string;
   completedOrders: number;
+  avgRating?: string;
   createdAt: string;
 }
 

@@ -1,5 +1,6 @@
 import { Icon } from "@/components/Icon";
 import { Toast } from "@/components/Toast";
+import { RatingModal } from "@/components/p2p/RatingModal";
 import { useWallet } from "@/context/WalletContext";
 import { usePinContext } from "@/context/PinContext";
 import { useColors } from "@/hooks/useColors";
@@ -70,6 +71,8 @@ export function TradeRoomModal({ visible, orderId, onClose }: Props) {
   const [toast, setToast] = useState("");
   const [usdtTxHash, setUsdtTxHash] = useState("");
   const [showUsdtEscrow, setShowUsdtEscrow] = useState(false);
+  const [showRating, setShowRating] = useState(false);
+  const [ratingDone, setRatingDone] = useState(false);
 
   const { data: order, isLoading: orderLoading } = useQuery({
     queryKey: ["p2p_order", orderId],
@@ -525,6 +528,22 @@ export function TradeRoomModal({ visible, orderId, onClose }: Props) {
                 </View>
               )}
 
+              {/* Rate Trade — shown on completed orders */}
+              {isTerminal && order?.status === "released" && !ratingDone && (
+                <View style={[s.actionBar, { borderTopWidth: 1, borderTopColor: colors.border }]}>
+                  <TouchableOpacity
+                    style={s.actionBtn}
+                    onPress={() => setShowRating(true)}
+                    activeOpacity={0.85}
+                  >
+                    <LinearGradient colors={["#F59E0B", "#D97706"]} style={s.actionGrad}>
+                      <Icon name="star-outline" size={15} color="#FFF" />
+                      <Text style={s.actionText}>Rate this Trade</Text>
+                    </LinearGradient>
+                  </TouchableOpacity>
+                </View>
+              )}
+
               {/* Message input */}
               {!isTerminal && (
                 <View style={s.inputRow}>
@@ -627,6 +646,19 @@ export function TradeRoomModal({ visible, orderId, onClose }: Props) {
           </TouchableOpacity>
         </View>
       </Modal>
+
+      {/* Rating modal */}
+      {order && (
+        <RatingModal
+          visible={showRating}
+          orderId={orderId}
+          raterAddress={mxcAddress!}
+          ratedAddress={isBuyer ? order.sellerAddress : order.buyerAddress}
+          counterpartyName={(isBuyer ? order.sellerAddress : order.buyerAddress).slice(0, 10) + "…"}
+          onClose={() => setShowRating(false)}
+          onDone={() => { setShowRating(false); setRatingDone(true); setToast("Rating submitted — thank you!"); }}
+        />
+      )}
 
       <Toast message={toast} onHide={() => setToast("")} />
     </>

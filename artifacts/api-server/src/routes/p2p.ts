@@ -65,6 +65,7 @@ async function enrichAds(ads: (typeof p2pAds.$inferSelect)[]) {
       isMerchant: profile?.isMerchant ?? false,
       isPinned: profile?.isPinned ?? false,
       completionRate: completion,
+      avgRating: profile?.avgRating ?? "0",
     };
   });
   enriched.sort((a, b) => (b.isPinned ? 1 : 0) - (a.isPinned ? 1 : 0));

@@ -94,7 +94,16 @@ function AdRow({ ad, myAddress, onPress }: { ad: P2pAd; myAddress: string; onPre
             {ad.completedOrders >= 50 && ad.completedOrders < 100 && <View style={s.silverBadge}><Text style={s.silverText}>🥈</Text></View>}
             {ad.completedOrders >= 10 && ad.completedOrders < 50 && <View style={s.bronzeBadge}><Text style={s.bronzeText}>🥉</Text></View>}
           </View>
-          <Text style={s.statsText}>{ad.completedOrders} orders · {rate.toFixed(0)}% completion</Text>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 2 }}>
+            <Text style={s.statsText}>{ad.completedOrders} orders · {rate.toFixed(0)}% completion</Text>
+            {parseFloat(ad.avgRating ?? "0") > 0 && (
+              <>
+                <Text style={[s.statsText, { color: colors.border }]}>·</Text>
+                <Icon name="star" size={10} color="#F59E0B" />
+                <Text style={[s.statsText, { color: "#F59E0B" }]}>{parseFloat(ad.avgRating!).toFixed(1)}</Text>
+              </>
+            )}
+          </View>
         </View>
         <View style={{ alignItems: "flex-end" }}>
           <Text style={s.price}>{parseFloat(ad.price).toLocaleString("en-US", { maximumFractionDigits: 4 })}</Text>
