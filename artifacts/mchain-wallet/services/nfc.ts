@@ -51,7 +51,7 @@ export async function encryptPrivateKey(privateKey: string, pin: string): Promis
   const ivBytes = new Uint8Array(16);
   crypto.getRandomValues(ivBytes);
   const encoded = new TextEncoder().encode(privateKey);
-  const encrypted = await crypto.subtle.encrypt({ name: "AES-CBC", iv: ivBytes }, key, encoded);
+  const encrypted = await crypto.subtle.encrypt({ name: "AES-CBC", iv: ivBytes as BufferSource }, key, encoded as BufferSource);
   return { enc: uint8ToHex(new Uint8Array(encrypted)), iv: uint8ToHex(ivBytes) };
 }
 
@@ -60,10 +60,12 @@ export async function encryptPrivateKey(privateKey: string, pin: string): Promis
  *  thrown error as "wrong PIN". */
 export async function decryptPrivateKey(enc: string, iv: string, pin: string): Promise<string> {
   const key = await pinToKey(pin);
+  const ivBytes = hexToBytes(iv);
+  const encBytes = hexToBytes(enc);
   const decrypted = await crypto.subtle.decrypt(
-    { name: "AES-CBC", iv: hexToBytes(iv) },
+    { name: "AES-CBC", iv: ivBytes as BufferSource },
     key,
-    hexToBytes(enc)
+    encBytes as BufferSource
   );
   return new TextDecoder().decode(decrypted);
 }
