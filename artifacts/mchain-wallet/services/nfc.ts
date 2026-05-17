@@ -139,21 +139,31 @@ export async function writeWalletToNfc(
     if (!bytes || bytes.length === 0) {
       throw new Error("Failed to encode payload — card may be too small or incompatible.");
     }
-    try {
-      await NfcManager.ndefHandler.writeNdefMessage(bytes);
-    } catch (writeErr: unknown) {
-      const msg = writeErr instanceof Error ? writeErr.message : String(writeErr);
-      if (msg.toLowerCase().includes("ioexception") || msg.toLowerCase().includes("tag was lost")) {
-        throw new Error("Card lost during write — keep it still until the app confirms success.");
-      }
-      if (msg.toLowerCase().includes("readonly") || msg.toLowerCase().includes("read only")) {
-        throw new Error("This card is read-only and cannot be written to.");
-      }
-      if (msg.toLowerCase().includes("size") || msg.toLowerCase().includes("capacity") || msg.toLowerCase().includes("overflow")) {
-        throw new Error("Card is too small to store the wallet data. Use an NTAG215 or larger card.");
-      }
-      throw new Error(`Write failed: ${msg}`);
-    }
+
+    // Wrap the write in a 12-second timeout — writeNdefMessage can hang
+    // indefinitely if the card drifts out of field after detection.
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        reject(new Error("Write timed out — card moved out of range. Hold it flat and still against the back of your phone and try again."));
+      }, 12_000);
+
+      NfcManager.ndefHandler.writeNdefMessage(bytes).then(() => {
+        clearTimeout(timer);
+        resolve();
+      }).catch((writeErr: unknown) => {
+        clearTimeout(timer);
+        const msg = writeErr instanceof Error ? writeErr.message : String(writeErr);
+        if (msg.toLowerCase().includes("ioexception") || msg.toLowerCase().includes("tag was lost")) {
+          reject(new Error("Card lost during write — keep it flat and still, then try again."));
+        } else if (msg.toLowerCase().includes("readonly") || msg.toLowerCase().includes("read only")) {
+          reject(new Error("This card is read-only and cannot be written to."));
+        } else if (msg.toLowerCase().includes("size") || msg.toLowerCase().includes("capacity") || msg.toLowerCase().includes("overflow")) {
+          reject(new Error("Card is too small. Use an NTAG215 or larger card."));
+        } else {
+          reject(new Error(`Write failed: ${msg}`));
+        }
+      });
+    });
   } finally {
     NfcManager.cancelTechnologyRequest().catch(() => {});
   }
