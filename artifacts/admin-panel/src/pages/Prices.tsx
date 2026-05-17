@@ -17,6 +17,8 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
 
 interface PriceConfig {
   symbol: string;
+  name: string;
+  logoUrl: string;
   priceType: "fixed" | "auto";
   fixedPrice: number | null;
   apiUrl: string | null;
@@ -84,12 +86,18 @@ function PriceRow({ config, onSaved }: { config: PriceConfig; onSaved: () => voi
   return (
     <div className="border border-border rounded-xl p-5 bg-card space-y-4">
       <div className="flex items-center gap-3">
-        <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-          <span className="text-xs font-bold text-primary">{config.symbol}</span>
-        </div>
+        {config.logoUrl ? (
+          <img src={config.logoUrl} alt={config.symbol}
+            className="w-10 h-10 rounded-full object-cover border border-border flex-shrink-0"
+            onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
+        ) : (
+          <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+            <span className="text-xs font-bold text-primary">{config.symbol.slice(0, 3)}</span>
+          </div>
+        )}
         <div>
           <div className="font-semibold text-foreground">{config.symbol}</div>
-          <div className="text-xs text-muted-foreground">Native coin</div>
+          <div className="text-xs text-muted-foreground">{config.name || config.symbol}</div>
         </div>
       </div>
 
