@@ -3,6 +3,7 @@ import { AssetDetailModal, type AssetItem } from "@/components/AssetDetailModal"
 import { Icon } from "@/components/Icon";
 import { NewWalletModal } from "@/components/NewWalletModal";
 import { WalletSwitcherModal } from "@/components/WalletSwitcherModal";
+import { QRScannerModal } from "@/components/QRScannerModal";
 import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
@@ -161,6 +162,7 @@ export default function DashboardScreen() {
   const { restartSession } = useHeartbeat();
   const [toastMessage, setToastMessage] = React.useState("");
   const [isRestarting, setIsRestarting] = React.useState(false);
+  const [showScanner, setShowScanner] = React.useState(false);
   const [showNewWallet, setShowNewWallet] = React.useState(false);
   const [showSwitcher, setShowSwitcher] = React.useState(false);
   const [activeTab, setActiveTab] = React.useState<"assets" | "nft" | "approvals">("assets");
@@ -742,7 +744,7 @@ export default function DashboardScreen() {
             <TouchableOpacity style={s.headerIconBtn} onPress={() => setShowNewWallet(true)}>
               <Icon name="wallet" size={18} color={colors.foreground} />
             </TouchableOpacity>
-            <TouchableOpacity style={s.headerIconBtn} onPress={() => router.push("/(tabs)/send")}>
+            <TouchableOpacity style={s.headerIconBtn} onPress={() => setShowScanner(true)}>
               <Icon name="scan" size={18} color={colors.foreground} />
             </TouchableOpacity>
           </View>
@@ -908,6 +910,14 @@ export default function DashboardScreen() {
         asset={selectedAsset}
         visible={!!selectedAsset}
         onClose={() => setSelectedAsset(null)}
+      />
+      <QRScannerModal
+        visible={showScanner}
+        onClose={() => setShowScanner(false)}
+        onScan={(address) => {
+          setShowScanner(false);
+          router.push({ pathname: "/(tabs)/send", params: { address } });
+        }}
       />
     </View>
   );

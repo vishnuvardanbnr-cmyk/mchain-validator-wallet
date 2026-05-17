@@ -3,7 +3,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
-import { router, useFocusEffect } from "expo-router";
+import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -37,8 +37,18 @@ export default function SendScreen() {
   const { mxcAddress, getPrivateKey } = useWallet();
   const { requestPin } = usePinContext();
 
+  const { address: prefillAddress } = useLocalSearchParams<{ address?: string }>();
+
   const [step, setStep] = useState<SendStep>("input");
-  const [recipient, setRecipient] = useState("");
+  const [recipient, setRecipient] = useState(prefillAddress ?? "");
+
+  useEffect(() => {
+    if (prefillAddress) {
+      setRecipient(prefillAddress);
+      setStep("input");
+    }
+  }, [prefillAddress]);
+
   const [amount, setAmount] = useState("");
   const [memo, setMemo] = useState("");
   const [txHash, setTxHash] = useState("");
