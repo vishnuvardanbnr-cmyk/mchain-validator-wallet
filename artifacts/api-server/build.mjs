@@ -3,12 +3,34 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { build as esbuild } from "esbuild";
 import esbuildPluginPino from "esbuild-plugin-pino";
-import { rm } from "node:fs/promises";
+import { rm, cp } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { execSync } from "node:child_process";
 
 // Plugins (e.g. 'esbuild-plugin-pino') may use `require` to resolve dependencies
 globalThis.require = createRequire(import.meta.url);
 
 const artifactDir = path.dirname(fileURLToPath(import.meta.url));
+
+const repoRoot = path.resolve(artifactDir, "../..");
+const adminPanelDir = path.resolve(repoRoot, "artifacts/admin-panel");
+
+async function buildAdminPanel(distDir) {
+  console.log("Building admin panel...");
+  execSync("pnpm run build", {
+    cwd: adminPanelDir,
+    stdio: "inherit",
+    env: { ...process.env, PORT: "3000", BASE_PATH: "/admin" },
+  });
+  const adminOut = path.resolve(adminPanelDir, "dist/public");
+  const adminDest = path.resolve(distDir, "admin");
+  if (existsSync(adminOut)) {
+    await cp(adminOut, adminDest, { recursive: true });
+    console.log("Admin panel copied to dist/admin");
+  } else {
+    console.warn("Admin panel build output not found, skipping copy.");
+  }
+}
 
 async function buildAll() {
   const distDir = path.resolve(artifactDir, "dist");
@@ -118,6 +140,8 @@ globalThis.__dirname = __bannerPath.dirname(globalThis.__filename);
     `,
     },
   });
+
+  await buildAdminPanel(distDir);
 }
 
 buildAll().catch((err) => {
