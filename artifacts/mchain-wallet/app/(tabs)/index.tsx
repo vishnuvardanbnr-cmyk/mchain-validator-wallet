@@ -2,6 +2,7 @@ import { AddTokenModal } from "@/components/AddTokenModal";
 import { AssetDetailModal, type AssetItem } from "@/components/AssetDetailModal";
 import { Icon } from "@/components/Icon";
 import { NewWalletModal } from "@/components/NewWalletModal";
+import { NfcWalletCard } from "@/components/NfcWalletCard";
 import { WalletSwitcherModal } from "@/components/WalletSwitcherModal";
 import { QRScannerModal } from "@/components/QRScannerModal";
 import { BalanceSkeleton, AssetRowSkeleton } from "@/components/Skeleton";
@@ -940,6 +941,7 @@ export default function DashboardScreen() {
         visible={showNewWallet}
         onClose={() => setShowNewWallet(false)}
       />
+      <NfcWalletCard />
       <AddTokenModal
         visible={showAddToken}
         onClose={() => setShowAddToken(false)}
