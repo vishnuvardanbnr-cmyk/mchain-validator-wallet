@@ -35,6 +35,7 @@ const apiLimiter = rateLimit({
   max: 120,
   standardHeaders: true,
   legacyHeaders: false,
+  validate: { xForwardedForHeader: false },
   message: { error: "Too many requests, please try again later." },
   skip: (req) => req.path.startsWith("/api/admin/"), // admin has its own stricter limit
 });
@@ -44,6 +45,7 @@ const adminLimiter = rateLimit({
   max: 20,
   standardHeaders: true,
   legacyHeaders: false,
+  validate: { xForwardedForHeader: false },
   message: { error: "Too many requests." },
 });
 
