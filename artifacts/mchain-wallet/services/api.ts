@@ -248,6 +248,18 @@ export interface Reward {
   timestamp: string;
 }
 
+export interface ApiVerifiedToken {
+  id: string;
+  symbol: string;
+  name: string;
+  decimals: number;
+  logoUrl: string;
+  coingeckoId: string;
+  contractAddress: string;
+  sortOrder: number;
+  active: boolean;
+}
+
 export interface FeaturedDapp {
   id: string;
   name: string;
@@ -456,6 +468,15 @@ export const api = {
     ),
 
   ping: () => request<unknown>("/ping"),
+
+  getVerifiedTokens: async (): Promise<ApiVerifiedToken[]> => {
+    const domain = typeof process !== "undefined" ? process.env.EXPO_PUBLIC_DOMAIN : undefined;
+    const base = domain ? `https://${domain}/api` : "/api";
+    const res = await fetch(`${base}/tokens`);
+    if (!res.ok) return [];
+    const data = (await res.json()) as { tokens: ApiVerifiedToken[] };
+    return data.tokens ?? [];
+  },
 
   getFeaturedDapps: async (): Promise<FeaturedDapp[]> => {
     const domain = typeof process !== "undefined" ? process.env.EXPO_PUBLIC_DOMAIN : undefined;

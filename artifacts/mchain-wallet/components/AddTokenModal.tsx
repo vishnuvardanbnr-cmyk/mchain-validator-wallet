@@ -22,10 +22,10 @@ import { useWallet } from "@/context/WalletContext";
 import {
   addCustomToken,
   fetchTokenMetadata,
-  VERIFIED_TOKENS,
   type TokenMetadata,
-  type VerifiedToken,
 } from "@/services/tokens";
+import { api, type ApiVerifiedToken } from "@/services/api";
+import { useQuery } from "@tanstack/react-query";
 
 type Panel = "popular" | "custom";
 
@@ -42,7 +42,13 @@ export function AddTokenModal({ visible, onClose, onAdded }: Props) {
 
   const [panel, setPanel] = useState<Panel>("popular");
   const [search, setSearch] = useState("");
-  const [selectedVerified, setSelectedVerified] = useState<VerifiedToken | null>(null);
+  const [selectedVerified, setSelectedVerified] = useState<ApiVerifiedToken | null>(null);
+
+  const { data: verifiedTokensData = [] } = useQuery({
+    queryKey: ["verifiedTokens"],
+    queryFn: () => api.getVerifiedTokens(),
+    staleTime: 5 * 60_000,
+  });
 
   // Popular → contract entry step
   const [contractInput, setContractInput] = useState("");
@@ -111,7 +117,7 @@ export function AddTokenModal({ visible, onClose, onAdded }: Props) {
     }
   }, [visible]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const filteredVerified = VERIFIED_TOKENS.filter(
+  const filteredVerified = verifiedTokensData.filter(
     (t) =>
       t.name.toLowerCase().includes(search.toLowerCase()) ||
       t.symbol.toLowerCase().includes(search.toLowerCase())
@@ -312,7 +318,7 @@ export function AddTokenModal({ visible, onClose, onAdded }: Props) {
           <ScrollView showsVerticalScrollIndicator={false}>
             {filteredVerified.map((token) => (
               <TouchableOpacity
-                key={token.coingeckoId}
+                key={token.id}
                 style={s.tokenItem}
                 onPress={async () => {
                   if (token.contractAddress) {
