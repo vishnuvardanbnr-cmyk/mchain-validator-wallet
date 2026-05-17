@@ -1,5 +1,6 @@
 import { Router, type Request, type Response, type NextFunction } from "express";
 import { pool } from "@workspace/db";
+import { cached, invalidate } from "../lib/redis";
 
 function adminAuth(req: Request, res: Response, next: NextFunction): void {
   const secret = process.env["ADMIN_SECRET"];
@@ -57,37 +58,45 @@ async function resolveLivePrice(row: PriceRow): Promise<number> {
   }
   // Auto: fetch from api_url and extract price_field
   if (!row.api_url) return 0;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5000);
   try {
-    const resp = await fetch(row.api_url, { signal: AbortSignal.timeout(5000) });
+    const resp = await fetch(row.api_url, { signal: controller.signal });
     if (!resp.ok) return 0;
     const json = await resp.json();
     if (!row.price_field) {
-      // If no field specified but it's a plain number, use it directly
       if (typeof json === "number") return json;
       return 0;
     }
     return extractField(json, row.price_field) ?? 0;
   } catch {
     return 0;
+  } finally {
+    clearTimeout(timer);
   }
 }
+
+const PRICES_CACHE_KEY = "prices:public";
+const PRICES_CACHE_TTL = 60; // seconds
 
 // ── Public endpoint ────────────────────────────────────────────────────────────
 
 router.get("/prices", async (_req, res) => {
   try {
-    const { rows } = await pool.query<PriceRow>(
-      `SELECT symbol, price_type, fixed_price, api_url, price_field FROM coin_prices ORDER BY symbol`
-    );
-    const prices = await Promise.all(
-      rows.map(async (row) => ({
-        symbol: row.symbol,
-        priceType: row.price_type,
-        priceUsd: await resolveLivePrice(row),
-        apiUrl: row.api_url,
-        priceField: row.price_field,
-      }))
-    );
+    const prices = await cached(PRICES_CACHE_KEY, PRICES_CACHE_TTL, async () => {
+      const { rows } = await pool.query<PriceRow>(
+        `SELECT symbol, price_type, fixed_price, api_url, price_field FROM coin_prices ORDER BY symbol`
+      );
+      return Promise.all(
+        rows.map(async (row) => ({
+          symbol: row.symbol,
+          priceType: row.price_type,
+          priceUsd: await resolveLivePrice(row),
+          apiUrl: row.api_url,
+          priceField: row.price_field,
+        }))
+      );
+    });
     res.json({ prices });
   } catch (e) {
     res.status(500).json({ error: String(e) });
@@ -139,6 +148,8 @@ router.put("/admin/prices/:symbol", adminAuth, async (req, res) => {
       ]
     );
     const r = rows[0]!;
+    // Bust the public prices cache so wallets see the new price immediately
+    await invalidate(PRICES_CACHE_KEY);
     res.json({ price: {
       symbol: r.symbol, priceType: r.price_type,
       fixedPrice: r.fixed_price !== null ? parseFloat(r.fixed_price) : null,
