@@ -486,7 +486,7 @@ export function NfcWalletCard() {
               <Icon name="wifi-outline" size={26} color="#FFF" />
             </LinearGradient>
             <View style={s.textWrap}>
-              <Text style={s.cardTitle}>NFC Wallet Card</Text>
+              <Text style={s.cardTitle}>Card Vault</Text>
               <Text style={s.cardSub}>Tap to load a wallet from your NFC card</Text>
             </View>
             <LinearGradient colors={["#6366F1", "#0EA5E9"]} style={s.arrowWrap}>
@@ -503,7 +503,7 @@ export function NfcWalletCard() {
           <Animated.View style={[s.sheet, { transform: [{ translateY: slideAnim }] }]}>
             <View style={s.handle} />
             <View style={s.header}>
-              <Text style={s.title}>NFC Wallet Card</Text>
+              <Text style={s.title}>Card Vault</Text>
               <TouchableOpacity style={s.closeBtn} onPress={closeModal}>
                 <Icon name="close" size={14} color={colors.mutedForeground} />
               </TouchableOpacity>
