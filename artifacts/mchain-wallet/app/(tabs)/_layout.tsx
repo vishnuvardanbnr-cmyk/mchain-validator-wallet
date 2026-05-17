@@ -26,7 +26,7 @@ export default function TabLayout() {
           borderTopWidth: 1,
           borderTopColor: colors.border,
           elevation: 0,
-          paddingBottom: isWeb ? 0 : insets.bottom,
+          paddingBottom: isWeb ? 0 : Math.max(insets.bottom, 10),
           ...(isWeb ? { height: 84 } : {}),
         },
         tabBarBackground: () =>
