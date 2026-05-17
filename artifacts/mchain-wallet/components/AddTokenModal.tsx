@@ -6,7 +6,7 @@ import {
   Animated,
   Easing,
   Image,
-  KeyboardAvoidingView,
+  Keyboard,
   Modal,
   Platform,
   ScrollView,
@@ -70,6 +70,32 @@ export function AddTokenModal({ visible, onClose, onAdded }: Props) {
 
   const slideAnim = useRef(new Animated.Value(500)).current;
   const overlayOpacity = useRef(new Animated.Value(0)).current;
+  const keyboardOffset = useRef(new Animated.Value(0)).current;
+
+  // Lift sheet when keyboard appears so inputs are never hidden
+  useEffect(() => {
+    const show = Keyboard.addListener(
+      Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow",
+      (e) => {
+        Animated.timing(keyboardOffset, {
+          toValue: e.endCoordinates.height,
+          duration: Platform.OS === "ios" ? e.duration : 180,
+          useNativeDriver: true,
+        }).start();
+      }
+    );
+    const hide = Keyboard.addListener(
+      Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide",
+      (e) => {
+        Animated.timing(keyboardOffset, {
+          toValue: 0,
+          duration: Platform.OS === "ios" ? e.duration : 180,
+          useNativeDriver: true,
+        }).start();
+      }
+    );
+    return () => { show.remove(); hide.remove(); };
+  }, []);
 
   // Auto-fetch metadata when a valid contract address is typed in custom panel
   useEffect(() => {
@@ -527,25 +553,29 @@ export function AddTokenModal({ visible, onClose, onAdded }: Props) {
 
   return (
     <Modal visible={visible} transparent animationType="none" onRequestClose={onClose} statusBarTranslucent>
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        keyboardVerticalOffset={0}
-      >
-        <Animated.View style={[s.overlay, { opacity: overlayOpacity }]}>
-          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={onClose} />
-          <Animated.View style={[s.sheet, { transform: [{ translateY: slideAnim }] }]}>
-            <View style={s.handle} />
-            <View style={s.sheetHeader}>
-              <Text style={s.sheetTitle}>Add Token</Text>
-              <TouchableOpacity style={s.closeBtn} onPress={onClose}>
-                <Icon name="close" size={14} color={colors.mutedForeground} />
-              </TouchableOpacity>
-            </View>
-            {body}
-          </Animated.View>
+      <Animated.View style={[s.overlay, { opacity: overlayOpacity }]}>
+        <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={() => { Keyboard.dismiss(); onClose(); }} />
+        <Animated.View
+          style={[
+            s.sheet,
+            {
+              transform: [
+                { translateY: slideAnim },
+                { translateY: Animated.multiply(keyboardOffset, -1) },
+              ],
+            },
+          ]}
+        >
+          <View style={s.handle} />
+          <View style={s.sheetHeader}>
+            <Text style={s.sheetTitle}>Add Token</Text>
+            <TouchableOpacity style={s.closeBtn} onPress={() => { Keyboard.dismiss(); onClose(); }}>
+              <Icon name="close" size={14} color={colors.mutedForeground} />
+            </TouchableOpacity>
+          </View>
+          {body}
         </Animated.View>
-      </KeyboardAvoidingView>
+      </Animated.View>
     </Modal>
   );
 }
