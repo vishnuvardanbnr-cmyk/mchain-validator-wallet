@@ -13,6 +13,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { NfcSigningModal } from "@/components/NfcSigningModal";
 import { PinModal } from "@/components/PinModal";
 import { SplashLoader } from "@/components/SplashLoader";
 import { PinProvider, usePinContext } from "@/context/PinContext";
@@ -82,6 +83,7 @@ function PinGate({ children }: { children: React.ReactNode }) {
         onCancel={modalOnCancel}
         animationType={isAppLocked ? "none" : "fade"}
       />
+      <NfcSigningModal />
     </>
   );
 }
