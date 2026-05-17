@@ -17,12 +17,22 @@
       "supportsTablet": false,
       "infoPlist": {
         "NSCameraUsageDescription": "Scan QR codes to get recipient addresses",
-        "UIBackgroundModes": ["fetch", "processing"]
+        "UIBackgroundModes": [
+          "fetch",
+          "processing"
+        ]
       }
     },
     "android": {
       "package": "com.mchain.wallet",
-      "permissions": ["CAMERA", "RECEIVE_BOOT_COMPLETED"],
+      "permissions": [
+        "CAMERA",
+        "RECEIVE_BOOT_COMPLETED",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.RECEIVE_BOOT_COMPLETED",
+        "android.permission.WAKE_LOCK"
+      ],
       "versionCode": 1
     },
     "web": {
@@ -50,6 +60,12 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "e6ecd8bb-e7d4-47a5-a6f3-eb91508afe1a"
+      }
+    },
+    "owner": "abinavardhan"
   }
 }
