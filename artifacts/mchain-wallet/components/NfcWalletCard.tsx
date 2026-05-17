@@ -116,7 +116,7 @@ function CardIllustration() {
 export function NfcWalletCard() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { addWallet, switchWallet } = useWallet();
+  const { addNfcTemporaryWallet, switchWallet } = useWallet();
 
   const [nfcSupported, setNfcSupported] = useState<boolean | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
@@ -250,7 +250,7 @@ export function NfcWalletCard() {
         ethAddress, mxcAddress,
       };
 
-      const entry = await addWallet(keypair, scannedPayload.label || "NFC Wallet");
+      const entry = await addNfcTemporaryWallet(keypair, scannedPayload.label || "NFC Wallet");
       await switchWallet(entry.id);
       if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       crossfadeTo("success");
