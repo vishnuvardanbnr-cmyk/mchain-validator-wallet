@@ -25,7 +25,6 @@
     },
     "android": {
       "package": "com.mchain.wallet",
-      "usesCleartextTraffic": true,
       "permissions": [
         "CAMERA",
         "RECEIVE_BOOT_COMPLETED",
