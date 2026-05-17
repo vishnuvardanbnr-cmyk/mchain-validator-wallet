@@ -32,37 +32,32 @@ const queryClient = new QueryClient({
 });
 
 /**
- * Sits inside PinProvider so it can read isReady from context.
- * Keeps the native splash alive until fonts + PIN + wallet are ready,
- * then hands off to the animated in-app SplashLoader which fades out
- * before revealing app content — no blank frame ever visible.
+ * Reads readiness from inside providers and calls onReady() upward.
+ * Children only render after splashDone so they never flash under the loader.
  */
 function AppReadyGate({
   fontsLoaded,
   fontError,
+  onReady,
+  splashDone,
   children,
 }: {
   fontsLoaded: boolean;
   fontError: Error | null;
+  onReady: () => void;
+  splashDone: boolean;
   children: React.ReactNode;
 }) {
   const { isReady } = usePinContext();
   const { isLoading: walletLoading } = useWallet();
   const ready = (fontsLoaded || !!fontError) && isReady && !walletLoading;
 
-  // Hide the native splash immediately so our in-app loader takes over
   useEffect(() => {
-    SplashScreen.hideAsync();
-  }, []);
+    if (ready) onReady();
+  }, [ready]);
 
-  const [splashDone, setSplashDone] = useState(false);
-
-  return (
-    <>
-      {splashDone && children}
-      <SplashLoader ready={ready} onDone={() => setSplashDone(true)} />
-    </>
-  );
+  if (!splashDone) return null;
+  return <>{children}</>;
 }
 
 function PinGate({ children }: { children: React.ReactNode }) {
@@ -112,20 +107,42 @@ export default function RootLayout() {
     Inter_700Bold,
   });
 
+  // appReady is signalled from inside providers via onReady()
+  const [appReady, setAppReady] = useState(false);
+  // splashDone = loader has finished its fade-out → safe to show app
+  const [splashDone, setSplashDone] = useState(false);
+
+  // Drop the native OS splash immediately — our SplashLoader takes over
+  useEffect(() => {
+    SplashScreen.hideAsync();
+  }, []);
+
   return (
-    <SafeAreaProvider>
+    <SafeAreaProvider style={{ backgroundColor: "#060E1A" }}>
       <ErrorBoundary>
         <QueryClientProvider client={queryClient}>
-          <GestureHandlerRootView style={{ flex: 1 }}>
+          <GestureHandlerRootView style={{ flex: 1, backgroundColor: "#060E1A" }}>
             <WalletProvider>
               <PinProvider>
-                <AppReadyGate fontsLoaded={fontsLoaded} fontError={fontError}>
+                <AppReadyGate
+                  fontsLoaded={fontsLoaded}
+                  fontError={fontError}
+                  onReady={() => setAppReady(true)}
+                  splashDone={splashDone}
+                >
                   <PinGate>
                     <RootLayoutNav />
                   </PinGate>
                 </AppReadyGate>
               </PinProvider>
             </WalletProvider>
+
+            {/* SplashLoader lives OUTSIDE providers so it always renders
+                regardless of provider initialization state */}
+            <SplashLoader
+              ready={appReady}
+              onDone={() => setSplashDone(true)}
+            />
           </GestureHandlerRootView>
         </QueryClientProvider>
       </ErrorBoundary>
