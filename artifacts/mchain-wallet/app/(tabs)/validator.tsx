@@ -138,6 +138,14 @@ export default function ValidatorScreen() {
   const [epochsError, setEpochsError] = useState<string | null>(null);
   const [epochsSummary, setEpochsSummary] = useState<EpochsSummary | null>(null);
 
+  // ── Live epoch countdown tick ────────────────────────────────────────────────
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (!openEpoch) return;
+    const id = setInterval(() => setTick(t => t + 1), 1000);
+    return () => clearInterval(id);
+  }, [openEpoch]);
+
   // ── Animation refs ──────────────────────────────────────────────────────────
   const pulseScale = useRef(new Animated.Value(1)).current;
   const pulseOpacity = useRef(new Animated.Value(0.6)).current;
