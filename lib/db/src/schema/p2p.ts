@@ -197,6 +197,7 @@ export const rateOrderRequestSchema = z.object({
 });
 
 export const kycSubmitRequestSchema = z.object({
+  mxcAddress: z.string().min(1),
   displayName: z.string().min(2).max(100),
   kycName: z.string().min(2).max(100),
   kycDocType: z.enum(["passport", "national_id", "drivers_license"]),
