@@ -462,10 +462,12 @@ router.post("/p2p/orders/:id/messages", async (req, res) => {
   if (!order) { res.status(404).json({ error: "Order not found" }); return; }
   if (![order.buyerAddress, order.sellerAddress].includes(senderAddress)) { res.status(403).json({ error: "Not a party to this order" }); return; }
 
+  const data = v.data as { content?: string; imageUrl?: string };
   const [msg] = await db.insert(p2pMessages).values({
     orderId: id,
     senderAddress,
-    content: (v.data as { content: string }).content,
+    content: data.content?.trim() ?? "",
+    imageUrl: data.imageUrl ?? null,
     isSystem: false,
   }).returning();
   res.status(201).json(msg);

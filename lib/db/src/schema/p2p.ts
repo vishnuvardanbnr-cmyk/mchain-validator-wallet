@@ -112,7 +112,8 @@ export const p2pMessages = pgTable("p2p_messages", {
   id: uuid("id").primaryKey().defaultRandom(),
   orderId: uuid("order_id").notNull().references(() => p2pOrders.id),
   senderAddress: text("sender_address").notNull(),
-  content: text("content").notNull(),
+  content: text("content").notNull().default(""),
+  imageUrl: text("image_url"),
   isSystem: boolean("is_system").notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (t) => [
@@ -188,7 +189,11 @@ export const createDisputeRequestSchema = z.object({
 });
 
 export const sendMessageRequestSchema = z.object({
-  content: z.string().min(1).max(2000),
+  content: z.string().max(2000).optional(),
+  imageUrl: z.string().optional(),
+  senderAddress: z.string().optional(),
+}).refine(d => (d.content?.trim() ?? "").length > 0 || !!d.imageUrl, {
+  message: "Must provide content or an image",
 });
 
 export const rateOrderRequestSchema = z.object({

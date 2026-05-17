@@ -87,6 +87,7 @@ export interface P2pMessage {
   orderId: string;
   senderAddress: string;
   content: string;
+  imageUrl?: string | null;
   isSystem: boolean;
   createdAt: string;
 }
@@ -246,7 +247,7 @@ export const p2pApi = {
     const msgs = await req<P2pMessage[]>(`/orders/${orderId}/messages`);
     return msgs.map(cvtMessage);
   },
-  sendMessage: async (orderId: string, body: { senderAddress: string; content: string }) =>
+  sendMessage: async (orderId: string, body: { senderAddress: string; content?: string; imageUrl?: string }) =>
     cvtMessage(await req<P2pMessage>(`/orders/${orderId}/messages`, { method: "POST", body: JSON.stringify(body) })),
 
   // ── Disputes ─────────────────────────────────────────────────────────────

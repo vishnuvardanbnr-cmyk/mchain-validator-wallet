@@ -8,10 +8,11 @@ import { api } from "@/services/api";
 import { mcToWei, signEvmTransaction } from "@/services/crypto";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Haptics from "expo-haptics";
+import * as ImagePicker from "expo-image-picker";
 import { LinearGradient } from "expo-linear-gradient";
 import React, { useEffect, useRef, useState } from "react";
 import {
-  ActivityIndicator, Alert, KeyboardAvoidingView, Modal, Platform,
+  ActivityIndicator, Alert, Image, KeyboardAvoidingView, Modal, Platform,
   Pressable, ScrollView, StyleSheet, Text, TextInput,
   TouchableOpacity, View,
 } from "react-native";
@@ -61,6 +62,8 @@ export function TradeRoomModal({ visible, orderId, onClose }: Props) {
   const scrollRef = useRef<ScrollView>(null);
 
   const [msgText, setMsgText] = useState("");
+  const [pendingImage, setPendingImage] = useState<string | null>(null);
+  const [lightboxImage, setLightboxImage] = useState<string | null>(null);
   const [showDispute, setShowDispute] = useState(false);
   const [disputeReason, setDisputeReason] = useState("payment_not_received");
   const [disputeDesc, setDisputeDesc] = useState("");
@@ -105,11 +108,42 @@ export function TradeRoomModal({ visible, orderId, onClose }: Props) {
   const escrowStatus = order?.escrowStatus ?? "none";
   const escrowLocked = escrowStatus === "locked";
 
+  const canSend = !!(msgText.trim() || pendingImage);
+
   const sendMsg = useMutation({
-    mutationFn: () => p2pApi.sendMessage(orderId, { senderAddress: mxcAddress!, content: msgText.trim() }),
-    onSuccess: () => { setMsgText(""); queryClient.invalidateQueries({ queryKey: ["p2p_messages", orderId] }); },
+    mutationFn: () => p2pApi.sendMessage(orderId, {
+      senderAddress: mxcAddress!,
+      ...(msgText.trim() ? { content: msgText.trim() } : {}),
+      ...(pendingImage ? { imageUrl: pendingImage } : {}),
+    }),
+    onSuccess: () => {
+      setMsgText("");
+      setPendingImage(null);
+      queryClient.invalidateQueries({ queryKey: ["p2p_messages", orderId] });
+    },
     onError: (e) => setToast(e instanceof Error ? e.message : "Failed to send"),
   });
+
+  async function pickImage() {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== "granted") {
+      setToast("Photo library permission is required to send images");
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.5,
+      base64: true,
+      allowsEditing: true,
+    });
+    if (!result.canceled && result.assets[0]) {
+      const asset = result.assets[0];
+      if (asset.base64) {
+        const mime = asset.mimeType ?? "image/jpeg";
+        setPendingImage(`data:${mime};base64,${asset.base64}`);
+      }
+    }
+  }
 
   const markPaid = useMutation({
     mutationFn: () => p2pApi.markPaid(orderId, mxcAddress!),
@@ -135,7 +169,6 @@ export function TradeRoomModal({ visible, orderId, onClose }: Props) {
     onError: (e) => setToast(e instanceof Error ? e.message : "Failed to open dispute"),
   });
 
-  // ── Lock escrow (MC — automatic sign+broadcast) ───────────────────────────
   const lockEscrowMc = useMutation({
     mutationFn: async () => {
       if (!mxcAddress || !order) throw new Error("No wallet or order");
@@ -168,7 +201,6 @@ export function TradeRoomModal({ visible, orderId, onClose }: Props) {
     },
   });
 
-  // ── Lock escrow (USDT — manual, seller provides tx hash) ─────────────────
   const lockEscrowUsdt = useMutation({
     mutationFn: async () => {
       if (!mxcAddress || !usdtTxHash.trim()) throw new Error("Enter your transaction hash");
@@ -253,7 +285,13 @@ export function TradeRoomModal({ visible, orderId, onClose }: Props) {
     msgText: { fontSize: 13, fontFamily: "Inter_400Regular", color: colors.foreground, lineHeight: 18 },
     systemText: { fontSize: 11, fontFamily: "Inter_400Regular", color: colors.mutedForeground, textAlign: "center" },
     msgTime: { fontSize: 9, fontFamily: "Inter_400Regular", color: colors.mutedForeground, marginTop: 3 },
+    msgImage: { width: 200, height: 200, borderRadius: 10, marginBottom: 4 },
+    pendingImageWrap: { paddingHorizontal: 10, paddingTop: 6, paddingBottom: 2 },
+    pendingImageRow: { position: "relative", alignSelf: "flex-start" },
+    pendingImg: { width: 80, height: 80, borderRadius: 10, borderWidth: 1, borderColor: colors.border },
+    pendingRemove: { position: "absolute", top: -8, right: -8, width: 22, height: 22, borderRadius: 11, backgroundColor: "#EF4444", alignItems: "center", justifyContent: "center" },
     inputRow: { flexDirection: "row", alignItems: "center", padding: 10, borderTopWidth: 1, borderTopColor: colors.border, gap: 8, paddingBottom: insets.bottom + 10 },
+    imgBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, alignItems: "center", justifyContent: "center" },
     msgInput: { flex: 1, backgroundColor: colors.card, borderRadius: 20, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 14, paddingVertical: 10, fontSize: 14, fontFamily: "Inter_400Regular", color: colors.foreground, maxHeight: 100 },
     sendBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.primary, alignItems: "center", justifyContent: "center" },
     actionBar: { paddingHorizontal: 14, paddingVertical: 10, borderTopWidth: 1, borderTopColor: colors.border, gap: 8 },
@@ -286,6 +324,9 @@ export function TradeRoomModal({ visible, orderId, onClose }: Props) {
     usdtAddrLabel: { fontSize: 10, fontFamily: "Inter_600SemiBold", color: colors.mutedForeground, letterSpacing: 1, marginBottom: 4 },
     usdtAddr: { fontSize: 12, fontFamily: "Inter_400Regular", color: colors.foreground },
     usdtInput: { backgroundColor: colors.card, borderRadius: 10, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 14, paddingVertical: 12, fontSize: 13, fontFamily: "Inter_400Regular", color: colors.foreground, marginBottom: 14 },
+    lightboxOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.95)", alignItems: "center", justifyContent: "center" },
+    lightboxImg: { width: "95%", height: "80%", resizeMode: "contain" },
+    lightboxClose: { position: "absolute", top: 50, right: 20, width: 40, height: 40, borderRadius: 20, backgroundColor: "rgba(255,255,255,0.15)", alignItems: "center", justifyContent: "center" },
   });
 
   return (
@@ -381,7 +422,12 @@ export function TradeRoomModal({ visible, orderId, onClose }: Props) {
                   return (
                     <View key={msg.id} style={[s.msgWrap, { alignSelf: isMe ? "flex-end" : "flex-start" }]}>
                       <View style={[s.msgBubble, isMe ? s.myBubble : s.theirBubble]}>
-                        <Text style={s.msgText}>{msg.content}</Text>
+                        {msg.imageUrl ? (
+                          <TouchableOpacity onPress={() => setLightboxImage(msg.imageUrl!)}>
+                            <Image source={{ uri: msg.imageUrl }} style={s.msgImage} resizeMode="cover" />
+                          </TouchableOpacity>
+                        ) : null}
+                        {msg.content ? <Text style={s.msgText}>{msg.content}</Text> : null}
                       </View>
                       <Text style={[s.msgTime, { textAlign: isMe ? "right" : "left" }]}>
                         {new Date(msg.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
@@ -423,53 +469,87 @@ export function TradeRoomModal({ visible, orderId, onClose }: Props) {
                     <View style={s.actionRow}>
                       <TouchableOpacity style={s.actionBtn} onPress={() => markPaid.mutate()} activeOpacity={0.85} disabled={markPaid.isPending}>
                         <LinearGradient colors={["#0EA5E9", "#0284C7"]} style={s.actionGrad}>
-                          {markPaid.isPending ? <ActivityIndicator color="#FFF" size="small" /> : <><Icon name="checkmark-circle-outline" size={15} color="#FFF" /><Text style={s.actionText}>I've Paid</Text></>}
+                          {markPaid.isPending
+                            ? <ActivityIndicator color="#FFF" size="small" />
+                            : <><Icon name="checkmark-circle-outline" size={15} color="#FFF" /><Text style={s.actionText}>I've Sent Payment</Text></>}
                         </LinearGradient>
                       </TouchableOpacity>
-                      <TouchableOpacity style={s.ghostBtn} onPress={handleCancel}>
+                      <TouchableOpacity style={s.ghostBtn} onPress={handleCancel} disabled={cancelOrder.isPending}>
                         <Text style={s.ghostText}>Cancel</Text>
                       </TouchableOpacity>
                     </View>
                   )}
-                  {isBuyer && order.status === "paid" && (
-                    <TouchableOpacity style={s.ghostBtn} onPress={() => setShowDispute(true)}>
-                      <Text style={[s.ghostText, { color: "#EF4444" }]}>Open Dispute</Text>
-                    </TouchableOpacity>
-                  )}
 
-                  {/* Seller: Release crypto */}
+                  {/* Seller: Release */}
                   {isSeller && order.status === "paid" && (
                     <View style={s.actionRow}>
                       <TouchableOpacity style={s.actionBtn} onPress={handleRelease} activeOpacity={0.85} disabled={release.isPending}>
                         <LinearGradient colors={["#10B981", "#059669"]} style={s.actionGrad}>
-                          {release.isPending ? <ActivityIndicator color="#FFF" size="small" /> : <><Icon name="lock-open-outline" size={15} color="#FFF" /><Text style={s.actionText}>Release Crypto</Text></>}
+                          {release.isPending
+                            ? <ActivityIndicator color="#FFF" size="small" />
+                            : <><Icon name="arrow-up-circle-outline" size={15} color="#FFF" /><Text style={s.actionText}>Release Crypto</Text></>}
                         </LinearGradient>
                       </TouchableOpacity>
-                      <TouchableOpacity style={s.ghostBtn} onPress={() => setShowDispute(true)}>
+                      <TouchableOpacity style={[s.ghostBtn, { borderColor: "#EF444440" }]} onPress={() => setShowDispute(true)}>
                         <Text style={[s.ghostText, { color: "#EF4444" }]}>Dispute</Text>
                       </TouchableOpacity>
                     </View>
                   )}
+
+                  {/* Buyer: In paid state */}
+                  {isBuyer && order.status === "paid" && (
+                    <View style={[s.escrowBanner, { borderColor: "#0EA5E930", backgroundColor: "#0EA5E908", marginHorizontal: 0 }]}>
+                      <Icon name="time-outline" size={14} color="#0EA5E9" />
+                      <Text style={[s.escrowBannerText, { color: "#0EA5E9" }]}>Payment marked — waiting for seller to release crypto</Text>
+                    </View>
+                  )}
+
+                  {/* Dispute button for buyer in paid state */}
+                  {isBuyer && order.status === "paid" && (
+                    <TouchableOpacity style={[s.ghostBtn, { borderColor: "#EF444440", width: "100%" }]} onPress={() => setShowDispute(true)}>
+                      <Text style={[s.ghostText, { color: "#EF4444" }]}>Open Dispute</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              )}
+
+              {/* Pending image preview */}
+              {pendingImage && (
+                <View style={s.pendingImageWrap}>
+                  <View style={s.pendingImageRow}>
+                    <Image source={{ uri: pendingImage }} style={s.pendingImg} />
+                    <TouchableOpacity style={s.pendingRemove} onPress={() => setPendingImage(null)}>
+                      <Icon name="close" size={12} color="#FFF" />
+                    </TouchableOpacity>
+                  </View>
                 </View>
               )}
 
               {/* Message input */}
               {!isTerminal && (
                 <View style={s.inputRow}>
+                  <TouchableOpacity style={s.imgBtn} onPress={pickImage} activeOpacity={0.75}>
+                    <Icon name="image-outline" size={20} color={colors.mutedForeground} />
+                  </TouchableOpacity>
                   <TextInput
                     style={s.msgInput}
-                    value={msgText}
-                    onChangeText={setMsgText}
                     placeholder="Message…"
                     placeholderTextColor={colors.mutedForeground}
+                    value={msgText}
+                    onChangeText={setMsgText}
                     multiline
+                    returnKeyType="send"
+                    onSubmitEditing={() => canSend && sendMsg.mutate()}
                   />
                   <TouchableOpacity
-                    style={[s.sendBtn, (!msgText.trim() || sendMsg.isPending) && { opacity: 0.5 }]}
-                    onPress={() => msgText.trim() && sendMsg.mutate()}
-                    disabled={!msgText.trim() || sendMsg.isPending}
+                    style={[s.sendBtn, (!canSend || sendMsg.isPending) && { opacity: 0.5 }]}
+                    onPress={() => canSend && sendMsg.mutate()}
+                    disabled={!canSend || sendMsg.isPending}
+                    activeOpacity={0.8}
                   >
-                    <Icon name="send" size={16} color="#FFF" />
+                    {sendMsg.isPending
+                      ? <ActivityIndicator color="#FFF" size="small" />
+                      : <Icon name="send" size={16} color="#FFF" />}
                   </TouchableOpacity>
                 </View>
               )}
@@ -478,74 +558,77 @@ export function TradeRoomModal({ visible, orderId, onClose }: Props) {
         </View>
       </Modal>
 
+      {/* Fullscreen image lightbox */}
+      <Modal visible={!!lightboxImage} transparent animationType="fade" statusBarTranslucent onRequestClose={() => setLightboxImage(null)}>
+        <Pressable style={s.lightboxOverlay} onPress={() => setLightboxImage(null)}>
+          {lightboxImage && (
+            <Image source={{ uri: lightboxImage }} style={s.lightboxImg} />
+          )}
+          <TouchableOpacity style={s.lightboxClose} onPress={() => setLightboxImage(null)}>
+            <Icon name="close" size={20} color="#FFF" />
+          </TouchableOpacity>
+        </Pressable>
+      </Modal>
+
       {/* Dispute sheet */}
-      <Modal visible={showDispute} animationType="slide" transparent statusBarTranslucent>
-        <Pressable style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "flex-end" }} onPress={() => setShowDispute(false)}>
-          <Pressable onPress={() => {}}>
-            <View style={s.disputeSheet}>
-              <Text style={s.disputeTitle}>Open Dispute</Text>
-              <Text style={s.disputeLabel}>REASON</Text>
-              {DISPUTE_REASONS.map(r => (
-                <TouchableOpacity key={r.id} style={[s.reasonChip, disputeReason === r.id && s.reasonChipActive]} onPress={() => setDisputeReason(r.id)}>
-                  <Text style={[s.reasonText, disputeReason === r.id && s.reasonTextActive]}>{r.label}</Text>
-                </TouchableOpacity>
-              ))}
-              <Text style={[s.disputeLabel, { marginTop: 12 }]}>DESCRIPTION</Text>
-              <TextInput style={s.disputeInput} value={disputeDesc} onChangeText={setDisputeDesc} placeholder="Describe the issue in detail…" placeholderTextColor={colors.mutedForeground} multiline />
-              <TouchableOpacity style={[s.disputeBtn, openDispute.isPending && { opacity: 0.6 }]} onPress={() => { if (disputeDesc.length < 10) { setToast("Describe the issue (min 10 chars)"); return; } openDispute.mutate(); }} disabled={openDispute.isPending}>
-                <LinearGradient colors={["#EF4444", "#DC2626"]} style={s.disputeGrad}>
-                  {openDispute.isPending ? <ActivityIndicator color="#FFF" /> : <Text style={s.disputeBtnText}>Submit Dispute</Text>}
-                </LinearGradient>
-              </TouchableOpacity>
-            </View>
-          </Pressable>
-        </Pressable>
+      <Modal visible={showDispute} transparent animationType="slide" statusBarTranslucent onRequestClose={() => setShowDispute(false)}>
+        <Pressable style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.5)" }} onPress={() => setShowDispute(false)} />
+        <View style={s.disputeSheet}>
+          <Text style={s.disputeTitle}>Open Dispute</Text>
+          <Text style={s.disputeLabel}>REASON</Text>
+          {DISPUTE_REASONS.map(r => (
+            <TouchableOpacity key={r.id} style={[s.reasonChip, disputeReason === r.id && s.reasonChipActive]} onPress={() => setDisputeReason(r.id)}>
+              <Text style={[s.reasonText, disputeReason === r.id && s.reasonTextActive]}>{r.label}</Text>
+            </TouchableOpacity>
+          ))}
+          <Text style={[s.disputeLabel, { marginTop: 12 }]}>DESCRIPTION</Text>
+          <TextInput
+            style={s.disputeInput}
+            placeholder="Describe the issue in detail…"
+            placeholderTextColor={colors.mutedForeground}
+            value={disputeDesc}
+            onChangeText={setDisputeDesc}
+            multiline
+          />
+          <TouchableOpacity style={[s.disputeBtn, openDispute.isPending && { opacity: 0.6 }]} onPress={() => disputeDesc.trim().length >= 10 && openDispute.mutate()} disabled={openDispute.isPending || disputeDesc.trim().length < 10} activeOpacity={0.85}>
+            <LinearGradient colors={["#EF4444", "#DC2626"]} style={s.disputeGrad}>
+              {openDispute.isPending ? <ActivityIndicator color="#FFF" /> : <Text style={s.disputeBtnText}>Submit Dispute</Text>}
+            </LinearGradient>
+          </TouchableOpacity>
+        </View>
       </Modal>
 
-      {/* USDT manual escrow sheet */}
-      <Modal visible={showUsdtEscrow} animationType="slide" transparent statusBarTranslucent>
-        <Pressable style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "flex-end" }} onPress={() => setShowUsdtEscrow(false)}>
-          <Pressable onPress={() => {}}>
-            <View style={s.usdtSheet}>
-              <Text style={s.usdtTitle}>Lock USDT in Escrow</Text>
-              <Text style={s.usdtDesc}>
-                Send exactly {order?.cryptoAmount} USDT to the escrow address below using your preferred USDT wallet or exchange. Then paste your transaction hash to confirm the lock.
-              </Text>
-              {escrowInfo?.escrowAddress ? (
-                <View style={s.usdtAddrBox}>
-                  <Text style={s.usdtAddrLabel}>ESCROW ADDRESS</Text>
-                  <Text style={s.usdtAddr}>{escrowInfo.escrowAddress}</Text>
-                </View>
-              ) : (
-                <View style={[s.usdtAddrBox, { backgroundColor: "#EF444410" }]}>
-                  <Text style={[s.usdtAddr, { color: "#EF4444" }]}>Escrow not configured — contact admin</Text>
-                </View>
-              )}
-              <Text style={s.disputeLabel}>YOUR TRANSACTION HASH</Text>
-              <TextInput
-                style={s.usdtInput}
-                value={usdtTxHash}
-                onChangeText={setUsdtTxHash}
-                placeholder="0x..."
-                placeholderTextColor={colors.mutedForeground}
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
-              <TouchableOpacity
-                style={[s.disputeBtn, (lockEscrowUsdt.isPending || !usdtTxHash.trim()) && { opacity: 0.6 }]}
-                onPress={() => lockEscrowUsdt.mutate()}
-                disabled={lockEscrowUsdt.isPending || !usdtTxHash.trim()}
-              >
-                <LinearGradient colors={["#8B5CF6", "#7C3AED"]} style={s.disputeGrad}>
-                  {lockEscrowUsdt.isPending ? <ActivityIndicator color="#FFF" /> : <Text style={s.disputeBtnText}>Confirm Lock</Text>}
-                </LinearGradient>
-              </TouchableOpacity>
+      {/* USDT escrow sheet */}
+      <Modal visible={showUsdtEscrow} transparent animationType="slide" statusBarTranslucent onRequestClose={() => setShowUsdtEscrow(false)}>
+        <Pressable style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.5)" }} onPress={() => setShowUsdtEscrow(false)} />
+        <View style={s.usdtSheet}>
+          <Text style={s.usdtTitle}>Lock USDT in Escrow</Text>
+          <Text style={s.usdtDesc}>
+            Send exactly <Text style={{ fontFamily: "Inter_700Bold", color: colors.foreground }}>{order?.cryptoAmount} USDT</Text> to the escrow address below, then paste your transaction hash to confirm the lock.
+          </Text>
+          {escrowInfo?.escrowAddress && (
+            <View style={s.usdtAddrBox}>
+              <Text style={s.usdtAddrLabel}>ESCROW ADDRESS</Text>
+              <Text style={s.usdtAddr} selectable>{escrowInfo.escrowAddress}</Text>
             </View>
-          </Pressable>
-        </Pressable>
+          )}
+          <TextInput
+            style={s.usdtInput}
+            placeholder="Paste your tx hash here…"
+            placeholderTextColor={colors.mutedForeground}
+            value={usdtTxHash}
+            onChangeText={setUsdtTxHash}
+            autoCapitalize="none"
+          />
+          <TouchableOpacity style={[s.disputeBtn, lockEscrowUsdt.isPending && { opacity: 0.6 }]} onPress={() => lockEscrowUsdt.mutate()} disabled={lockEscrowUsdt.isPending || !usdtTxHash.trim()} activeOpacity={0.85}>
+            <LinearGradient colors={["#8B5CF6", "#7C3AED"]} style={s.disputeGrad}>
+              {lockEscrowUsdt.isPending ? <ActivityIndicator color="#FFF" /> : <Text style={s.disputeBtnText}>Confirm Escrow Lock</Text>}
+            </LinearGradient>
+          </TouchableOpacity>
+        </View>
       </Modal>
 
-      <Toast message={toast} visible={!!toast} onHide={() => setToast("")} />
+      <Toast message={toast} onHide={() => setToast("")} />
     </>
   );
 }
