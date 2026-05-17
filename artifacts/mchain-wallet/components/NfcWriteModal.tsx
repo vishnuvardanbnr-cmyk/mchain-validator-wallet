@@ -17,7 +17,8 @@ import { useColors } from "@/hooks/useColors";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   encryptPrivateKey,
-  writeWalletToNfc,
+  waitForNfcCard,
+  writePayloadToNfc,
   isNfcSupported,
   isNfcEnabled,
   cancelNfc,
@@ -237,16 +238,25 @@ export function NfcWriteModal({ visible, privateKey, mxcAddress, publicKey, labe
       return;
     }
     setErrorMsg("");
-    // Show "Hold card to phone" immediately — stays here until card is tapped
+    // Show "Hold card to phone" — stays here until card is tapped
     crossfadeTo("waiting");
     try {
-      // Yield to the UI thread so the "waiting" screen renders before PBKDF2
-      // blocks the JS thread (PBKDF2 is synchronous and causes a blank freeze)
+      // Yield so the "waiting" screen renders before blocking computation
       await new Promise(r => setTimeout(r, 80));
-      const { enc, iv } = await encryptPrivateKey(privateKey, enteredPin);
+
+      // Run NFC card detection AND encryption in parallel.
+      // This means the app is already listening when the user taps the card,
+      // even if they tap during the ~3-5s PBKDF2 encryption window.
+      const [{ enc, iv }] = await Promise.all([
+        encryptPrivateKey(privateKey, enteredPin),
+        waitForNfcCard(),
+      ]);
+
+      // Both done: card is in field and payload is ready — write immediately
+      crossfadeTo("writing");
       const payload: NfcWalletPayload = { v: 1, enc, iv, addr: mxcAddress, pub: publicKey, label };
-      // Pass callback — "writing" only appears once the card is physically detected
-      await writeWalletToNfc(payload, () => crossfadeTo("writing"));
+      await writePayloadToNfc(payload);
+
       if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       crossfadeTo("success");
     } catch (e) {

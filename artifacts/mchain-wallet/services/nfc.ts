@@ -113,49 +113,42 @@ export async function isNfcEnabled(): Promise<boolean> {
 // ── Write payload to NFC card ─────────────────────────────────────────────────
 
 /**
- * Write a wallet payload to an NFC card.
- * @param onCardDetected  Called once the card is tapped and detected, just
- *                        before the actual write begins. Use this to switch
- *                        the UI from "hold card to phone" → "writing…".
+ * Start listening for an NFC card tap. Returns once the card enters the field.
+ * Call this as early as possible (before/during heavy computation) so the app
+ * captures the tap even if the user taps while the phone is busy.
  */
-export async function writeWalletToNfc(
-  payload: NfcWalletPayload,
-  onCardDetected?: () => void,
-): Promise<void> {
+export async function waitForNfcCard(): Promise<void> {
+  const mod = await import("react-native-nfc-manager");
+  const NfcManager = mod.default;
+  await NfcManager.start();
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error("No card detected after 30 seconds. Hold your NFC card flat against the back of the phone near the camera."));
+    }, 30_000);
+    NfcManager.requestTechnology("Ndef" as never)
+      .then(() => { clearTimeout(timer); resolve(); })
+      .catch((err: unknown) => { clearTimeout(timer); reject(err); });
+  });
+}
+
+/**
+ * Write a wallet payload to the card currently in field.
+ * Must be called immediately after waitForNfcCard() resolves.
+ */
+export async function writePayloadToNfc(payload: NfcWalletPayload): Promise<void> {
   const mod = await import("react-native-nfc-manager");
   const { Ndef } = mod;
   const NfcManager = mod.default;
-
-  await NfcManager.start();
   try {
-    // Phase 1 — wait for the user to tap the card, with a 30s timeout.
-    // requestTechnology hangs forever if the card type isn't NDEF-compatible.
-    await new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        reject(new Error("No card detected after 30 seconds. Make sure you're using an NDEF-compatible NFC card (e.g. NTAG213/215/216) and hold it flat against the back of the phone."));
-      }, 30_000);
-      NfcManager.requestTechnology("Ndef" as never)
-        .then(() => { clearTimeout(timer); resolve(); })
-        .catch((err: unknown) => { clearTimeout(timer); reject(err); });
-    });
-
-    // Card is now in field — notify caller to show "writing" UI
-    onCardDetected?.();
-
-    // Phase 2 — encode and write
     const json = JSON.stringify(payload);
     const bytes = Ndef.encodeMessage([Ndef.textRecord(json)]);
     if (!bytes || bytes.length === 0) {
       throw new Error("Failed to encode payload — card may be too small or incompatible.");
     }
-
-    // Wrap the write in a 12-second timeout — writeNdefMessage can hang
-    // indefinitely if the card drifts out of field after detection.
     await new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => {
-        reject(new Error("Write timed out — card moved out of range. Hold it flat and still against the back of your phone and try again."));
+        reject(new Error("Write timed out — card moved out of range. Hold it flat and still, then try again."));
       }, 12_000);
-
       NfcManager.ndefHandler.writeNdefMessage(bytes).then(() => {
         clearTimeout(timer);
         resolve();
@@ -176,6 +169,16 @@ export async function writeWalletToNfc(
   } finally {
     NfcManager.cancelTechnologyRequest().catch(() => {});
   }
+}
+
+/** @deprecated Use waitForNfcCard() + writePayloadToNfc() instead */
+export async function writeWalletToNfc(
+  payload: NfcWalletPayload,
+  onCardDetected?: () => void,
+): Promise<void> {
+  await waitForNfcCard();
+  onCardDetected?.();
+  await writePayloadToNfc(payload);
 }
 
 // ── Read payload from NFC card ────────────────────────────────────────────────
