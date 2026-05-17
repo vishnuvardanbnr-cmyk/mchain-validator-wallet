@@ -50,7 +50,8 @@ function secureRandomBytes(n: number): Uint8Array {
 function pinToKey(pin: string): Uint8Array {
   const pinBytes = new TextEncoder().encode(pin);
   const salt = new TextEncoder().encode("mchain_nfc_v1");
-  return pbkdf2(sha256, pinBytes, salt, { c: 100_000, dkLen: 32 });
+  // 50k iterations — still strong for a 6-digit PIN, halves the JS-thread freeze on mobile
+  return pbkdf2(sha256, pinBytes, salt, { c: 50_000, dkLen: 32 });
 }
 
 // ── Encrypt / Decrypt ─────────────────────────────────────────────────────────
@@ -127,8 +128,16 @@ export async function writeWalletToNfc(
 
   await NfcManager.start();
   try {
-    // Phase 1 — wait for the user to tap the card (blocks until tapped)
-    await NfcManager.requestTechnology("Ndef" as never);
+    // Phase 1 — wait for the user to tap the card, with a 30s timeout.
+    // requestTechnology hangs forever if the card type isn't NDEF-compatible.
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        reject(new Error("No card detected after 30 seconds. Make sure you're using an NDEF-compatible NFC card (e.g. NTAG213/215/216) and hold it flat against the back of the phone."));
+      }, 30_000);
+      NfcManager.requestTechnology("Ndef" as never)
+        .then(() => { clearTimeout(timer); resolve(); })
+        .catch((err: unknown) => { clearTimeout(timer); reject(err); });
+    });
 
     // Card is now in field — notify caller to show "writing" UI
     onCardDetected?.();

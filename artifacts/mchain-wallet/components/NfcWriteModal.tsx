@@ -240,6 +240,9 @@ export function NfcWriteModal({ visible, privateKey, mxcAddress, publicKey, labe
     // Show "Hold card to phone" immediately — stays here until card is tapped
     crossfadeTo("waiting");
     try {
+      // Yield to the UI thread so the "waiting" screen renders before PBKDF2
+      // blocks the JS thread (PBKDF2 is synchronous and causes a blank freeze)
+      await new Promise(r => setTimeout(r, 80));
       const { enc, iv } = await encryptPrivateKey(privateKey, enteredPin);
       const payload: NfcWalletPayload = { v: 1, enc, iv, addr: mxcAddress, pub: publicKey, label };
       // Pass callback — "writing" only appears once the card is physically detected
