@@ -25,6 +25,10 @@ export function useHeartbeat() {
   const validatorAddressRef = useRef(validatorAddress);
   const walletIdRef = useRef(walletId);
   const stoppedRef = useRef(false);
+  // Always points to the latest sendHeartbeat — lets us call it from inside
+  // itself (for the immediate epoch-signing follow-up) without a circular
+  // useCallback dependency.
+  const sendHeartbeatRef = useRef<() => Promise<void>>(async () => {});
 
   // 429 backoff — epoch time (ms) after which we may retry
   const retryAfterRef = useRef<number>(0);
@@ -117,8 +121,22 @@ export function useHeartbeat() {
 
       // Store the open epoch from the response for the next signing cycle
       const nextEpoch = resp.openEpoch ?? null;
+      const prevEpochNumber = openEpochRef.current?.epochNumber ?? null;
       openEpochRef.current = nextEpoch;
       setOpenEpoch(nextEpoch);
+
+      // If we just received a fresh epoch that hasn't been signed yet and its
+      // window is still open, send an immediate signing heartbeat rather than
+      // waiting up to 8 minutes for the next regular interval — the signing
+      // window is often shorter than the heartbeat interval.
+      if (
+        nextEpoch &&
+        nextEpoch.epochNumber !== prevEpochNumber &&
+        !signedEpochsRef.current.has(nextEpoch.epochNumber) &&
+        new Date(nextEpoch.signingWindowClosesAt) > new Date()
+      ) {
+        setTimeout(() => sendHeartbeatRef.current(), 1500);
+      }
     } catch (err: unknown) {
       const apiErr = err as ApiError;
 
@@ -157,6 +175,9 @@ export function useHeartbeat() {
       }
     }
   }, [setValidatorStatus, setPendingHeartbeat, stopInterval, buildEpochSignature]);
+
+  // Keep ref in sync so the epoch-signing setTimeout always calls the latest version
+  sendHeartbeatRef.current = sendHeartbeat;
 
   // Restart the foreground interval when the validator is re-activated
   const prevStatusRef = useRef(validatorStatus);
