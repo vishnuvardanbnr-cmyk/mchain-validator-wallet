@@ -25,7 +25,7 @@ import {
   type NfcWalletPayload,
 } from "@/services/nfc";
 
-type Status = "pin" | "waiting" | "writing" | "success" | "error" | "unsupported";
+type Status = "pin" | "encrypting" | "waiting" | "writing" | "success" | "error" | "unsupported";
 
 interface Props {
   visible: boolean;
@@ -135,6 +135,139 @@ function CardIllustration({ colors }: { colors: ReturnType<typeof useColors> }) 
   );
 }
 
+/**
+ * Shown while PBKDF2 is running. All animations use useNativeDriver:true so
+ * they keep running on the native thread even while JS is frozen by PBKDF2.
+ */
+function EncryptingView({ colors }: { colors: ReturnType<typeof useColors> }) {
+  const spin = useRef(new Animated.Value(0)).current;
+  const pulse = useRef(new Animated.Value(1)).current;
+  const dot1 = useRef(new Animated.Value(0.3)).current;
+  const dot2 = useRef(new Animated.Value(0.3)).current;
+  const dot3 = useRef(new Animated.Value(0.3)).current;
+
+  useEffect(() => {
+    // Spinning outer ring — native driver, immune to JS freeze
+    Animated.loop(
+      Animated.timing(spin, { toValue: 1, duration: 2000, easing: Easing.linear, useNativeDriver: true })
+    ).start();
+
+    // Gentle pulse on the shield icon
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, { toValue: 1.12, duration: 900, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 1.0, duration: 900, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+      ])
+    ).start();
+
+    // Staggered dots — native driver
+    function animDot(val: Animated.Value, delay: number) {
+      return Animated.loop(
+        Animated.sequence([
+          Animated.delay(delay),
+          Animated.timing(val, { toValue: 1, duration: 400, useNativeDriver: true }),
+          Animated.timing(val, { toValue: 0.3, duration: 400, useNativeDriver: true }),
+          Animated.delay(800 - delay),
+        ])
+      );
+    }
+    const a1 = animDot(dot1, 0);
+    const a2 = animDot(dot2, 200);
+    const a3 = animDot(dot3, 400);
+    a1.start(); a2.start(); a3.start();
+
+    return () => {
+      spin.stopAnimation(); pulse.stopAnimation();
+      dot1.stopAnimation(); dot2.stopAnimation(); dot3.stopAnimation();
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const spinDeg = spin.interpolate({ inputRange: [0, 1], outputRange: ["0deg", "360deg"] });
+
+  return (
+    <View style={{ alignItems: "center", paddingTop: 16, paddingBottom: 8 }}>
+      {/* Spinning ring + pulsing shield */}
+      <View style={{ width: 120, height: 120, alignItems: "center", justifyContent: "center", marginBottom: 24 }}>
+        {/* Outer spinning dashed ring */}
+        <Animated.View style={{
+          position: "absolute",
+          width: 110, height: 110, borderRadius: 55,
+          borderWidth: 2,
+          borderColor: "#6366F1",
+          borderStyle: "dashed",
+          opacity: 0.5,
+          transform: [{ rotate: spinDeg }],
+        }} />
+        {/* Static inner ring */}
+        <View style={{
+          position: "absolute",
+          width: 88, height: 88, borderRadius: 44,
+          borderWidth: 1, borderColor: "#6366F130",
+          backgroundColor: "#6366F108",
+        }} />
+        {/* Pulsing shield icon */}
+        <Animated.View style={{
+          transform: [{ scale: pulse }],
+          alignItems: "center", justifyContent: "center",
+          width: 72, height: 72, borderRadius: 24,
+          backgroundColor: "#6366F118",
+          borderWidth: 1.5, borderColor: "#6366F140",
+        }}>
+          <Icon name="shield-checkmark" size={34} color="#818CF8" />
+        </Animated.View>
+      </View>
+
+      {/* Text */}
+      <Text style={{
+        fontSize: 11, fontFamily: "Inter_700Bold",
+        color: "#818CF8", letterSpacing: 1.8, marginBottom: 6,
+      }}>
+        SECURING
+      </Text>
+      <Text style={{
+        fontSize: 22, fontFamily: "Inter_700Bold",
+        color: colors.foreground, marginBottom: 8, textAlign: "center",
+      }}>
+        Encrypting your wallet
+      </Text>
+      <Text style={{
+        fontSize: 13, fontFamily: "Inter_400Regular",
+        color: colors.mutedForeground, textAlign: "center",
+        lineHeight: 20, paddingHorizontal: 20, marginBottom: 24,
+      }}>
+        Generating encryption keys from your PIN.{"\n"}This takes a few seconds.
+      </Text>
+
+      {/* Animated dots */}
+      <View style={{ flexDirection: "row", gap: 8, alignItems: "center", marginBottom: 8 }}>
+        {[dot1, dot2, dot3].map((d, i) => (
+          <Animated.View key={i} style={{
+            width: 8, height: 8, borderRadius: 4,
+            backgroundColor: "#6366F1",
+            opacity: d,
+          }} />
+        ))}
+      </View>
+
+      {/* Security badges */}
+      <View style={{ flexDirection: "row", gap: 8, marginTop: 12 }}>
+        {["AES-256", "PBKDF2", "PIN-LOCKED"].map(badge => (
+          <View key={badge} style={{
+            flexDirection: "row", alignItems: "center", gap: 4,
+            backgroundColor: "#6366F110", borderWidth: 1, borderColor: "#6366F125",
+            borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4,
+          }}>
+            <Icon name="lock-closed" size={9} color="#818CF8" />
+            <Text style={{ fontSize: 9, fontFamily: "Inter_700Bold", color: "#818CF8", letterSpacing: 0.5 }}>
+              {badge}
+            </Text>
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
+
 export function NfcWriteModal({ visible, privateKey, mxcAddress, publicKey, label, onClose, onSuccess }: Props) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
@@ -238,21 +371,26 @@ export function NfcWriteModal({ visible, privateKey, mxcAddress, publicKey, labe
       return;
     }
     setErrorMsg("");
-    // Show "Hold card to phone" — stays here until card is tapped
-    crossfadeTo("waiting");
-    try {
-      // Yield so the "waiting" screen renders before blocking computation
-      await new Promise(r => setTimeout(r, 80));
 
-      // Run NFC card detection AND encryption in parallel.
-      // This means the app is already listening when the user taps the card,
-      // even if they tap during the ~3-5s PBKDF2 encryption window.
+    // Step 1: Show encrypting screen immediately.
+    // All its animations use useNativeDriver:true so they keep running on the
+    // native thread even while PBKDF2 completely freezes the JS thread.
+    crossfadeTo("encrypting");
+
+    // Step 2: Yield 350ms — enough for the crossfade + encrypting screen to
+    // fully render and start its native-driver animations before JS freezes.
+    await new Promise(r => setTimeout(r, 350));
+
+    try {
+      // Step 3: Run NFC card detection AND PBKDF2 encryption in parallel.
+      // The user can tap their card during the encryption phase — the app is
+      // already listening. Both must complete before writing begins.
       const [{ enc, iv }] = await Promise.all([
         encryptPrivateKey(privateKey, enteredPin),
         waitForNfcCard(),
       ]);
 
-      // Both done: card is in field and payload is ready — write immediately
+      // Step 4: Both ready — switch to "writing" and write immediately
       crossfadeTo("writing");
       const payload: NfcWalletPayload = { v: 1, enc, iv, addr: mxcAddress, label };
       await writePayloadToNfc(payload);
@@ -437,6 +575,14 @@ export function NfcWriteModal({ visible, privateKey, mxcAddress, publicKey, labe
           <TouchableOpacity onPress={handleClose} style={s.ghostBtn}>
             <Text style={s.ghostBtnText}>Cancel</Text>
           </TouchableOpacity>
+        </View>
+      );
+    }
+
+    if (status === "encrypting") {
+      return (
+        <View style={s.body}>
+          <EncryptingView colors={colors} />
         </View>
       );
     }
