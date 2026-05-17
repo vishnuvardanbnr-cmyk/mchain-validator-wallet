@@ -44,7 +44,8 @@ type LegalType = "terms" | "privacy" | null;
 
 async function fetchLegalContent(): Promise<{ terms: string; privacy: string }> {
   try {
-    const res = await fetch("/api/legal/content");
+    const { getPublicApiBase } = await import("@/services/api");
+    const res = await fetch(`${getPublicApiBase()}/legal/content`);
     if (!res.ok) return { terms: "", privacy: "" };
     return res.json();
   } catch {
