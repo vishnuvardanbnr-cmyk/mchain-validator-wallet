@@ -107,13 +107,43 @@ router.get("/prices", async (_req, res) => {
 
 router.get("/admin/prices", adminAuth, async (_req, res) => {
   try {
-    const { rows } = await pool.query<PriceRow>(
-      `SELECT symbol, price_type, fixed_price, api_url, price_field FROM coin_prices ORDER BY symbol`
-    );
+    // Return all coins: MC native + every verified token, merged with any existing price config.
+    // Tokens without a coin_prices row appear with default fixed 0 so the admin can configure them.
+    const { rows } = await pool.query<PriceRow & { name: string; logo_url: string; is_token: boolean }>(`
+      SELECT
+        cp.symbol,
+        COALESCE(vt.name, cp.symbol) AS name,
+        COALESCE(vt.logo_url, '')    AS logo_url,
+        cp.price_type,
+        cp.fixed_price,
+        cp.api_url,
+        cp.price_field,
+        FALSE AS is_token
+      FROM coin_prices cp
+      LEFT JOIN verified_tokens vt ON UPPER(vt.symbol) = cp.symbol
+
+      UNION ALL
+
+      SELECT
+        UPPER(vt.symbol)  AS symbol,
+        vt.name,
+        vt.logo_url,
+        'fixed'           AS price_type,
+        0                 AS fixed_price,
+        NULL              AS api_url,
+        NULL              AS price_field,
+        TRUE              AS is_token
+      FROM verified_tokens vt
+      WHERE UPPER(vt.symbol) NOT IN (SELECT symbol FROM coin_prices)
+
+      ORDER BY symbol
+    `);
     res.json({ prices: rows.map(r => ({
       symbol: r.symbol,
+      name: r.name,
+      logoUrl: r.logo_url,
       priceType: r.price_type,
-      fixedPrice: r.fixed_price !== null ? parseFloat(r.fixed_price) : null,
+      fixedPrice: r.fixed_price !== null ? parseFloat(r.fixed_price as unknown as string) : null,
       apiUrl: r.api_url,
       priceField: r.price_field,
     })) });
