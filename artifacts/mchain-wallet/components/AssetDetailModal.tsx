@@ -1,4 +1,5 @@
 import { Icon } from "@/components/Icon";
+import { TxRowSkeleton } from "@/components/Skeleton";
 import { useColors } from "@/hooks/useColors";
 import { api, type TokenTransfer, type Transaction } from "@/services/api";
 import { ethAddressToMxc, shortenAddress } from "@/services/crypto";
@@ -505,7 +506,9 @@ export function AssetDetailModal({
 
             <View style={{ flex: 1 }}>
               {isLoading ? (
-                <ActivityIndicator color={colors.primary} style={{ marginTop: 40 }} />
+                <View style={{ paddingTop: 8 }}>
+                  {[1,2,3,4,5].map(i => <TxRowSkeleton key={i} />)}
+                </View>
               ) : filtered.length === 0 ? (
                 <View style={s.empty}>
                   <Icon name="swap-horizontal-outline" size={40} color={colors.border} />

@@ -1,4 +1,5 @@
 import { Icon } from "@/components/Icon";
+import { AdCardSkeleton } from "@/components/Skeleton";
 import { useWallet } from "@/context/WalletContext";
 import { useColors } from "@/hooks/useColors";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -300,8 +301,8 @@ export default function P2PScreen() {
   // before the profile query resolves and the connect-wallet screen appears.
   if (profileLoading) {
     return (
-      <View style={{ flex: 1, backgroundColor: colors.background, alignItems: "center", justifyContent: "center", paddingTop: insets.top }}>
-        <ActivityIndicator color={colors.primary} size="large" />
+      <View style={{ flex: 1, backgroundColor: colors.background, paddingTop: insets.top + 60 }}>
+        {[1,2,3].map(i => <AdCardSkeleton key={i} />)}
       </View>
     );
   }
@@ -493,7 +494,7 @@ export default function P2PScreen() {
         refreshControl={<RefreshControl refreshing={adLoading} onRefresh={() => { void loadAds(adPage); }} tintColor={colors.primary} />}
       >
         {adLoading ? (
-          <ActivityIndicator color={colors.primary} style={{ marginTop: 40 }} />
+          <>{[1,2,3].map(i => <AdCardSkeleton key={i} />)}</>
         ) : adItems.length === 0 ? (
           <View style={s.empty}>
             <Icon name="storefront-outline" size={48} color={colors.border} />

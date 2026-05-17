@@ -4,6 +4,8 @@ import { Icon } from "@/components/Icon";
 import { NewWalletModal } from "@/components/NewWalletModal";
 import { WalletSwitcherModal } from "@/components/WalletSwitcherModal";
 import { QRScannerModal } from "@/components/QRScannerModal";
+import { BalanceSkeleton, AssetRowSkeleton } from "@/components/Skeleton";
+import { PressableScale } from "@/components/PressableScale";
 import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
@@ -791,7 +793,7 @@ export default function DashboardScreen() {
           >
             <Text style={s.balanceLabel}>BALANCE</Text>
             {acctLoading ? (
-              <ActivityIndicator color="#FFFFFF" style={{ marginBottom: 4 }} />
+              <BalanceSkeleton />
             ) : (
               <Text style={s.balanceAmount}>$ {totalUsdValue}</Text>
             )}
@@ -814,18 +816,18 @@ export default function DashboardScreen() {
 
 
         <View style={s.quickActions}>
-          <TouchableOpacity style={s.actionBtn} onPress={() => router.push("/(tabs)/send")}>
+          <PressableScale style={s.actionBtn} onPress={() => router.push("/(tabs)/send")} hapticType="medium" scaleTo={0.94}>
             <LinearGradient colors={["#0EA5E9", "#0284C7"]} style={s.actionGrad}>
               <Icon name="paper-plane-outline" size={16} color="#FFFFFF" />
               <Text style={s.actionText}>Send</Text>
             </LinearGradient>
-          </TouchableOpacity>
-          <TouchableOpacity style={s.actionBtn} onPress={() => router.push("/(tabs)/receive")}>
+          </PressableScale>
+          <PressableScale style={s.actionBtn} onPress={() => router.push("/(tabs)/receive")} hapticType="light" scaleTo={0.94}>
             <LinearGradient colors={["#152238", "#1E3A5F"]} style={s.actionGrad}>
               <Icon name="download-outline" size={16} color={colors.primary} />
               <Text style={[s.actionText, { color: colors.primary }]}>Receive</Text>
             </LinearGradient>
-          </TouchableOpacity>
+          </PressableScale>
         </View>
 
         {/* ── Portfolio tabs ─────────────────────────────────── */}
