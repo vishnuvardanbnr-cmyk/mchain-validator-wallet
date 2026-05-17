@@ -8,12 +8,13 @@ import { useFonts } from "expo-font";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { PinModal } from "@/components/PinModal";
+import { SplashLoader } from "@/components/SplashLoader";
 import { PinProvider, usePinContext } from "@/context/PinContext";
 import { WalletProvider, useWallet } from "@/context/WalletContext";
 import "@/services/backgroundTasks";
@@ -32,9 +33,9 @@ const queryClient = new QueryClient({
 
 /**
  * Sits inside PinProvider so it can read isReady from context.
- * Keeps the splash screen alive until BOTH fonts are loaded AND the
- * initial PIN check has completed — preventing any flash of the home
- * screen before the PIN modal appears.
+ * Keeps the native splash alive until fonts + PIN + wallet are ready,
+ * then hands off to the animated in-app SplashLoader which fades out
+ * before revealing app content — no blank frame ever visible.
  */
 function AppReadyGate({
   fontsLoaded,
@@ -49,13 +50,19 @@ function AppReadyGate({
   const { isLoading: walletLoading } = useWallet();
   const ready = (fontsLoaded || !!fontError) && isReady && !walletLoading;
 
+  // Hide the native splash immediately so our in-app loader takes over
   useEffect(() => {
-    if (ready) SplashScreen.hideAsync();
-  }, [ready]);
+    SplashScreen.hideAsync();
+  }, []);
 
-  if (!ready) return null;
+  const [splashDone, setSplashDone] = useState(false);
 
-  return <>{children}</>;
+  return (
+    <>
+      {splashDone && children}
+      <SplashLoader ready={ready} onDone={() => setSplashDone(true)} />
+    </>
+  );
 }
 
 function PinGate({ children }: { children: React.ReactNode }) {
