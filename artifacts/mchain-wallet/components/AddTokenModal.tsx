@@ -6,6 +6,7 @@ import {
   Animated,
   Easing,
   Image,
+  KeyboardAvoidingView,
   Modal,
   Platform,
   ScrollView,
@@ -526,19 +527,25 @@ export function AddTokenModal({ visible, onClose, onAdded }: Props) {
 
   return (
     <Modal visible={visible} transparent animationType="none" onRequestClose={onClose} statusBarTranslucent>
-      <Animated.View style={[s.overlay, { opacity: overlayOpacity }]}>
-        <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={onClose} />
-        <Animated.View style={[s.sheet, { transform: [{ translateY: slideAnim }] }]}>
-          <View style={s.handle} />
-          <View style={s.sheetHeader}>
-            <Text style={s.sheetTitle}>Add Token</Text>
-            <TouchableOpacity style={s.closeBtn} onPress={onClose}>
-              <Icon name="close" size={14} color={colors.mutedForeground} />
-            </TouchableOpacity>
-          </View>
-          {body}
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={0}
+      >
+        <Animated.View style={[s.overlay, { opacity: overlayOpacity }]}>
+          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={onClose} />
+          <Animated.View style={[s.sheet, { transform: [{ translateY: slideAnim }] }]}>
+            <View style={s.handle} />
+            <View style={s.sheetHeader}>
+              <Text style={s.sheetTitle}>Add Token</Text>
+              <TouchableOpacity style={s.closeBtn} onPress={onClose}>
+                <Icon name="close" size={14} color={colors.mutedForeground} />
+              </TouchableOpacity>
+            </View>
+            {body}
+          </Animated.View>
         </Animated.View>
-      </Animated.View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
