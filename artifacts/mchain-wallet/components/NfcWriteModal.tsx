@@ -237,12 +237,13 @@ export function NfcWriteModal({ visible, privateKey, mxcAddress, publicKey, labe
       return;
     }
     setErrorMsg("");
+    // Show "Hold card to phone" immediately — stays here until card is tapped
     crossfadeTo("waiting");
     try {
       const { enc, iv } = await encryptPrivateKey(privateKey, enteredPin);
       const payload: NfcWalletPayload = { v: 1, enc, iv, addr: mxcAddress, pub: publicKey, label };
-      crossfadeTo("writing");
-      await writeWalletToNfc(payload);
+      // Pass callback — "writing" only appears once the card is physically detected
+      await writeWalletToNfc(payload, () => crossfadeTo("writing"));
       if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       crossfadeTo("success");
     } catch (e) {

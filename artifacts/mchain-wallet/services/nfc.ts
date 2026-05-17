@@ -111,21 +111,49 @@ export async function isNfcEnabled(): Promise<boolean> {
 
 // ── Write payload to NFC card ─────────────────────────────────────────────────
 
-export async function writeWalletToNfc(payload: NfcWalletPayload): Promise<void> {
+/**
+ * Write a wallet payload to an NFC card.
+ * @param onCardDetected  Called once the card is tapped and detected, just
+ *                        before the actual write begins. Use this to switch
+ *                        the UI from "hold card to phone" → "writing…".
+ */
+export async function writeWalletToNfc(
+  payload: NfcWalletPayload,
+  onCardDetected?: () => void,
+): Promise<void> {
   const mod = await import("react-native-nfc-manager");
   const { Ndef } = mod;
   const NfcManager = mod.default;
 
   await NfcManager.start();
   try {
+    // Phase 1 — wait for the user to tap the card (blocks until tapped)
     await NfcManager.requestTechnology("Ndef" as never);
 
+    // Card is now in field — notify caller to show "writing" UI
+    onCardDetected?.();
+
+    // Phase 2 — encode and write
     const json = JSON.stringify(payload);
     const bytes = Ndef.encodeMessage([Ndef.textRecord(json)]);
     if (!bytes || bytes.length === 0) {
-      throw new Error("Failed to encode NFC payload — card may be too small or incompatible.");
+      throw new Error("Failed to encode payload — card may be too small or incompatible.");
     }
-    await NfcManager.ndefHandler.writeNdefMessage(bytes);
+    try {
+      await NfcManager.ndefHandler.writeNdefMessage(bytes);
+    } catch (writeErr: unknown) {
+      const msg = writeErr instanceof Error ? writeErr.message : String(writeErr);
+      if (msg.toLowerCase().includes("ioexception") || msg.toLowerCase().includes("tag was lost")) {
+        throw new Error("Card lost during write — keep it still until the app confirms success.");
+      }
+      if (msg.toLowerCase().includes("readonly") || msg.toLowerCase().includes("read only")) {
+        throw new Error("This card is read-only and cannot be written to.");
+      }
+      if (msg.toLowerCase().includes("size") || msg.toLowerCase().includes("capacity") || msg.toLowerCase().includes("overflow")) {
+        throw new Error("Card is too small to store the wallet data. Use an NTAG215 or larger card.");
+      }
+      throw new Error(`Write failed: ${msg}`);
+    }
   } finally {
     NfcManager.cancelTechnologyRequest().catch(() => {});
   }
