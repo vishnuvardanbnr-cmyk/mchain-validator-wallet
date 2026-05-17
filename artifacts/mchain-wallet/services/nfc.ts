@@ -145,26 +145,38 @@ export async function writePayloadToNfc(payload: NfcWalletPayload): Promise<void
     if (!bytes || bytes.length === 0) {
       throw new Error("Failed to encode payload — card may be too small or incompatible.");
     }
+    // Helper to classify a raw NFC write error into a user-friendly message
+    function classifyWriteError(err: unknown): Error {
+      const msg = err instanceof Error ? err.message : String(err);
+      const m = msg.toLowerCase();
+      if (m.includes("readonly") || m.includes("read only"))
+        return new Error("This card is read-only and cannot be written to.");
+      if (m.includes("size") || m.includes("capacity") || m.includes("overflow"))
+        return new Error("Card is too small. Use an NTAG215 or larger card.");
+      if (m.includes("ioexception") || m.includes("tag was lost") || m.includes("lost"))
+        return new Error("Card lost during write — keep it pressed firmly and still against the back of your phone, then try again.");
+      return new Error(`Write failed: ${msg}`);
+    }
+
     await new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => {
         reject(new Error("Write timed out — card moved out of range. Hold it flat and still, then try again."));
       }, 12_000);
-      NfcManager.ndefHandler.writeNdefMessage(bytes).then(() => {
-        clearTimeout(timer);
-        resolve();
-      }).catch((writeErr: unknown) => {
-        clearTimeout(timer);
-        const msg = writeErr instanceof Error ? writeErr.message : String(writeErr);
-        if (msg.toLowerCase().includes("ioexception") || msg.toLowerCase().includes("tag was lost")) {
-          reject(new Error("Card lost during write — keep it flat and still, then try again."));
-        } else if (msg.toLowerCase().includes("readonly") || msg.toLowerCase().includes("read only")) {
-          reject(new Error("This card is read-only and cannot be written to."));
-        } else if (msg.toLowerCase().includes("size") || msg.toLowerCase().includes("capacity") || msg.toLowerCase().includes("overflow")) {
-          reject(new Error("Card is too small. Use an NTAG215 or larger card."));
-        } else {
-          reject(new Error(`Write failed: ${msg}`));
-        }
-      });
+
+      // First attempt: standard NDEF write
+      NfcManager.ndefHandler.writeNdefMessage(bytes)
+        .then(() => { clearTimeout(timer); resolve(); })
+        .catch(() => {
+          // Second attempt: format + write in one step.
+          // Some cards that show "empty tag" on Android are technically detected
+          // as NDEF but need an explicit NDEF format pass before their first write.
+          NfcManager.ndefHandler.format(bytes)
+            .then(() => { clearTimeout(timer); resolve(); })
+            .catch((formatErr: unknown) => {
+              clearTimeout(timer);
+              reject(classifyWriteError(formatErr));
+            });
+        });
     });
   } finally {
     NfcManager.cancelTechnologyRequest().catch(() => {});
