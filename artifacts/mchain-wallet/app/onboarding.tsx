@@ -226,7 +226,11 @@ export default function OnboardingScreen() {
 
   async function handleCopyMnemonic() {
     if (!mnemonic) return;
-    await Clipboard.setStringAsync(mnemonic);
+    const numbered = mnemonic
+      .split(" ")
+      .map((word, i) => `${i + 1}. ${word}`)
+      .join("\n");
+    await Clipboard.setStringAsync(numbered);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     Alert.alert("Copied", "Seed phrase copied. Store it somewhere safe and never share it.");
   }
