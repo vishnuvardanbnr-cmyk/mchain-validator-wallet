@@ -24,28 +24,24 @@ SplashScreen.preventAutoHideAsync();
 
 const queryClient = new QueryClient({
   defaultOptions: {
-    queries: {
-      retry: 2,
-      staleTime: 5_000,
-    },
+    queries: { retry: 2, staleTime: 5_000 },
   },
 });
 
 /**
- * Reads readiness from inside providers and calls onReady() upward.
- * Children only render after splashDone so they never flash under the loader.
+ * Reads readiness from inside providers and signals the parent via onReady().
+ * Children render as soon as ready — they sit behind the SplashLoader so
+ * when it fades out the app is already painted underneath (no blank frame).
  */
 function AppReadyGate({
   fontsLoaded,
   fontError,
   onReady,
-  splashDone,
   children,
 }: {
   fontsLoaded: boolean;
   fontError: Error | null;
   onReady: () => void;
-  splashDone: boolean;
   children: React.ReactNode;
 }) {
   const { isReady } = usePinContext();
@@ -56,7 +52,8 @@ function AppReadyGate({
     if (ready) onReady();
   }, [ready]);
 
-  if (!splashDone) return null;
+  // Block children until ready — SplashLoader covers the screen anyway
+  if (!ready) return null;
   return <>{children}</>;
 }
 
@@ -64,9 +61,15 @@ function PinGate({ children }: { children: React.ReactNode }) {
   const { isAppLocked, unlockApp, pinRequest, dismissPin } = usePinContext();
   const showModal = isAppLocked || !!pinRequest;
   const modalTitle = isAppLocked ? "Unlock Wallet" : (pinRequest?.title ?? "");
-  const modalSubtitle = isAppLocked ? "Enter your PIN to access your wallet." : pinRequest?.subtitle;
-  const modalOnSuccess = isAppLocked ? unlockApp : (pinRequest?.onSuccess ?? (() => {}));
-  const modalOnCancel = isAppLocked ? undefined : (pinRequest?.onCancel ?? dismissPin);
+  const modalSubtitle = isAppLocked
+    ? "Enter your PIN to access your wallet."
+    : pinRequest?.subtitle;
+  const modalOnSuccess = isAppLocked
+    ? unlockApp
+    : (pinRequest?.onSuccess ?? (() => {}));
+  const modalOnCancel = isAppLocked
+    ? undefined
+    : (pinRequest?.onCancel ?? dismissPin);
 
   return (
     <>
@@ -90,10 +93,7 @@ function RootLayoutNav() {
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen
         name="onboarding"
-        options={{
-          headerShown: false,
-          gestureEnabled: false,
-        }}
+        options={{ headerShown: false, gestureEnabled: false }}
       />
     </Stack>
   );
@@ -107,12 +107,10 @@ export default function RootLayout() {
     Inter_700Bold,
   });
 
-  // appReady is signalled from inside providers via onReady()
+  // Signalled from AppReadyGate once fonts + providers are ready
   const [appReady, setAppReady] = useState(false);
-  // splashDone = loader has finished its fade-out → safe to show app
-  const [splashDone, setSplashDone] = useState(false);
 
-  // Drop the native OS splash immediately — our SplashLoader takes over
+  // Drop the native OS splash immediately — SplashLoader covers the screen
   useEffect(() => {
     SplashScreen.hideAsync();
   }, []);
@@ -122,13 +120,14 @@ export default function RootLayout() {
       <ErrorBoundary>
         <QueryClientProvider client={queryClient}>
           <GestureHandlerRootView style={{ flex: 1, backgroundColor: "#060E1A" }}>
+
             <WalletProvider>
               <PinProvider>
+                {/* Children render when ready — they paint behind the loader */}
                 <AppReadyGate
                   fontsLoaded={fontsLoaded}
                   fontError={fontError}
                   onReady={() => setAppReady(true)}
-                  splashDone={splashDone}
                 >
                   <PinGate>
                     <RootLayoutNav />
@@ -137,12 +136,15 @@ export default function RootLayout() {
               </PinProvider>
             </WalletProvider>
 
-            {/* SplashLoader lives OUTSIDE providers so it always renders
-                regardless of provider initialization state */}
-            <SplashLoader
-              ready={appReady}
-              onDone={() => setSplashDone(true)}
-            />
+            {/*
+             * SplashLoader is outside all providers — renders on the very
+             * first frame regardless of provider init state. Uses absolute
+             * positioning + elevation so it always sits on top.
+             * When appReady fires it waits for MIN_MS then fades out,
+             * by which point the app content is already rendered behind it.
+             */}
+            <SplashLoader ready={appReady} onDone={() => {}} />
+
           </GestureHandlerRootView>
         </QueryClientProvider>
       </ErrorBoundary>
