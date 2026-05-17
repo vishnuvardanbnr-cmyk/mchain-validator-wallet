@@ -1,7 +1,26 @@
 import { Icon } from "@/components/Icon";
+import { Toast } from "@/components/Toast";
+import { QRScannerModal } from "@/components/QRScannerModal";
+import { useColors } from "@/hooks/useColors";
+import { usePinContext } from "@/context/PinContext";
+import { useWallet } from "@/context/WalletContext";
+import { api } from "@/services/api";
+import {
+  buildErc20TransferData,
+  mcToWei,
+  shortenAddress,
+  signEvmTransaction,
+  weiToMc,
+} from "@/services/crypto";
+import {
+  fetchTokenBalanceRaw,
+  getCustomTokens,
+  type CustomToken,
+} from "@/services/tokens";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
+import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
@@ -9,6 +28,7 @@ import {
   ActivityIndicator,
   Animated,
   Easing,
+  Modal,
   Platform,
   ScrollView,
   StyleSheet,
@@ -19,36 +39,136 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useWallet } from "@/context/WalletContext";
-import { usePinContext } from "@/context/PinContext";
-import { api } from "@/services/api";
-import { mcToWei, shortenAddress, signEvmTransaction, weiToMc } from "@/services/crypto";
-import { QRScannerModal } from "@/components/QRScannerModal";
-import { Toast } from "@/components/Toast";
-import { useColors } from "@/hooks/useColors";
 
 type SendStep = "input" | "confirm" | "success";
 const RECENT_KEY = "mchain_recent_recipients";
+
+type SelectedAsset =
+  | { kind: "native" }
+  | { kind: "token"; token: CustomToken };
+
+// ── Asset Picker Sheet ────────────────────────────────────────────────────────
+
+function AssetPickerSheet({
+  visible,
+  onClose,
+  tokens,
+  selected,
+  onSelect,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  tokens: CustomToken[];
+  selected: SelectedAsset;
+  onSelect: (a: SelectedAsset) => void;
+}) {
+  const colors = useColors();
+  const insets = useSafeAreaInsets();
+
+  const s = StyleSheet.create({
+    overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.7)", justifyContent: "flex-end" },
+    sheet: {
+      backgroundColor: colors.background,
+      borderTopLeftRadius: 28, borderTopRightRadius: 28,
+      borderTopWidth: 1, borderColor: colors.border,
+      paddingBottom: insets.bottom + 12,
+    },
+    handle: { width: 36, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: "center", marginTop: 12, marginBottom: 4 },
+    header: { paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: colors.border },
+    title: { fontSize: 16, fontFamily: "Inter_700Bold", color: colors.foreground },
+    row: {
+      flexDirection: "row", alignItems: "center", gap: 14,
+      paddingHorizontal: 20, paddingVertical: 14,
+      borderBottomWidth: 1, borderBottomColor: colors.border,
+    },
+    iconWrap: { width: 44, height: 44, borderRadius: 22, backgroundColor: colors.primary + "20", borderWidth: 1, borderColor: colors.primary + "40", alignItems: "center", justifyContent: "center" },
+    iconText: { fontSize: 13, fontFamily: "Inter_700Bold", color: colors.primary },
+    tokenImg: { width: 44, height: 44, borderRadius: 22 },
+    info: { flex: 1 },
+    name: { fontSize: 15, fontFamily: "Inter_600SemiBold", color: colors.foreground },
+    sub: { fontSize: 12, fontFamily: "Inter_400Regular", color: colors.mutedForeground, marginTop: 1 },
+    checkWrap: { width: 24, height: 24, borderRadius: 12, backgroundColor: colors.primary, alignItems: "center", justifyContent: "center" },
+  });
+
+  const isMcSelected = selected.kind === "native";
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose} statusBarTranslucent>
+      <View style={s.overlay}>
+        <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={onClose} />
+        <View style={s.sheet}>
+          <View style={s.handle} />
+          <View style={s.header}>
+            <Text style={s.title}>Select Asset to Send</Text>
+          </View>
+          <TouchableOpacity
+            style={s.row}
+            onPress={() => { onSelect({ kind: "native" }); onClose(); }}
+            activeOpacity={0.75}
+          >
+            <View style={s.iconWrap}>
+              <Text style={s.iconText}>MC</Text>
+            </View>
+            <View style={s.info}>
+              <Text style={s.name}>MChain</Text>
+              <Text style={s.sub}>MC · Native Coin</Text>
+            </View>
+            {isMcSelected && (
+              <View style={s.checkWrap}>
+                <Icon name="checkmark" size={14} color="#FFF" />
+              </View>
+            )}
+          </TouchableOpacity>
+          {tokens.map((token) => {
+            const isSelected = selected.kind === "token" && selected.token.contractAddress === token.contractAddress;
+            return (
+              <TouchableOpacity
+                key={token.id}
+                style={s.row}
+                onPress={() => { onSelect({ kind: "token", token }); onClose(); }}
+                activeOpacity={0.75}
+              >
+                {token.logoUrl ? (
+                  <Image source={{ uri: token.logoUrl }} style={s.tokenImg} />
+                ) : (
+                  <View style={s.iconWrap}>
+                    <Text style={s.iconText}>{token.symbol.slice(0, 3)}</Text>
+                  </View>
+                )}
+                <View style={s.info}>
+                  <Text style={s.name}>{token.symbol}</Text>
+                  <Text style={s.sub} numberOfLines={1}>{token.name}</Text>
+                </View>
+                {isSelected && (
+                  <View style={s.checkWrap}>
+                    <Icon name="checkmark" size={14} color="#FFF" />
+                  </View>
+                )}
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+// ── Main Screen ───────────────────────────────────────────────────────────────
 
 export default function SendScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const qc = useQueryClient();
-  const { mxcAddress, getPrivateKey } = useWallet();
+  const { mxcAddress, getPrivateKey, activeWallet } = useWallet();
   const { requestPin } = usePinContext();
 
-  const { address: prefillAddress } = useLocalSearchParams<{ address?: string }>();
+  const { address: prefillAddress, tokenContract } = useLocalSearchParams<{
+    address?: string;
+    tokenContract?: string;
+  }>();
 
   const [step, setStep] = useState<SendStep>("input");
   const [recipient, setRecipient] = useState(prefillAddress ?? "");
-
-  useEffect(() => {
-    if (prefillAddress) {
-      setRecipient(prefillAddress);
-      setStep("input");
-    }
-  }, [prefillAddress]);
-
   const [amount, setAmount] = useState("");
   const [memo, setMemo] = useState("");
   const [txHash, setTxHash] = useState("");
@@ -60,6 +180,8 @@ export default function SendScreen() {
   const [showScanner, setShowScanner] = useState(false);
   const [recipientFocused, setRecipientFocused] = useState(false);
   const [amountFocused, setAmountFocused] = useState(false);
+  const [selectedAsset, setSelectedAsset] = useState<SelectedAsset>({ kind: "native" });
+  const [showAssetPicker, setShowAssetPicker] = useState(false);
 
   const slideAnim = useRef(new Animated.Value(0)).current;
   const successScale = useRef(new Animated.Value(0)).current;
@@ -75,6 +197,48 @@ export default function SendScreen() {
     refetchInterval: 15_000,
   });
 
+  const { data: customTokens = [] } = useQuery({
+    queryKey: ["customTokens", activeWallet?.id],
+    queryFn: () => getCustomTokens(activeWallet?.id ?? "", activeWallet?.nfcTemporary, activeWallet?.mxcAddress),
+    enabled: !!activeWallet?.id,
+    staleTime: 30_000,
+  });
+
+  const isToken = selectedAsset.kind === "token";
+  const selectedToken = isToken ? selectedAsset.token : null;
+
+  const { data: tokenBalRaw } = useQuery({
+    queryKey: ["tokenBalRaw", selectedToken?.contractAddress, account?.ethAddress],
+    queryFn: () => fetchTokenBalanceRaw(selectedToken!.contractAddress, account!.ethAddress!),
+    enabled: !!selectedToken && !!account?.ethAddress,
+    staleTime: 15_000,
+    refetchInterval: 30_000,
+  });
+
+  const symbol = isToken ? selectedToken!.symbol : "MC";
+  const mcBalance = weiToMc(account?.balance ?? "0");
+  const mcBalanceNum = parseFloat(mcBalance.replace(/,/g, ""));
+  const tokenBalanceNum = tokenBalRaw !== undefined && selectedToken
+    ? Number(tokenBalRaw) / Math.pow(10, selectedToken.decimals)
+    : 0;
+  const displayBalance = isToken
+    ? tokenBalanceNum.toLocaleString("en-US", { maximumFractionDigits: 6 })
+    : mcBalance;
+
+  const TX_FEE_MC = 0.0001;
+
+  // Pre-populate recipient from params
+  useEffect(() => {
+    if (prefillAddress) { setRecipient(prefillAddress); setStep("input"); }
+  }, [prefillAddress]);
+
+  // Pre-select token from params once tokens have loaded
+  useEffect(() => {
+    if (!tokenContract || customTokens.length === 0) return;
+    const token = customTokens.find(t => t.contractAddress === tokenContract);
+    if (token) setSelectedAsset({ kind: "token", token });
+  }, [tokenContract, customTokens]);
+
   useEffect(() => {
     AsyncStorage.getItem(RECENT_KEY).then((raw) => {
       if (raw) setRecentAddresses(JSON.parse(raw));
@@ -88,59 +252,43 @@ export default function SendScreen() {
   }, [recentAddresses]);
 
   function slideToStep(nextStep: SendStep) {
-    Animated.timing(slideAnim, {
-      toValue: -30,
-      duration: 150,
-      useNativeDriver: true,
-      easing: Easing.in(Easing.ease),
-    }).start(() => {
-      setStep(nextStep);
-      slideAnim.setValue(30);
-      Animated.timing(slideAnim, {
-        toValue: 0,
-        duration: 200,
-        useNativeDriver: true,
-        easing: Easing.out(Easing.ease),
-      }).start();
-    });
+    Animated.timing(slideAnim, { toValue: -30, duration: 150, useNativeDriver: true, easing: Easing.in(Easing.ease) })
+      .start(() => {
+        setStep(nextStep);
+        slideAnim.setValue(30);
+        Animated.timing(slideAnim, { toValue: 0, duration: 200, useNativeDriver: true, easing: Easing.out(Easing.ease) }).start();
+      });
   }
 
   useEffect(() => {
     if (step === "success") {
       Animated.parallel([
-        Animated.spring(successScale, {
-          toValue: 1,
-          useNativeDriver: true,
-          bounciness: 14,
-          speed: 8,
-        }),
-        Animated.timing(successOpacity, {
-          toValue: 1,
-          duration: 300,
-          useNativeDriver: true,
-        }),
-        Animated.sequence([
-          Animated.timing(checkRotate, { toValue: 1, duration: 600, useNativeDriver: true, easing: Easing.out(Easing.back(1.5)) }),
-        ]),
+        Animated.spring(successScale, { toValue: 1, useNativeDriver: true, bounciness: 14, speed: 8 }),
+        Animated.timing(successOpacity, { toValue: 1, duration: 300, useNativeDriver: true }),
+        Animated.timing(checkRotate, { toValue: 1, duration: 600, useNativeDriver: true, easing: Easing.out(Easing.back(1.5)) }),
       ]).start(() => {
         Animated.timing(hashOpacity, { toValue: 1, duration: 400, useNativeDriver: true }).start();
       });
     }
-  }, [step, successScale, successOpacity, checkRotate, hashOpacity]);
-
-  const balance = weiToMc(account?.balance ?? "0");
-  const balanceNum = parseFloat(balance.replace(/,/g, ""));
-  const TX_FEE_MC = 0.0001;
+  }, [step]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function validateInput(): string | null {
-    if (!recipient.trim()) return "Enter a recipient address";
-    if (!recipient.startsWith("mxc1")) return "Address must start with mxc1";
-    if (recipient.trim() === mxcAddress) return "Cannot send to your own address";
-    if (recipient.length < 20) return "Invalid address length";
+    const trimmed = recipient.trim();
+    if (!trimmed) return "Enter a recipient address";
+    const isValidMxc = trimmed.startsWith("mxc1") && trimmed.length >= 20;
+    const isValidEth = /^0x[0-9a-fA-F]{40}$/.test(trimmed);
+    if (!isValidMxc && !isValidEth) return "Enter a valid mxc1... or 0x... address";
+    if (trimmed === mxcAddress) return "Cannot send to your own address";
     const amt = parseFloat(amount);
     if (isNaN(amt) || amt <= 0) return "Enter a valid amount";
-    if (balanceNum === 0) return "Your wallet has no balance on this network";
-    if (amt + TX_FEE_MC > balanceNum) return `Insufficient balance — need ${(amt + TX_FEE_MC).toFixed(4)} MC (amount + fee)`;
+    if (isToken) {
+      if (tokenBalRaw === undefined) return "Loading token balance…";
+      if (amt > tokenBalanceNum) return `Insufficient ${symbol} balance`;
+      if (mcBalanceNum < TX_FEE_MC) return `Need at least ${TX_FEE_MC} MC in your wallet for the gas fee`;
+    } else {
+      if (mcBalanceNum === 0) return "Your wallet has no balance on this network";
+      if (amt + TX_FEE_MC > mcBalanceNum) return `Insufficient balance — need ${(amt + TX_FEE_MC).toFixed(4)} MC (amount + fee)`;
+    }
     return null;
   }
 
@@ -164,19 +312,33 @@ export default function SendScreen() {
       if (!privateKey) throw new Error("Private key not found");
       if (!account?.ethAddress) throw new Error("Account not loaded — wait a moment and retry");
       const nonce = await api.getEvmNonce(account.ethAddress);
-      const weiAmount = mcToWei(amount);
-      const signedTx = signEvmTransaction(recipient, BigInt(weiAmount), nonce, privateKey);
+      let signedTx: string;
+
+      if (isToken && selectedToken) {
+        const decimals = selectedToken.decimals;
+        const amountRaw = BigInt(Math.round(parseFloat(amount) * Math.pow(10, decimals)));
+        const data = buildErc20TransferData(recipient.trim(), amountRaw);
+        signedTx = signEvmTransaction(selectedToken.contractAddress, 0n, nonce, privateKey, { gasLimit: 100_000n, data });
+      } else {
+        const weiAmount = mcToWei(amount);
+        signedTx = signEvmTransaction(recipient.trim(), BigInt(weiAmount), nonce, privateKey);
+      }
+
       const result = await api.sendRawTransaction(signedTx);
       setTxHash(result.txHash);
       await saveRecent(recipient);
       qc.invalidateQueries({ queryKey: ["account", mxcAddress] });
+      if (isToken && selectedToken) {
+        qc.invalidateQueries({ queryKey: ["tokenBalRaw", selectedToken.contractAddress, account.ethAddress] });
+        qc.invalidateQueries({ queryKey: ["tokenBalance", selectedToken.contractAddress] });
+      }
       slideToStep("success");
       if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (err: unknown) {
       const e = err as Error;
       let msg = e.message || "Transaction failed";
       if (/account not found|not found on this chain/i.test(msg)) {
-        msg = "Insufficient balance — your wallet has no funds on this network. Fund your wallet before sending.";
+        msg = "Insufficient balance — your wallet has no funds on this network.";
       } else if (/insufficient funds|insufficient balance/i.test(msg)) {
         msg = "Insufficient balance to cover amount + network fee.";
       }
@@ -189,51 +351,37 @@ export default function SendScreen() {
 
   async function handlePasteAddress() {
     const text = await Clipboard.getStringAsync();
-    if (text?.startsWith("mxc1")) {
-      setRecipient(text.trim());
+    const trimmed = text?.trim() ?? "";
+    if (trimmed.startsWith("mxc1") || /^0x[0-9a-fA-F]{40}$/.test(trimmed)) {
+      setRecipient(trimmed);
       if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     } else {
-      setToast("Clipboard doesn't contain a valid mxc1 address");
+      setToast("Clipboard doesn't contain a valid address");
     }
   }
 
   function setAmountPct(pct: number) {
-    const val = (balanceNum * pct).toFixed(6).replace(/\.?0+$/, "");
-    setAmount(val);
+    const bal = isToken ? tokenBalanceNum : mcBalanceNum;
+    const deduction = isToken ? 0 : TX_FEE_MC;
+    const val = Math.max(0, bal * pct - deduction * pct);
+    const dp = isToken ? Math.min(selectedToken!.decimals, 6) : 6;
+    setAmount(val.toFixed(dp).replace(/\.?0+$/, ""));
     if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   }
 
   function fullReset() {
-    // Stop any in-flight animations and return all values to neutral first
-    slideAnim.stopAnimation();
-    slideAnim.setValue(0);
-    successScale.setValue(0);
-    successOpacity.setValue(0);
-    checkRotate.setValue(0);
-    hashOpacity.setValue(0);
-    // Clear all form / UI state
-    setStep("input");
-    setRecipient("");
-    setAmount("");
-    setMemo("");
-    setTxHash("");
-    setError("");
-    setShowRecent(false);
-    setShowScanner(false);
-    setRecipientFocused(false);
-    setAmountFocused(false);
-    // Scroll the input list back to the top so no stale offset is retained
-    requestAnimationFrame(() => {
-      scrollRef.current?.scrollTo({ y: 0, animated: false });
-    });
+    slideAnim.stopAnimation(); slideAnim.setValue(0);
+    successScale.setValue(0); successOpacity.setValue(0);
+    checkRotate.setValue(0); hashOpacity.setValue(0);
+    setStep("input"); setRecipient(""); setAmount(""); setMemo(""); setTxHash("");
+    setError(""); setShowRecent(false); setShowScanner(false);
+    setRecipientFocused(false); setAmountFocused(false);
+    requestAnimationFrame(() => { scrollRef.current?.scrollTo({ y: 0, animated: false }); });
   }
 
   useFocusEffect(
     useCallback(() => {
-      // Reset everything when the screen goes out of focus so the next visit is fresh
-      return () => {
-        fullReset();
-      };
+      return () => { fullReset(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [])
   );
@@ -245,88 +393,66 @@ export default function SendScreen() {
     scroll: { paddingBottom: 120 },
     header: {
       paddingTop: insets.top + (Platform.OS === "web" ? 67 : 16),
-      paddingHorizontal: 20,
-      paddingBottom: 20,
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 12,
+      paddingHorizontal: 20, paddingBottom: 20,
+      flexDirection: "row", alignItems: "center", gap: 12,
     },
     backBtn: {
-      width: 38,
-      height: 38,
-      borderRadius: 19,
-      backgroundColor: colors.card,
-      borderWidth: 1,
-      borderColor: colors.border,
-      alignItems: "center",
-      justifyContent: "center",
+      width: 38, height: 38, borderRadius: 19,
+      backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
+      alignItems: "center", justifyContent: "center",
     },
     headerTitle: { fontSize: 22, fontFamily: "Inter_700Bold", color: colors.foreground },
+    assetSelector: {
+      marginHorizontal: 20, marginBottom: 16,
+      backgroundColor: colors.card, borderRadius: colors.radius,
+      borderWidth: 1, borderColor: colors.border,
+      flexDirection: "row", alignItems: "center",
+      paddingHorizontal: 16, paddingVertical: 14, gap: 12,
+    },
+    assetSelectorIconWrap: {
+      width: 40, height: 40, borderRadius: 20,
+      backgroundColor: colors.primary + "20", borderWidth: 1, borderColor: colors.primary + "40",
+      alignItems: "center", justifyContent: "center",
+    },
+    assetSelectorIconText: { fontSize: 11, fontFamily: "Inter_700Bold", color: colors.primary },
+    assetSelectorImg: { width: 40, height: 40, borderRadius: 20 },
+    assetSelectorInfo: { flex: 1 },
+    assetSelectorLabel: { fontSize: 10, fontFamily: "Inter_600SemiBold", color: colors.mutedForeground, letterSpacing: 1, marginBottom: 2 },
+    assetSelectorName: { fontSize: 15, fontFamily: "Inter_700Bold", color: colors.foreground },
+    assetSelectorBal: { fontSize: 12, fontFamily: "Inter_400Regular", color: colors.mutedForeground, marginTop: 1 },
     balanceCard: {
-      marginHorizontal: 20,
-      marginBottom: 20,
-      backgroundColor: colors.card,
-      borderRadius: colors.radius,
-      borderWidth: 1,
-      borderColor: colors.border,
-      padding: 16,
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "space-between",
+      marginHorizontal: 20, marginBottom: 16,
+      backgroundColor: colors.card, borderRadius: colors.radius,
+      borderWidth: 1, borderColor: colors.border,
+      padding: 16, flexDirection: "row",
+      alignItems: "center", justifyContent: "space-between",
     },
     balanceLabel: { fontSize: 11, fontFamily: "Inter_500Medium", color: colors.mutedForeground, letterSpacing: 0.5, marginBottom: 2 },
     balanceValue: { fontSize: 20, fontFamily: "Inter_700Bold", color: colors.foreground },
     refreshBtn: {
-      width: 34,
-      height: 34,
-      borderRadius: 17,
-      backgroundColor: colors.background,
-      borderWidth: 1,
-      borderColor: colors.border,
-      alignItems: "center",
-      justifyContent: "center",
+      width: 34, height: 34, borderRadius: 17,
+      backgroundColor: colors.background, borderWidth: 1, borderColor: colors.border,
+      alignItems: "center", justifyContent: "center",
     },
     fieldBlock: { marginHorizontal: 20, marginBottom: 16 },
     fieldLabel: { fontSize: 11, fontFamily: "Inter_600SemiBold", color: colors.mutedForeground, letterSpacing: 1.5, marginBottom: 8 },
     inputRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      backgroundColor: colors.input,
-      borderRadius: colors.radius,
-      borderWidth: 1,
-      borderColor: colors.border,
+      flexDirection: "row", alignItems: "center",
+      backgroundColor: colors.input, borderRadius: colors.radius,
+      borderWidth: 1, borderColor: colors.border,
     },
     inputRowFocused: { borderColor: colors.primary },
     textInput: { flex: 1, paddingHorizontal: 14, paddingVertical: 14, fontSize: 15, fontFamily: "Inter_400Regular", color: colors.foreground },
-    inputAction: {
-      paddingHorizontal: 12,
-      paddingVertical: 10,
-      gap: 4,
-      flexDirection: "row",
-      alignItems: "center",
-    },
+    inputAction: { paddingHorizontal: 12, paddingVertical: 10, gap: 4, flexDirection: "row", alignItems: "center" },
     inputActionText: { fontSize: 12, fontFamily: "Inter_600SemiBold", color: colors.primary },
     amountSuffix: { paddingRight: 14, fontSize: 15, fontFamily: "Inter_600SemiBold", color: colors.mutedForeground },
     pctRow: { flexDirection: "row", gap: 8, marginTop: 8 },
-    pctBtn: {
-      flex: 1,
-      paddingVertical: 7,
-      borderRadius: 8,
-      backgroundColor: colors.card,
-      borderWidth: 1,
-      borderColor: colors.border,
-      alignItems: "center",
-    },
+    pctBtn: { flex: 1, paddingVertical: 7, borderRadius: 8, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, alignItems: "center" },
     pctBtnText: { fontSize: 12, fontFamily: "Inter_600SemiBold", color: colors.foreground },
     recentDropdown: {
-      marginHorizontal: 20,
-      marginTop: -8,
-      marginBottom: 12,
-      backgroundColor: colors.card,
-      borderRadius: colors.radius,
-      borderWidth: 1,
-      borderColor: colors.border,
-      overflow: "hidden",
+      marginHorizontal: 20, marginTop: -8, marginBottom: 12,
+      backgroundColor: colors.card, borderRadius: colors.radius,
+      borderWidth: 1, borderColor: colors.border, overflow: "hidden",
     },
     recentHeader: { paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border },
     recentHeaderText: { fontSize: 11, fontFamily: "Inter_600SemiBold", color: colors.mutedForeground, letterSpacing: 1 },
@@ -337,73 +463,41 @@ export default function SendScreen() {
     primaryGrad: { paddingVertical: 16, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 },
     primaryBtnText: { fontSize: 16, fontFamily: "Inter_700Bold", color: "#FFFFFF" },
     confirmCard: {
-      marginHorizontal: 20,
-      backgroundColor: colors.card,
-      borderRadius: colors.radius + 4,
-      borderWidth: 1,
-      borderColor: colors.border,
-      overflow: "hidden",
-      marginBottom: 16,
+      marginHorizontal: 20, backgroundColor: colors.card,
+      borderRadius: colors.radius + 4, borderWidth: 1, borderColor: colors.border,
+      overflow: "hidden", marginBottom: 16,
     },
     confirmRow: {
-      flexDirection: "row",
-      justifyContent: "space-between",
-      alignItems: "center",
-      paddingHorizontal: 18,
-      paddingVertical: 14,
-      borderBottomWidth: 1,
-      borderBottomColor: colors.border,
+      flexDirection: "row", justifyContent: "space-between", alignItems: "center",
+      paddingHorizontal: 18, paddingVertical: 14,
+      borderBottomWidth: 1, borderBottomColor: colors.border,
     },
     confirmLabel: { fontSize: 13, fontFamily: "Inter_500Medium", color: colors.mutedForeground },
     confirmValue: { fontSize: 13, fontFamily: "Inter_600SemiBold", color: colors.foreground, flex: 1, textAlign: "right", marginLeft: 16 },
-    confirmAmount: { fontSize: 22, fontFamily: "Inter_700Bold", color: colors.primary, textAlign: "right" },
     networkBadge: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 5,
-      backgroundColor: colors.primary + "15",
-      paddingHorizontal: 10,
-      paddingVertical: 4,
-      borderRadius: 10,
+      flexDirection: "row", alignItems: "center", gap: 5,
+      backgroundColor: colors.primary + "15", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10,
     },
     networkBadgeText: { fontSize: 11, fontFamily: "Inter_600SemiBold", color: colors.primary },
     warningNote: {
-      marginHorizontal: 20,
-      backgroundColor: "#F59E0B10",
-      borderRadius: colors.radius,
-      borderWidth: 1,
-      borderColor: "#F59E0B30",
-      padding: 12,
-      flexDirection: "row",
-      gap: 10,
-      marginBottom: 16,
-      alignItems: "flex-start",
+      marginHorizontal: 20, backgroundColor: "#F59E0B10", borderRadius: colors.radius,
+      borderWidth: 1, borderColor: "#F59E0B30",
+      padding: 12, flexDirection: "row", gap: 10, marginBottom: 16, alignItems: "flex-start",
     },
     warningText: { flex: 1, fontSize: 12, fontFamily: "Inter_400Regular", color: colors.mutedForeground, lineHeight: 18 },
     ghostBtn: { marginHorizontal: 20, paddingVertical: 14, alignItems: "center", marginTop: 4 },
     ghostBtnText: { fontSize: 15, fontFamily: "Inter_500Medium", color: colors.mutedForeground },
     successContainer: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 32 },
     successCircle: {
-      width: 96,
-      height: 96,
-      borderRadius: 48,
-      backgroundColor: "#10B98115",
-      borderWidth: 2,
-      borderColor: "#10B98150",
-      alignItems: "center",
-      justifyContent: "center",
-      marginBottom: 24,
+      width: 96, height: 96, borderRadius: 48,
+      backgroundColor: "#10B98115", borderWidth: 2, borderColor: "#10B98150",
+      alignItems: "center", justifyContent: "center", marginBottom: 24,
     },
     successTitle: { fontSize: 24, fontFamily: "Inter_700Bold", color: colors.foreground, marginBottom: 6, textAlign: "center" },
     successSub: { fontSize: 14, fontFamily: "Inter_400Regular", color: colors.mutedForeground, textAlign: "center", marginBottom: 28 },
     txHashBox: {
-      width: "100%",
-      backgroundColor: colors.card,
-      borderRadius: colors.radius,
-      borderWidth: 1,
-      borderColor: colors.border,
-      padding: 14,
-      marginBottom: 28,
+      width: "100%", backgroundColor: colors.card, borderRadius: colors.radius,
+      borderWidth: 1, borderColor: colors.border, padding: 14, marginBottom: 28,
     },
     txHashLabel: { fontSize: 10, fontFamily: "Inter_600SemiBold", color: colors.mutedForeground, letterSpacing: 1.5, marginBottom: 6 },
     txHashText: { fontSize: 12, fontFamily: "Inter_400Regular", color: colors.primary, lineHeight: 18 },
@@ -412,17 +506,13 @@ export default function SendScreen() {
     successBtnGrad: { paddingVertical: 14, alignItems: "center" },
     successBtnText: { fontSize: 15, fontFamily: "Inter_600SemiBold", color: "#FFFFFF" },
     secondaryBtn: {
-      flex: 1,
-      borderRadius: colors.radius,
-      borderWidth: 1,
-      borderColor: colors.border,
-      paddingVertical: 14,
-      alignItems: "center",
-      backgroundColor: colors.card,
+      flex: 1, borderRadius: colors.radius, borderWidth: 1,
+      borderColor: colors.border, paddingVertical: 14, alignItems: "center", backgroundColor: colors.card,
     },
     secondaryBtnText: { fontSize: 15, fontFamily: "Inter_600SemiBold", color: colors.foreground },
   });
 
+  // ── Success step ──────────────────────────────────────────────────────────
   if (step === "success") {
     return (
       <View style={[s.container, s.successContainer]}>
@@ -433,16 +523,15 @@ export default function SendScreen() {
             </Animated.View>
           </View>
           <Text style={s.successTitle}>Sent Successfully</Text>
-          <Text style={s.successSub}>{amount} MC → {shortenAddress(recipient, 8)}</Text>
+          <Text style={s.successSub}>
+            {amount} {symbol} → {shortenAddress(recipient, 8)}
+          </Text>
         </Animated.View>
         <Animated.View style={{ opacity: hashOpacity, width: "100%" }}>
           <TouchableOpacity
             style={s.txHashBox}
             activeOpacity={0.7}
-            onPress={async () => {
-              await Clipboard.setStringAsync(txHash);
-              setToast("TX hash copied");
-            }}
+            onPress={async () => { await Clipboard.setStringAsync(txHash); setToast("TX hash copied"); }}
           >
             <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
               <Text style={s.txHashLabel}>TRANSACTION HASH</Text>
@@ -466,6 +555,7 @@ export default function SendScreen() {
     );
   }
 
+  // ── Confirm step ──────────────────────────────────────────────────────────
   if (step === "confirm") {
     return (
       <View style={s.container}>
@@ -484,8 +574,14 @@ export default function SendScreen() {
                   SENDING
                 </Text>
                 <Text style={{ fontSize: 36, fontFamily: "Inter_700Bold", color: "#FFFFFF" }}>
-                  {amount} <Text style={{ fontSize: 20, color: "rgba(255,255,255,0.6)" }}>MC</Text>
+                  {amount}{" "}
+                  <Text style={{ fontSize: 20, color: "rgba(255,255,255,0.6)" }}>{symbol}</Text>
                 </Text>
+                {isToken && (
+                  <Text style={{ fontSize: 12, fontFamily: "Inter_400Regular", color: "rgba(255,255,255,0.4)", marginTop: 4 }}>
+                    via {selectedToken!.name} contract
+                  </Text>
+                )}
               </LinearGradient>
               <View style={s.confirmRow}>
                 <Text style={s.confirmLabel}>To</Text>
@@ -499,7 +595,7 @@ export default function SendScreen() {
                 </View>
               </View>
               <View style={s.confirmRow}>
-                <Text style={s.confirmLabel}>Fee</Text>
+                <Text style={s.confirmLabel}>Gas fee</Text>
                 <Text style={s.confirmValue}>~0.0001 MC</Text>
               </View>
               <View style={[s.confirmRow, { borderBottomWidth: 0 }]}>
@@ -539,15 +635,11 @@ export default function SendScreen() {
           </ScrollView>
         </Animated.View>
         <Toast message={toast} visible={!!toast} onHide={() => setToast("")} />
-        <QRScannerModal
-          visible={showScanner}
-          onClose={() => setShowScanner(false)}
-          onScan={(address) => { setRecipient(address); setError(""); }}
-        />
       </View>
     );
   }
 
+  // ── Input step ────────────────────────────────────────────────────────────
   return (
     <View style={s.container}>
       <Animated.View style={{ flex: 1, transform: [{ translateX: slideAnim }] }}>
@@ -561,37 +653,45 @@ export default function SendScreen() {
             <TouchableOpacity style={s.backBtn} onPress={() => router.back()}>
               <Icon name="close" size={18} color={colors.foreground} />
             </TouchableOpacity>
-            <Text style={s.headerTitle}>Send MC</Text>
+            <Text style={s.headerTitle}>Send</Text>
           </View>
 
-          <View style={s.balanceCard}>
-            <View>
-              <Text style={s.balanceLabel}>AVAILABLE BALANCE</Text>
-              <Text style={s.balanceValue}>{balance} MC</Text>
+          {/* Asset selector */}
+          <TouchableOpacity style={s.assetSelector} onPress={() => setShowAssetPicker(true)} activeOpacity={0.8}>
+            {isToken && selectedToken?.logoUrl ? (
+              <Image source={{ uri: selectedToken.logoUrl }} style={s.assetSelectorImg} />
+            ) : (
+              <View style={s.assetSelectorIconWrap}>
+                <Text style={s.assetSelectorIconText}>{symbol.slice(0, 3)}</Text>
+              </View>
+            )}
+            <View style={s.assetSelectorInfo}>
+              <Text style={s.assetSelectorLabel}>SENDING ASSET</Text>
+              <Text style={s.assetSelectorName}>{isToken ? selectedToken!.name : "MChain"} ({symbol})</Text>
+              <Text style={s.assetSelectorBal}>
+                Balance: {displayBalance} {symbol}
+                {isToken ? "  ·  Gas: " + mcBalance + " MC" : ""}
+              </Text>
             </View>
-            <TouchableOpacity style={s.refreshBtn} onPress={() => refetchAccount()}>
-              <Icon name="refresh-outline" size={14} color={colors.mutedForeground} />
-            </TouchableOpacity>
-          </View>
+            <Icon name="chevron-down" size={16} color={colors.mutedForeground} />
+          </TouchableOpacity>
 
+          {/* Recipient */}
           <View style={s.fieldBlock}>
             <Text style={s.fieldLabel}>RECIPIENT ADDRESS</Text>
             <View style={[s.inputRow, recipientFocused && s.inputRowFocused]}>
               <TextInput
                 style={s.textInput}
-                placeholder="mxc1..."
+                placeholder="mxc1... or 0x..."
                 placeholderTextColor={colors.mutedForeground}
                 value={recipient}
                 onChangeText={(t) => { setRecipient(t); setError(""); }}
                 onFocus={() => { setRecipientFocused(true); setShowRecent(recentAddresses.length > 0); }}
-                onBlur={() => { setRecipientFocused(false); }}
+                onBlur={() => setRecipientFocused(false)}
                 autoCapitalize="none"
                 autoCorrect={false}
               />
-              <TouchableOpacity
-                style={s.inputAction}
-                onPress={() => { setShowRecent(false); setShowScanner(true); }}
-              >
+              <TouchableOpacity style={s.inputAction} onPress={() => { setShowRecent(false); setShowScanner(true); }}>
                 <Icon name="scan" size={16} color={colors.primary} />
               </TouchableOpacity>
               <View style={{ width: 1, height: 20, backgroundColor: colors.border }} />
@@ -611,22 +711,17 @@ export default function SendScreen() {
                 <TouchableOpacity
                   key={addr}
                   style={s.recentItem}
-                  onPress={() => {
-                    setRecipient(addr);
-                    setShowRecent(false);
-                    if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  }}
+                  onPress={() => { setRecipient(addr); setShowRecent(false); if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
                 >
                   <Icon name="time-outline" size={13} color={colors.mutedForeground} />
-                  <Text style={s.recentAddress} numberOfLines={1}>
-                    {shortenAddress(addr, 10)}
-                  </Text>
+                  <Text style={s.recentAddress} numberOfLines={1}>{shortenAddress(addr, 10)}</Text>
                   <Icon name="chevron-forward" size={13} color={colors.mutedForeground} />
                 </TouchableOpacity>
               ))}
             </View>
           )}
 
+          {/* Amount */}
           <View style={s.fieldBlock}>
             <Text style={s.fieldLabel}>AMOUNT</Text>
             <View style={[s.inputRow, amountFocused && s.inputRowFocused]}>
@@ -640,7 +735,7 @@ export default function SendScreen() {
                 onBlur={() => setAmountFocused(false)}
                 keyboardType="decimal-pad"
               />
-              <Text style={s.amountSuffix}>MC</Text>
+              <Text style={s.amountSuffix}>{symbol}</Text>
             </View>
             <View style={s.pctRow}>
               {[0.25, 0.5, 0.75, 1].map((pct) => (
@@ -651,36 +746,42 @@ export default function SendScreen() {
             </View>
           </View>
 
-          <View style={s.fieldBlock}>
-            <Text style={s.fieldLabel}>MEMO (OPTIONAL)</Text>
-            <View style={s.inputRow}>
-              <TextInput
-                style={s.textInput}
-                placeholder="Add a note..."
-                placeholderTextColor={colors.mutedForeground}
-                value={memo}
-                onChangeText={setMemo}
-                autoCapitalize="none"
-                autoCorrect={false}
-                maxLength={100}
-              />
+          {/* Memo (native only) */}
+          {!isToken && (
+            <View style={s.fieldBlock}>
+              <Text style={s.fieldLabel}>MEMO (OPTIONAL)</Text>
+              <View style={s.inputRow}>
+                <TextInput
+                  style={s.textInput}
+                  placeholder="Add a note..."
+                  placeholderTextColor={colors.mutedForeground}
+                  value={memo}
+                  onChangeText={setMemo}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+              </View>
             </View>
-          </View>
+          )}
 
-          {error ? <Text style={s.errorText}>{error}</Text> : null}
+          {!!error && <Text style={s.errorText}>{error}</Text>}
 
-          <TouchableOpacity
-            style={s.primaryBtn}
-            onPress={handleContinue}
-            activeOpacity={0.85}
-          >
+          <TouchableOpacity style={s.primaryBtn} onPress={handleContinue} activeOpacity={0.85}>
             <LinearGradient colors={["#0EA5E9", "#0284C7"]} style={s.primaryGrad}>
+              <Icon name="arrow-forward-outline" size={16} color="#FFFFFF" />
               <Text style={s.primaryBtnText}>Continue</Text>
-              <Icon name="arrow-forward" size={18} color="#FFFFFF" />
             </LinearGradient>
           </TouchableOpacity>
         </ScrollView>
       </Animated.View>
+
+      <AssetPickerSheet
+        visible={showAssetPicker}
+        onClose={() => setShowAssetPicker(false)}
+        tokens={customTokens}
+        selected={selectedAsset}
+        onSelect={(a) => { setSelectedAsset(a); setAmount(""); setError(""); }}
+      />
       <Toast message={toast} visible={!!toast} onHide={() => setToast("")} />
       <QRScannerModal
         visible={showScanner}
