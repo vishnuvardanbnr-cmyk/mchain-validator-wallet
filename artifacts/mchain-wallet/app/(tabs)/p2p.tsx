@@ -368,21 +368,31 @@ export default function P2PScreen() {
     pageBtnDisabled: { opacity: 0.3 },
     pageBtnText: { fontSize: 13, fontFamily: "Inter_600SemiBold", color: colors.primary },
     pageInfo: { fontSize: 13, fontFamily: "Inter_400Regular", color: colors.mutedForeground },
-    connectWrap: { alignItems: "center", justifyContent: "center", paddingHorizontal: 32, paddingVertical: 40 },
-    connectFieldLabel: { fontSize: 11, fontFamily: "Inter_600SemiBold", color: colors.mutedForeground, letterSpacing: 1.2, marginBottom: 8, alignSelf: "stretch" },
-    connectInput: { backgroundColor: colors.card, borderRadius: 10, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, fontFamily: "Inter_400Regular", color: colors.foreground, marginBottom: 14, alignSelf: "stretch" },
+    connectScroll: { paddingBottom: 40 },
+    connectHero: { alignItems: "center", paddingTop: 36, paddingBottom: 28, paddingHorizontal: 24 },
+    connectRingOuter: { width: 104, height: 104, borderRadius: 52, borderWidth: 1, borderColor: colors.primary + "18", alignItems: "center", justifyContent: "center", marginBottom: 24 },
+    connectRingInner: { width: 80, height: 80, borderRadius: 40, borderWidth: 1.5, borderColor: colors.primary + "40", backgroundColor: colors.primary + "0C", alignItems: "center", justifyContent: "center" },
+    connectTitle: { fontSize: 26, fontFamily: "Inter_700Bold", color: colors.foreground, textAlign: "center", marginBottom: 10, letterSpacing: -0.3 },
+    connectDesc: { fontSize: 14, fontFamily: "Inter_400Regular", color: colors.mutedForeground, textAlign: "center", lineHeight: 22 },
+    connectTrustRow: { flexDirection: "row", gap: 8, paddingHorizontal: 20, marginBottom: 24, flexWrap: "wrap", justifyContent: "center" },
+    connectTrustPill: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, borderWidth: 1, borderColor: colors.primary + "25", backgroundColor: colors.primary + "0A" },
+    connectTrustText: { fontSize: 11, fontFamily: "Inter_500Medium", color: colors.primary },
+    connectForm: { marginHorizontal: 20 },
+    connectAddrCard: { flexDirection: "row", alignItems: "center", backgroundColor: colors.card, borderRadius: 14, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 16, paddingVertical: 12, marginBottom: 20, gap: 10 },
+    connectAddrLabel: { fontSize: 9, fontFamily: "Inter_700Bold", color: colors.primary, letterSpacing: 1.5, marginBottom: 3 },
+    connectAddrText: { fontSize: 12, fontFamily: "Inter_500Medium", color: colors.mutedForeground },
+    connectFieldWrap: { marginBottom: 16 },
+    connectFieldLabel: { fontSize: 10, fontFamily: "Inter_700Bold", color: colors.mutedForeground, letterSpacing: 1.5, marginBottom: 8 },
+    connectInput: { backgroundColor: colors.card, borderRadius: 12, borderWidth: 1.5, borderColor: colors.border, paddingHorizontal: 16, paddingVertical: 14, fontSize: 14, fontFamily: "Inter_400Regular", color: colors.foreground },
+    connectInputFocus: { borderColor: colors.primary + "80" },
     connectInputErr: { borderColor: "#EF4444" },
-    connectErrBox: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "#EF444410", borderRadius: 8, padding: 10, marginBottom: 14, alignSelf: "stretch" },
+    connectErrBox: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: "#EF444410", borderRadius: 10, borderWidth: 1, borderColor: "#EF444430", padding: 12, marginBottom: 16 },
     connectErrText: { fontSize: 13, fontFamily: "Inter_400Regular", color: "#EF4444", flex: 1 },
-    connectIconWrap: { width: 80, height: 80, borderRadius: 40, backgroundColor: colors.primary + "15", borderWidth: 2, borderColor: colors.primary + "40", alignItems: "center", justifyContent: "center", marginBottom: 20 },
-    connectTitle: { fontSize: 22, fontFamily: "Inter_700Bold", color: colors.foreground, textAlign: "center", marginBottom: 10 },
-    connectDesc: { fontSize: 14, fontFamily: "Inter_400Regular", color: colors.mutedForeground, textAlign: "center", lineHeight: 22, marginBottom: 24 },
-    connectAddrBox: { backgroundColor: colors.card, borderRadius: 10, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 14, paddingVertical: 10, marginBottom: 28, alignSelf: "stretch" },
-    connectAddr: { fontSize: 12, fontFamily: "Inter_400Regular", color: colors.mutedForeground, textAlign: "center" },
-    connectBtn: { borderRadius: 14, overflow: "hidden", alignSelf: "stretch" },
-    connectBtnGrad: { paddingVertical: 16, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 8 },
-    connectBtnText: { fontSize: 15, fontFamily: "Inter_700Bold", color: "#FFF" },
-    connectNote: { fontSize: 11, fontFamily: "Inter_400Regular", color: colors.mutedForeground, textAlign: "center", marginTop: 14, lineHeight: 17 },
+    connectBtn: { borderRadius: 16, overflow: "hidden", marginBottom: 16, shadowColor: colors.primary, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.35, shadowRadius: 12, elevation: 8 },
+    connectBtnGrad: { paddingVertical: 17, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 8 },
+    connectBtnText: { fontSize: 16, fontFamily: "Inter_700Bold", color: "#FFF", letterSpacing: 0.2 },
+    connectNoteRow: { flexDirection: "row", alignItems: "flex-start", gap: 8, paddingHorizontal: 4 },
+    connectNote: { fontSize: 12, fontFamily: "Inter_400Regular", color: colors.mutedForeground, lineHeight: 18, flex: 1 },
   });
 
   if (profileReady && !hasProfile) {
@@ -391,70 +401,119 @@ export default function P2PScreen() {
         style={[s.container, { paddingTop: insets.top + (Platform.OS === "web" ? 67 : 8) }]}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
       >
-        <ScrollView contentContainerStyle={s.connectWrap} keyboardShouldPersistTaps="handled">
-          <View style={s.connectIconWrap}>
-            <Icon name="storefront-outline" size={38} color={colors.primary} />
+        <ScrollView contentContainerStyle={s.connectScroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+
+          {/* ── Hero ── */}
+          <View style={s.connectHero}>
+            <View style={s.connectRingOuter}>
+              <View style={s.connectRingInner}>
+                <Icon name="storefront-outline" size={34} color={colors.primary} />
+              </View>
+            </View>
+            <Text style={s.connectTitle}>Activate P2P Trading</Text>
+            <Text style={s.connectDesc}>
+              Your wallet address is your P2P identity — no password needed. Set a display name so other traders can recognise you.
+            </Text>
           </View>
-          <Text style={s.connectTitle}>Activate P2P Trading</Text>
-          <Text style={s.connectDesc}>
-            Your wallet address is your P2P identity — no password needed. Set a display name so other traders can recognise you.
-          </Text>
 
-          <View style={s.connectAddrBox}>
-            <Text style={[s.connectAddr, { fontSize: 10, marginBottom: 2, letterSpacing: 0.5 }]}>WALLET ADDRESS</Text>
-            <Text style={s.connectAddr}>{mxcAddress ? `${mxcAddress.slice(0, 18)}…${mxcAddress.slice(-8)}` : "—"}</Text>
+          {/* ── Trust pills ── */}
+          <View style={s.connectTrustRow}>
+            {[
+              { icon: "shield-checkmark-outline", label: "Non-custodial" },
+              { icon: "person-outline", label: "Pseudonymous" },
+              { icon: "flash-outline", label: "Instant Settlement" },
+            ].map(p => (
+              <View key={p.label} style={s.connectTrustPill}>
+                <Icon name={p.icon} size={11} color={colors.primary} />
+                <Text style={s.connectTrustText}>{p.label}</Text>
+              </View>
+            ))}
           </View>
 
-          <Text style={s.connectFieldLabel}>DISPLAY NAME *</Text>
-          {savedCredentials ? (
-            <View style={[s.connectInput, { justifyContent: "center", opacity: 0.7 }]} pointerEvents="none">
-              <Text style={{ fontSize: 14, fontFamily: "Inter_400Regular", color: colors.foreground }} selectable={false}>{connectName}</Text>
+          {/* ── Form ── */}
+          <View style={s.connectForm}>
+            {/* Address card */}
+            <View style={s.connectAddrCard}>
+              <Icon name="wallet-outline" size={18} color={colors.primary} />
+              <View style={{ flex: 1 }}>
+                <Text style={s.connectAddrLabel}>WALLET ADDRESS</Text>
+                <Text style={s.connectAddrText} numberOfLines={1}>
+                  {mxcAddress ? `${mxcAddress.slice(0, 20)}…${mxcAddress.slice(-8)}` : "—"}
+                </Text>
+              </View>
+              <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: "#10B981" }} />
             </View>
-          ) : (
-            <TextInput
-              style={[s.connectInput, connectErr && connectErr.includes("name") ? s.connectInputErr : null]}
-              value={connectName}
-              onChangeText={setConnectName}
-              placeholder="Your trader name (visible to others)"
-              placeholderTextColor={colors.mutedForeground}
-              maxLength={50}
-              autoCorrect={false}
-            />
-          )}
 
-          <Text style={s.connectFieldLabel}>PHONE NUMBER <Text style={{ color: "#EF4444" }}>*</Text></Text>
-          {savedCredentials ? (
-            <View style={[s.connectInput, { justifyContent: "center", opacity: 0.7 }]} pointerEvents="none">
-              <Text style={{ fontSize: 14, fontFamily: "Inter_400Regular", color: colors.foreground }} selectable={false}>{connectPhone}</Text>
+            {/* Display name */}
+            <View style={s.connectFieldWrap}>
+              <Text style={s.connectFieldLabel}>DISPLAY NAME <Text style={{ color: "#EF4444" }}>*</Text></Text>
+              {savedCredentials ? (
+                <View style={[s.connectInput, { justifyContent: "center", opacity: 0.7 }]} pointerEvents="none">
+                  <Text style={{ fontSize: 14, fontFamily: "Inter_400Regular", color: colors.foreground }}>{connectName}</Text>
+                </View>
+              ) : (
+                <TextInput
+                  style={[s.connectInput, connectErr && connectErr.includes("name") ? s.connectInputErr : null]}
+                  value={connectName}
+                  onChangeText={setConnectName}
+                  placeholder="Your trader name (visible to others)"
+                  placeholderTextColor={colors.mutedForeground}
+                  maxLength={50}
+                  autoCorrect={false}
+                />
+              )}
             </View>
-          ) : (
-            <TextInput
-              style={[s.connectInput, connectErr && connectErr.includes("Phone") ? s.connectInputErr : null]}
-              value={connectPhone}
-              onChangeText={setConnectPhone}
-              placeholder="+1 234 567 890"
-              placeholderTextColor={colors.mutedForeground}
-              keyboardType="phone-pad"
-              maxLength={20}
-            />
-          )}
 
-          {!!connectErr && (
-            <View style={s.connectErrBox}>
-              <Icon name="alert-circle-outline" size={14} color="#EF4444" />
-              <Text style={s.connectErrText}>{connectErr}</Text>
+            {/* Phone */}
+            <View style={s.connectFieldWrap}>
+              <Text style={s.connectFieldLabel}>PHONE NUMBER <Text style={{ color: "#EF4444" }}>*</Text></Text>
+              {savedCredentials ? (
+                <View style={[s.connectInput, { justifyContent: "center", opacity: 0.7 }]} pointerEvents="none">
+                  <Text style={{ fontSize: 14, fontFamily: "Inter_400Regular", color: colors.foreground }}>{connectPhone}</Text>
+                </View>
+              ) : (
+                <TextInput
+                  style={[s.connectInput, connectErr && connectErr.includes("Phone") ? s.connectInputErr : null]}
+                  value={connectPhone}
+                  onChangeText={setConnectPhone}
+                  placeholder="+1 234 567 890"
+                  placeholderTextColor={colors.mutedForeground}
+                  keyboardType="phone-pad"
+                  maxLength={20}
+                />
+              )}
             </View>
-          )}
 
-          <TouchableOpacity style={[s.connectBtn, activating && { opacity: 0.6 }]} onPress={handleActivate} disabled={activating} activeOpacity={0.85}>
-            <LinearGradient colors={["#0EA5E9", "#0284C7"]} style={s.connectBtnGrad}>
-              {activating
-                ? <ActivityIndicator color="#FFF" />
-                : <><Icon name="flash-outline" size={18} color="#FFF" /><Text style={s.connectBtnText}>Connect Wallet to P2P</Text></>
-              }
-            </LinearGradient>
-          </TouchableOpacity>
-          <Text style={s.connectNote}>Your private keys stay on your device at all times. Only your address and trade history are stored on the platform.</Text>
+            {!!connectErr && (
+              <View style={s.connectErrBox}>
+                <Icon name="alert-circle-outline" size={15} color="#EF4444" />
+                <Text style={s.connectErrText}>{connectErr}</Text>
+              </View>
+            )}
+
+            <TouchableOpacity
+              style={[s.connectBtn, activating && { opacity: 0.6 }]}
+              onPress={handleActivate}
+              disabled={activating}
+              activeOpacity={0.85}
+            >
+              <LinearGradient
+                colors={["#0EA5E9", "#0284C7"]}
+                start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+                style={s.connectBtnGrad}
+              >
+                {activating
+                  ? <ActivityIndicator color="#FFF" />
+                  : <><Icon name="flash-outline" size={18} color="#FFF" /><Text style={s.connectBtnText}>Connect Wallet to P2P</Text></>
+                }
+              </LinearGradient>
+            </TouchableOpacity>
+
+            <View style={s.connectNoteRow}>
+              <Icon name="lock-closed-outline" size={13} color={colors.mutedForeground} />
+              <Text style={s.connectNote}>Your private keys stay on your device at all times. Only your address and trade history are stored on the platform.</Text>
+            </View>
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
     );

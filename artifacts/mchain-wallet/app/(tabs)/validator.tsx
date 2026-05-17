@@ -438,42 +438,50 @@ export default function ValidatorScreen() {
 
     // Register card
     registerCard: {
-      marginHorizontal: 20, backgroundColor: colors.card,
-      borderRadius: 20, borderWidth: 1, borderColor: colors.border,
-      padding: 24, marginBottom: 20,
+      marginHorizontal: 20, marginBottom: 20, borderRadius: 24,
+      overflow: "hidden", borderWidth: 1, borderColor: colors.border,
     },
+    registerCardGrad: { padding: 24 },
+    registerTopRow: { flexDirection: "row", alignItems: "center", gap: 16, marginBottom: 20 },
     registerIcon: {
-      width: 68, height: 68, borderRadius: 34,
+      width: 56, height: 56, borderRadius: 28,
       backgroundColor: colors.primary + "18",
       alignItems: "center", justifyContent: "center",
-      marginBottom: 18, borderWidth: 1, borderColor: colors.primary + "30",
+      borderWidth: 1.5, borderColor: colors.primary + "40",
     },
-    registerTitle: { fontSize: 22, fontFamily: "Inter_700Bold", color: colors.foreground, marginBottom: 8 },
-    registerDesc: { fontSize: 14, fontFamily: "Inter_400Regular", color: colors.mutedForeground, lineHeight: 22, marginBottom: 24 },
-    featureRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 24 },
+    registerBadge: {
+      flexDirection: "row", alignItems: "center", gap: 5,
+      backgroundColor: "#10B98115", borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4,
+      borderWidth: 1, borderColor: "#10B98130", alignSelf: "flex-start", marginTop: 4,
+    },
+    registerBadgeText: { fontSize: 11, fontFamily: "Inter_600SemiBold", color: "#10B981" },
+    registerTitle: { fontSize: 24, fontFamily: "Inter_700Bold", color: colors.foreground, marginBottom: 6, letterSpacing: -0.3 },
+    registerDesc: { fontSize: 13, fontFamily: "Inter_400Regular", color: colors.mutedForeground, lineHeight: 20, marginBottom: 20 },
+    featureGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10, marginBottom: 24 },
     featureChip: {
-      flexDirection: "row", alignItems: "center", gap: 6,
-      backgroundColor: colors.primary + "15", borderRadius: 20,
-      paddingHorizontal: 12, paddingVertical: 6,
-      borderWidth: 1, borderColor: colors.primary + "25",
+      flexDirection: "row", alignItems: "center", gap: 8,
+      backgroundColor: colors.primary + "0D", borderRadius: 12,
+      paddingHorizontal: 14, paddingVertical: 10, flex: 1, minWidth: "44%",
+      borderWidth: 1, borderColor: colors.primary + "20",
     },
-    featureChipText: { fontSize: 11, fontFamily: "Inter_500Medium", color: colors.primary },
-    fieldLabel: { fontSize: 10, fontFamily: "Inter_600SemiBold", color: colors.mutedForeground, letterSpacing: 1.5, marginBottom: 8 },
+    featureChipLabel: { fontSize: 10, fontFamily: "Inter_400Regular", color: colors.mutedForeground, marginBottom: 2 },
+    featureChipText: { fontSize: 12, fontFamily: "Inter_600SemiBold", color: colors.foreground },
+    fieldLabel: { fontSize: 10, fontFamily: "Inter_700Bold", color: colors.mutedForeground, letterSpacing: 1.5, marginBottom: 8 },
     input: {
-      backgroundColor: colors.background, borderWidth: 1, borderColor: colors.border,
-      borderRadius: 12, paddingHorizontal: 14, paddingVertical: 13,
+      backgroundColor: colors.background, borderWidth: 1.5, borderColor: colors.border,
+      borderRadius: 14, paddingHorizontal: 16, paddingVertical: 14,
       fontSize: 15, fontFamily: "Inter_400Regular", color: colors.foreground, marginBottom: 16,
     },
-    inputFocused: { borderColor: colors.primary },
+    inputFocused: { borderColor: colors.primary + "80" },
     commissionRow: {
       flexDirection: "row", alignItems: "center", backgroundColor: colors.background,
-      borderWidth: 1, borderColor: colors.border, borderRadius: 12, marginBottom: 20,
+      borderWidth: 1.5, borderColor: colors.border, borderRadius: 14, marginBottom: 20,
     },
-    commissionInput: { flex: 1, paddingHorizontal: 14, paddingVertical: 13, fontSize: 15, fontFamily: "Inter_400Regular", color: colors.foreground },
-    commissionUnit: { paddingRight: 14, fontSize: 15, fontFamily: "Inter_500Medium", color: colors.mutedForeground },
-    registerBtn: { borderRadius: 14, overflow: "hidden" },
-    registerBtnGrad: { paddingVertical: 15, alignItems: "center", flexDirection: "row", justifyContent: "center", gap: 8 },
-    registerBtnText: { fontSize: 16, fontFamily: "Inter_600SemiBold", color: "#FFFFFF" },
+    commissionInput: { flex: 1, paddingHorizontal: 16, paddingVertical: 14, fontSize: 15, fontFamily: "Inter_400Regular", color: colors.foreground },
+    commissionUnit: { paddingRight: 16, fontSize: 15, fontFamily: "Inter_500Medium", color: colors.mutedForeground },
+    registerBtn: { borderRadius: 16, overflow: "hidden", shadowColor: colors.primary, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.35, shadowRadius: 12, elevation: 8 },
+    registerBtnGrad: { paddingVertical: 17, alignItems: "center", flexDirection: "row", justifyContent: "center", gap: 8 },
+    registerBtnText: { fontSize: 16, fontFamily: "Inter_700Bold", color: "#FFFFFF", letterSpacing: 0.2 },
     errorText: { fontSize: 13, fontFamily: "Inter_400Regular", color: colors.destructive, marginBottom: 12 },
 
     // Hero card
@@ -1006,49 +1014,83 @@ export default function ValidatorScreen() {
   // ── Register form ───────────────────────────────────────────────────────────
   const RegisterForm = (
     <View style={s.registerCard}>
-      <View style={s.registerIcon}>
-        <Icon name="shield-outline" size={30} color={colors.primary} />
-      </View>
-      <Text style={s.registerTitle}>Become a Validator</Text>
-      <Text style={s.registerDesc}>
-        Register your device on the MChain network (Chain ID 1888). Keep it online to earn MC rewards through uptime-based treasury payouts and gas fee sharing.
-      </Text>
-      <View style={s.featureRow}>
-        {[
-          { icon: "time-outline", label: "Uptime Rewards" },
-          { icon: "flash-outline", label: "Gas Fees" },
-          { icon: "hardware-chip-outline", label: "Chain ID 1888" },
-          { icon: "trophy-outline", label: "MC Earnings" },
-        ].map((f) => (
-          <View key={f.label} style={s.featureChip}>
-            <Icon name={f.icon} size={11} color={colors.primary} />
-            <Text style={s.featureChipText}>{f.label}</Text>
+      <LinearGradient
+        colors={[colors.card, colors.background]}
+        start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}
+        style={s.registerCardGrad}
+      >
+        {/* Top row: icon + title + badge */}
+        <View style={s.registerTopRow}>
+          <View style={s.registerIcon}>
+            <Icon name="shield-outline" size={26} color={colors.primary} />
           </View>
-        ))}
-      </View>
-      <Text style={s.fieldLabel}>NODE MONIKER</Text>
-      <TextInput
-        style={[s.input, monikerFocused && s.inputFocused]}
-        value={regMoniker}
-        onChangeText={setRegMoniker}
-        onFocus={() => setMonikerFocused(true)}
-        onBlur={() => setMonikerFocused(false)}
-        placeholder="e.g. my-mchain-node"
-        placeholderTextColor={colors.mutedForeground}
-        autoCapitalize="none" autoCorrect={false} maxLength={40}
-        editable={!registerMutation.isPending}
-      />
-      {regError ? <Text style={s.errorText}>{regError}</Text> : null}
-      <TouchableOpacity style={s.registerBtn} onPress={() => registerMutation.mutate()} disabled={registerMutation.isPending} activeOpacity={0.85}>
-        <LinearGradient colors={["#0EA5E9", "#0284C7"]} style={s.registerBtnGrad}>
-          {registerMutation.isPending ? <ActivityIndicator color="#FFFFFF" size="small" /> : (
-            <>
-              <Icon name="shield-outline" size={18} color="#FFFFFF" />
-              <Text style={s.registerBtnText}>Register as Validator</Text>
-            </>
-          )}
-        </LinearGradient>
-      </TouchableOpacity>
+          <View style={{ flex: 1 }}>
+            <Text style={s.registerTitle}>Become a{"\n"}Validator</Text>
+            <View style={s.registerBadge}>
+              <Icon name="radio-button-on-outline" size={9} color="#10B981" />
+              <Text style={s.registerBadgeText}>Chain ID 1888</Text>
+            </View>
+          </View>
+        </View>
+
+        <Text style={s.registerDesc}>
+          Register your device on the MChain network. Keep it online to earn MC rewards through uptime-based treasury payouts and gas fee sharing.
+        </Text>
+
+        {/* Feature 2×2 grid */}
+        <View style={s.featureGrid}>
+          {[
+            { icon: "time-outline", label: "REWARD TYPE", value: "Uptime Rewards" },
+            { icon: "flash-outline", label: "FEE SOURCE", value: "Gas Fees" },
+            { icon: "trending-up-outline", label: "TREASURY", value: "Daily Payouts" },
+            { icon: "trophy-outline", label: "CURRENCY", value: "MC Tokens" },
+          ].map((f) => (
+            <View key={f.label} style={s.featureChip}>
+              <Icon name={f.icon} size={18} color={colors.primary} />
+              <View>
+                <Text style={s.featureChipLabel}>{f.label}</Text>
+                <Text style={s.featureChipText}>{f.value}</Text>
+              </View>
+            </View>
+          ))}
+        </View>
+
+        {/* Moniker input */}
+        <Text style={s.fieldLabel}>NODE MONIKER</Text>
+        <TextInput
+          style={[s.input, monikerFocused && s.inputFocused]}
+          value={regMoniker}
+          onChangeText={setRegMoniker}
+          onFocus={() => setMonikerFocused(true)}
+          onBlur={() => setMonikerFocused(false)}
+          placeholder="e.g. my-mchain-node"
+          placeholderTextColor={colors.mutedForeground}
+          autoCapitalize="none" autoCorrect={false} maxLength={40}
+          editable={!registerMutation.isPending}
+        />
+
+        {regError ? <Text style={s.errorText}>{regError}</Text> : null}
+
+        <TouchableOpacity
+          style={[s.registerBtn, registerMutation.isPending && { opacity: 0.65 }]}
+          onPress={() => registerMutation.mutate()}
+          disabled={registerMutation.isPending}
+          activeOpacity={0.85}
+        >
+          <LinearGradient
+            colors={["#0EA5E9", "#0284C7"]}
+            start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+            style={s.registerBtnGrad}
+          >
+            {registerMutation.isPending ? <ActivityIndicator color="#FFFFFF" size="small" /> : (
+              <>
+                <Icon name="shield-checkmark-outline" size={18} color="#FFFFFF" />
+                <Text style={s.registerBtnText}>Register as Validator</Text>
+              </>
+            )}
+          </LinearGradient>
+        </TouchableOpacity>
+      </LinearGradient>
     </View>
   );
 
