@@ -2,8 +2,13 @@ import express, { type Express } from "express";
 import cors from "cors";
 import pinoHttp from "pino-http";
 import rateLimit from "express-rate-limit";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { existsSync } from "node:fs";
 import router from "./routes";
 import { logger } from "./lib/logger";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const app: Express = express();
 
@@ -56,5 +61,15 @@ app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 app.use("/api/admin", adminLimiter);
 app.use("/api", apiLimiter);
 app.use("/api", router);
+
+// Serve admin panel static files at /admin
+const adminDist = path.resolve(__dirname, "admin");
+if (existsSync(adminDist)) {
+  app.use("/admin", express.static(adminDist));
+  // SPA fallback — serve index.html for any /admin/* route
+  app.get("/admin/*splat", (_req, res) => {
+    res.sendFile(path.join(adminDist, "index.html"));
+  });
+}
 
 export default app;
