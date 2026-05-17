@@ -968,7 +968,7 @@ export default function ValidatorScreen() {
             </View>
           </View>
           <Text style={{ fontSize: 10, fontFamily: "Inter_400Regular", color: "rgba(255,255,255,0.3)" }}>
-            Signing epoch with your secp256k1 key…
+            Submitting your participation for this checkpoint…
           </Text>
         </LinearGradient>
       </View>
