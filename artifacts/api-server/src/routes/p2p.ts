@@ -1,5 +1,13 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
+import { cached, invalidate } from "../lib/redis";
+
+// Cache key for the public active-ads feed (no owner filter).
+// Per-filter combinations are encoded in the key; owner-specific queries are never cached.
+function adsCacheKey(token?: string, side?: string, offset?: number) {
+  return `p2p:ads:${token ?? "all"}:${side ?? "all"}:${offset ?? 0}`;
+}
+const ADS_CACHE_TTL = 30; // 30 seconds — ads change frequently
 import {
   p2pAds, p2pOrders, p2pMessages, p2pDisputes, p2pRatings, p2pProfiles, p2pPaymentDetails,
   createAdRequestSchema, createOrderRequestSchema, createDisputeRequestSchema,
@@ -132,23 +140,34 @@ router.get("/p2p/ads", async (req, res) => {
   const offset = Math.max(0, Number(req.query["offset"] ?? 0));
   const limit = owner ? 100 : 20;
 
-  const conditions = [];
-  if (token) conditions.push(eq(p2pAds.token, token as "MC" | "USDT"));
-  if (side) conditions.push(eq(p2pAds.side, side as "buy" | "sell"));
-  if (owner) conditions.push(eq(p2pAds.ownerAddress, owner));
-  if (!owner) conditions.push(eq(p2pAds.status, "active"));
+  // Owner-specific queries are never cached (per-user, low traffic)
+  if (owner) {
+    const conditions = [
+      eq(p2pAds.ownerAddress, owner),
+      ...(token ? [eq(p2pAds.token, token as "MC" | "USDT")] : []),
+      ...(side  ? [eq(p2pAds.side,  side  as "buy" | "sell")] : []),
+    ];
+    const where = and(...conditions);
+    const ads = await db.select().from(p2pAds).where(where).orderBy(desc(p2pAds.createdAt)).limit(limit).offset(offset);
+    const [totalRow] = await db.select({ count: count() }).from(p2pAds).where(where);
+    res.json({ ads: await enrichAds(ads), total: Number(totalRow?.count ?? 0), limit, offset });
+    return;
+  }
 
-  const where = conditions.length > 0 ? and(...conditions) : undefined;
-
-  const ads = await db.select().from(p2pAds)
-    .where(where)
-    .orderBy(desc(p2pAds.createdAt))
-    .limit(limit)
-    .offset(offset);
-
-  const [totalRow] = await db.select({ count: count() }).from(p2pAds).where(where);
-
-  res.json({ ads: await enrichAds(ads), total: Number(totalRow?.count ?? 0), limit, offset });
+  // Public active-ads feed — cache per filter combination
+  const cacheKey = adsCacheKey(token, side, offset);
+  const result = await cached(cacheKey, ADS_CACHE_TTL, async () => {
+    const conditions = [
+      eq(p2pAds.status, "active"),
+      ...(token ? [eq(p2pAds.token, token as "MC" | "USDT")] : []),
+      ...(side  ? [eq(p2pAds.side,  side  as "buy" | "sell")] : []),
+    ];
+    const where = and(...conditions);
+    const ads = await db.select().from(p2pAds).where(where).orderBy(desc(p2pAds.createdAt)).limit(limit).offset(offset);
+    const [totalRow] = await db.select({ count: count() }).from(p2pAds).where(where);
+    return { ads: await enrichAds(ads), total: Number(totalRow?.count ?? 0), limit, offset };
+  });
+  res.json(result);
 });
 
 router.post("/p2p/ads", async (req, res) => {
@@ -170,6 +189,13 @@ router.post("/p2p/ads", async (req, res) => {
     paymentWindow: body.paymentWindow,
     terms: body.terms,
   }).returning();
+  // New ad posted — bust all public ad feed cache keys
+  await Promise.all([
+    invalidate(adsCacheKey()), invalidate(adsCacheKey("MC")), invalidate(adsCacheKey("USDT")),
+    invalidate(adsCacheKey(undefined, "buy")), invalidate(adsCacheKey(undefined, "sell")),
+    invalidate(adsCacheKey("MC", "buy")), invalidate(adsCacheKey("MC", "sell")),
+    invalidate(adsCacheKey("USDT", "buy")), invalidate(adsCacheKey("USDT", "sell")),
+  ]);
   res.status(201).json(ad);
 });
 
@@ -183,6 +209,13 @@ router.patch("/p2p/ads/:id/status", async (req, res) => {
     .set({ status: status as "active" | "paused" | "cancelled", updatedAt: new Date() })
     .where(eq(p2pAds.id, id)).returning();
   if (!updated) { res.status(404).json({ error: "Ad not found" }); return; }
+  // Status changed — bust all public ad feed cache keys
+  await Promise.all([
+    invalidate(adsCacheKey()), invalidate(adsCacheKey("MC")), invalidate(adsCacheKey("USDT")),
+    invalidate(adsCacheKey(undefined, "buy")), invalidate(adsCacheKey(undefined, "sell")),
+    invalidate(adsCacheKey("MC", "buy")), invalidate(adsCacheKey("MC", "sell")),
+    invalidate(adsCacheKey("USDT", "buy")), invalidate(adsCacheKey("USDT", "sell")),
+  ]);
   res.json(updated);
 });
 

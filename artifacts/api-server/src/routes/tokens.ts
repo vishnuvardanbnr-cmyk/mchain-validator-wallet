@@ -2,6 +2,10 @@ import { Router, type Request, type Response, type NextFunction } from "express"
 import { db, verifiedTokens } from "@workspace/db";
 import { pool } from "@workspace/db";
 import { eq, asc } from "drizzle-orm";
+import { cached, invalidate } from "../lib/redis";
+
+const TOKENS_CACHE_KEY = "tokens:public";
+const TOKENS_CACHE_TTL = 300; // 5 minutes — token list rarely changes
 
 function adminAuth(req: Request, res: Response, next: NextFunction): void {
   const secret = process.env["ADMIN_SECRET"];
@@ -35,10 +39,12 @@ export async function ensureTokensTable(): Promise<void> {
 // ── Public endpoint ────────────────────────────────────────────────────────────
 
 router.get("/tokens", async (_req, res) => {
-  const rows = await db.select().from(verifiedTokens)
-    .where(eq(verifiedTokens.active, true))
-    .orderBy(asc(verifiedTokens.sortOrder), asc(verifiedTokens.createdAt));
-  res.json({ tokens: rows });
+  const tokens = await cached(TOKENS_CACHE_KEY, TOKENS_CACHE_TTL, () =>
+    db.select().from(verifiedTokens)
+      .where(eq(verifiedTokens.active, true))
+      .orderBy(asc(verifiedTokens.sortOrder), asc(verifiedTokens.createdAt))
+  );
+  res.json({ tokens });
 });
 
 // ── Admin CRUD ─────────────────────────────────────────────────────────────────
@@ -69,6 +75,7 @@ router.post("/admin/tokens", adminAuth, async (req, res) => {
     sortOrder: sortOrder ?? 0,
     active: active ?? true,
   }).returning();
+  await invalidate(TOKENS_CACHE_KEY);
   res.status(201).json({ token: row });
 });
 
@@ -94,12 +101,14 @@ router.put("/admin/tokens/:id", adminAuth, async (req, res) => {
     .where(eq(verifiedTokens.id, id))
     .returning();
   if (!row) { res.status(404).json({ error: "Not found" }); return; }
+  await invalidate(TOKENS_CACHE_KEY);
   res.json({ token: row });
 });
 
 router.delete("/admin/tokens/:id", adminAuth, async (req, res) => {
   const { id } = req.params;
   await db.delete(verifiedTokens).where(eq(verifiedTokens.id, id));
+  await invalidate(TOKENS_CACHE_KEY);
   res.json({ ok: true });
 });
 
