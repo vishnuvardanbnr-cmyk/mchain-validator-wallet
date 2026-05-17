@@ -18,11 +18,13 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Icon } from "@/components/Icon";
+import { NfcWriteModal } from "@/components/NfcWriteModal";
 import { useWallet } from "@/context/WalletContext";
 import { generateKeyPair, type KeyPair } from "@/services/crypto";
 import { useColors } from "@/hooks/useColors";
+import { isNfcSupported } from "@/services/nfc";
 
-type Step = "backup" | "label" | "done";
+type Step = "backup" | "label" | "nfc";
 
 type Props = {
   visible: boolean;
@@ -43,9 +45,15 @@ export function NewWalletModal({ visible, onClose }: Props) {
   const [addrCopied, setAddrCopied] = useState(false);
   const [walletLabel, setWalletLabel] = useState("");
   const [addedWalletId, setAddedWalletId] = useState<string | null>(null);
+  const [nfcAvailable, setNfcAvailable] = useState(false);
+  const [showNfcWrite, setShowNfcWrite] = useState(false);
 
   const slideAnim = useRef(new Animated.Value(400)).current;
   const overlayOpacity = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    isNfcSupported().then(setNfcAvailable);
+  }, []);
 
   useEffect(() => {
     if (visible) {
@@ -112,7 +120,7 @@ export function NewWalletModal({ visible, onClose }: Props) {
   const stepTitles: Record<Step, string> = {
     backup: "New Wallet",
     label: "Name Your Wallet",
-    done: "Wallet Added",
+    nfc: "Save to NFC Card",
   };
 
   const s = StyleSheet.create({
@@ -507,6 +515,19 @@ export function NewWalletModal({ visible, onClose }: Props) {
                   </LinearGradient>
                 </TouchableOpacity>
 
+                {nfcAvailable && (
+                  <TouchableOpacity
+                    style={[s.primaryBtn, { marginBottom: 0 }]}
+                    onPress={() => setStep("nfc")}
+                    activeOpacity={0.85}
+                  >
+                    <LinearGradient colors={["#6366F1", "#4F46E5"]} style={s.primaryGrad}>
+                      <Icon name="wifi-outline" size={16} color="#FFF" />
+                      <Text style={s.primaryBtnText}>Save to NFC Card</Text>
+                    </LinearGradient>
+                  </TouchableOpacity>
+                )}
+
                 <TouchableOpacity
                   style={[s.ghostBtn, saving && { opacity: 0.5 }]}
                   onPress={() => handleSave(true)}
@@ -520,9 +541,58 @@ export function NewWalletModal({ visible, onClose }: Props) {
                 </TouchableOpacity>
               </>
             )}
+
+            {step === "nfc" && keyPair && (
+              <>
+                <View style={[s.infoBox, { borderColor: "#6366F130", backgroundColor: "#6366F108" }]}>
+                  <View style={[s.infoIconWrap, { backgroundColor: "#6366F120" }]}>
+                    <Icon name="wifi-outline" size={15} color="#6366F1" />
+                  </View>
+                  <View style={s.infoTextWrap}>
+                    <Text style={s.infoTitle}>Encrypt & write to card</Text>
+                    <Text style={s.infoDesc}>
+                      Your private key will be AES-256 encrypted with a PIN you choose and written to your NFC card. The PIN is never stored — keep it safe.
+                    </Text>
+                  </View>
+                </View>
+
+                <TouchableOpacity
+                  style={s.primaryBtn}
+                  onPress={() => setShowNfcWrite(true)}
+                  activeOpacity={0.85}
+                >
+                  <LinearGradient colors={["#6366F1", "#4F46E5"]} style={s.primaryGrad}>
+                    <Icon name="wifi-outline" size={16} color="#FFF" />
+                    <Text style={s.primaryBtnText}>Write to NFC Card</Text>
+                  </LinearGradient>
+                </TouchableOpacity>
+
+                <TouchableOpacity style={s.ghostBtn} onPress={() => handleSave(false)}>
+                  <Text style={s.ghostBtnText}>Skip NFC, just save locally</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity style={s.ghostBtn} onPress={() => setStep("label")}>
+                  <Text style={s.ghostBtnText}>← Back</Text>
+                </TouchableOpacity>
+              </>
+            )}
           </ScrollView>
         </Animated.View>
       </KeyboardAvoidingView>
+
+      {keyPair && (
+        <NfcWriteModal
+          visible={showNfcWrite}
+          privateKey={keyPair.privateKey}
+          mxcAddress={keyPair.mxcAddress}
+          publicKey={keyPair.publicKey}
+          label={walletLabel || "My Wallet"}
+          onClose={() => setShowNfcWrite(false)}
+          onSuccess={async () => {
+            await handleSave(true);
+          }}
+        />
+      )}
     </Modal>
   );
 }
