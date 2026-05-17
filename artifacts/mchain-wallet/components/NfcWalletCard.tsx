@@ -182,7 +182,7 @@ export function NfcWalletCard() {
       Animated.timing(slideAnim, { toValue: 0, duration: 380, useNativeDriver: true, easing: Easing.out(Easing.back(1.1)) }),
       Animated.timing(overlayOpacity, { toValue: 1, duration: 280, useNativeDriver: true }),
     ]).start(() => {
-      crossfadeTo("scanning");
+      // startScan() internally calls crossfadeTo("scanning") — don't call it again here
       startScan();
     });
   }
