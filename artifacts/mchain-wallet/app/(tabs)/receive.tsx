@@ -7,6 +7,7 @@ import React, { useEffect, useRef, useState } from "react";
 import {
   Animated,
   Easing,
+  Keyboard,
   Platform,
   ScrollView,
   Share,
@@ -208,7 +209,17 @@ export default function ReceiveScreen() {
     },
     amountInputRowFocused: { borderColor: colors.primary },
     amountInput: { flex: 1, paddingHorizontal: 14, paddingVertical: 12, fontSize: 18, fontFamily: "Inter_600SemiBold", color: colors.foreground },
-    amountSuffix: { paddingRight: 14, fontSize: 14, fontFamily: "Inter_600SemiBold", color: colors.mutedForeground },
+    amountSuffix: { paddingHorizontal: 10, fontSize: 14, fontFamily: "Inter_600SemiBold", color: colors.mutedForeground },
+    amountSetBtn: {
+      backgroundColor: colors.primary,
+      borderTopRightRadius: colors.radius,
+      borderBottomRightRadius: colors.radius,
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+      justifyContent: "center",
+      alignItems: "center",
+    },
+    amountSetBtnText: { fontSize: 14, fontFamily: "Inter_600SemiBold", color: "#FFFFFF" },
     amountHint: { fontSize: 11, fontFamily: "Inter_400Regular", color: colors.mutedForeground, marginTop: 4 },
     actionRow: { width: "100%", flexDirection: "row", gap: 10, paddingHorizontal: 0 },
     copyBtn: { flex: 1, borderRadius: colors.radius, overflow: "hidden" },
@@ -288,6 +299,15 @@ export default function ReceiveScreen() {
                 keyboardType="decimal-pad"
               />
               <Text style={s.amountSuffix}>MC</Text>
+              <TouchableOpacity
+                style={s.amountSetBtn}
+                onPress={() => {
+                  Keyboard.dismiss();
+                  setShowAmountInput(false);
+                }}
+              >
+                <Text style={s.amountSetBtnText}>Set</Text>
+              </TouchableOpacity>
             </View>
             <Text style={s.amountHint}>Encodes amount into the QR code</Text>
           </Animated.View>
