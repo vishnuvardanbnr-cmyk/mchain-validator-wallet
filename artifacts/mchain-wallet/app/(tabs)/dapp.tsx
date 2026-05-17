@@ -886,7 +886,10 @@ export default function DAppScreen() {
           return (
             <View style={s.historySection}>
               <View style={s.historySectionHeader}>
-                <Text style={s.sectionLabel}>RECENT</Text>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  <Icon name="time-outline" size={13} color={colors.mutedForeground} />
+                  <Text style={s.sectionLabel}>RECENT</Text>
+                </View>
                 <TouchableOpacity style={s.clearHistoryBtn} onPress={clearHistory} activeOpacity={0.7}>
                   <Text style={s.clearHistoryText}>Clear all</Text>
                 </TouchableOpacity>

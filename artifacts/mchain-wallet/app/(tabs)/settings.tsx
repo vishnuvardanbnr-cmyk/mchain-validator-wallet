@@ -446,7 +446,7 @@ export default function SettingsScreen() {
               }}
               activeOpacity={0.75}
             >
-              <View style={s.rowIcon}><Icon name="keypad-outline" size={16} color={colors.mutedForeground} /></View>
+              <View style={s.rowIcon}><Icon name="lock-closed-outline" size={16} color={colors.mutedForeground} /></View>
               <View style={s.rowBody}>
                 <Text style={s.rowLabel}>Wallet PIN</Text>
                 <Text style={s.rowSub}>{pinEnabled ? "Required to open wallet & send" : "Not set — tap to enable"}</Text>
