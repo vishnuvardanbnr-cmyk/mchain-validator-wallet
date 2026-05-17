@@ -7,6 +7,9 @@ import { logger } from "./lib/logger";
 
 const app: Express = express();
 
+// Trust the nginx reverse proxy (one hop)
+app.set("trust proxy", 1);
+
 app.use(
   pinoHttp({
     logger,
