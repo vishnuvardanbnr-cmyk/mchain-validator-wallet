@@ -6,9 +6,9 @@ import {
 } from "@expo-google-fonts/inter";
 import { useFonts } from "expo-font";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { router, Stack } from "expo-router";
+import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
-import React, { useEffect, useLayoutEffect } from "react";
+import React, { useEffect } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
@@ -82,26 +82,9 @@ function PinGate({ children }: { children: React.ReactNode }) {
 }
 
 function RootLayoutNav() {
-  const { isLoading, isOnboarded } = useWallet();
-
-  // useLayoutEffect fires before paint — prevents any screen from flashing
-  // while the router resolves to the correct destination.
-  useLayoutEffect(() => {
-    if (isLoading) return;
-    if (!isOnboarded) {
-      router.replace("/onboarding");
-    } else {
-      router.replace("/(tabs)");
-    }
-  }, [isLoading, isOnboarded]);
-
-  // Don't render the Stack at all until we know which screen to show.
-  // AppReadyGate already ensures isLoading=false before this mounts,
-  // so this guard is a safety net to prevent any residual flash.
-  if (isLoading) return null;
-
   return (
     <Stack screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="index" options={{ headerShown: false }} />
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen
         name="onboarding"
