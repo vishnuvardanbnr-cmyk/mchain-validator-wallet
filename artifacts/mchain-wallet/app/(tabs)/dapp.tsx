@@ -2,6 +2,8 @@ import { Icon } from "@/components/Icon";
 import { useWallet } from "@/context/WalletContext";
 import { useColors } from "@/hooks/useColors";
 import { getNodeUrl } from "@/services/node";
+import { api } from "@/services/api";
+import { useQuery } from "@tanstack/react-query";
 import {
   signEvmTransaction,
   signPersonalMessage,
@@ -189,14 +191,7 @@ true;
 }
 
 // ── Featured dApps ─────────────────────────────────────────────────────────────
-const FEATURED_DAPPS = [
-  { id: "explorer", name: "MChain Explorer", desc: "Browse blocks, txs and addresses", url: "https://explorer.mvault.pro", icon: "search-outline", color: "#0EA5E9" },
-  { id: "bridge", name: "MChain Bridge", desc: "Bridge assets between networks", url: "https://bridge.mvault.pro", icon: "swap-horizontal-outline", color: "#8B5CF6" },
-  { id: "swap", name: "MChain Swap", desc: "Swap tokens on MChain", url: "https://swap.mvault.pro", icon: "repeat-outline", color: "#10B981" },
-  { id: "staking", name: "Staking Portal", desc: "Stake MC and earn rewards", url: "https://stake.mvault.pro", icon: "server-outline", color: "#F59E0B" },
-  { id: "governance", name: "Governance", desc: "Participate in MChain governance", url: "https://gov.mvault.pro", icon: "people-outline", color: "#EF4444" },
-  { id: "nft", name: "NFT Marketplace", desc: "Buy and sell MChain NFTs", url: "https://nft.mvault.pro", icon: "images-outline", color: "#EC4899" },
-];
+// Featured DApps are loaded from the API — managed by admin panel
 
 function normalizeUrl(raw: string): string {
   const t = raw.trim();
@@ -246,6 +241,13 @@ export default function DAppScreen() {
       }
     }, [activeUrl])
   );
+
+  // ── Featured DApps from API ──────────────────────────────────────────────────
+  const { data: featuredDapps = [] } = useQuery({
+    queryKey: ["featuredDapps"],
+    queryFn: () => api.getFeaturedDapps(),
+    staleTime: 60_000,
+  });
 
   // ── History state ────────────────────────────────────────────────────────────
   const [history, setHistory] = useState<HistoryEntry[]>([]);
@@ -587,6 +589,8 @@ export default function DAppScreen() {
     cardDesc: { fontSize: 11, fontFamily: "Inter_400Regular", color: colors.mutedForeground, lineHeight: 16 },
     openRow: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 4 },
     openText: { fontSize: 11, fontFamily: "Inter_600SemiBold" },
+    comingSoonBadge: { flexDirection: "row" as const, alignItems: "center" as const, gap: 4, marginTop: 4 },
+    comingSoonText: { fontSize: 10, fontFamily: "Inter_600SemiBold", color: "#F59E0B" },
 
     // Browser chrome
     browserChrome: { paddingTop: insets.top + (Platform.OS === "web" ? 67 : 4), backgroundColor: colors.card, borderBottomWidth: 1, borderBottomColor: colors.border },
@@ -940,22 +944,42 @@ export default function DAppScreen() {
           );
         })()}
 
-        <Text style={s.sectionLabel}>FEATURED DAPPS</Text>
-        <View style={s.grid}>
-          {FEATURED_DAPPS.map((dapp) => (
-            <TouchableOpacity key={dapp.id} style={s.card} onPress={() => openDApp(dapp.url, dapp.name)} activeOpacity={0.8}>
-              <View style={[s.cardIconWrap, { backgroundColor: dapp.color + "20" }]}>
-                <Icon name={dapp.icon as Parameters<typeof Icon>[0]["name"]} size={22} color={dapp.color} />
-              </View>
-              <Text style={s.cardName}>{dapp.name}</Text>
-              <Text style={s.cardDesc}>{dapp.desc}</Text>
-              <View style={s.openRow}>
-                <Icon name="open-outline" size={11} color={dapp.color} />
-                <Text style={[s.openText, { color: dapp.color }]}>Open</Text>
-              </View>
-            </TouchableOpacity>
-          ))}
-        </View>
+        {featuredDapps.length > 0 && (
+          <>
+            <Text style={s.sectionLabel}>FEATURED DAPPS</Text>
+            <View style={s.grid}>
+              {featuredDapps.map((dapp) => {
+                const isComingSoon = dapp.comingSoon;
+                const cardStyle = [s.card, isComingSoon && { opacity: 0.65 }] as const;
+                return isComingSoon ? (
+                  <View key={dapp.id} style={cardStyle}>
+                    <View style={[s.cardIconWrap, { backgroundColor: dapp.color + "20" }]}>
+                      <Icon name={dapp.icon as Parameters<typeof Icon>[0]["name"]} size={22} color={dapp.color} />
+                    </View>
+                    <Text style={s.cardName}>{dapp.name}</Text>
+                    <Text style={s.cardDesc}>{dapp.description}</Text>
+                    <View style={s.comingSoonBadge}>
+                      <Icon name="time-outline" size={10} color="#F59E0B" />
+                      <Text style={s.comingSoonText}>Coming Soon</Text>
+                    </View>
+                  </View>
+                ) : (
+                  <TouchableOpacity key={dapp.id} style={s.card} onPress={() => openDApp(dapp.url, dapp.name)} activeOpacity={0.8}>
+                    <View style={[s.cardIconWrap, { backgroundColor: dapp.color + "20" }]}>
+                      <Icon name={dapp.icon as Parameters<typeof Icon>[0]["name"]} size={22} color={dapp.color} />
+                    </View>
+                    <Text style={s.cardName}>{dapp.name}</Text>
+                    <Text style={s.cardDesc}>{dapp.description}</Text>
+                    <View style={s.openRow}>
+                      <Icon name="open-outline" size={11} color={dapp.color} />
+                      <Text style={[s.openText, { color: dapp.color }]}>Open</Text>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </>
+        )}
       </ScrollView>
     </View>
   );

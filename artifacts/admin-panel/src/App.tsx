@@ -11,7 +11,8 @@ import Disputes from "@/pages/Disputes";
 import Settings from "@/pages/Settings";
 import Escrow from "@/pages/Escrow";
 import Legal from "@/pages/Legal";
-import { Shield, LayoutDashboard, BadgeCheck, Store, AlertTriangle, LogOut, Settings as SettingsIcon, Lock, FileText } from "lucide-react";
+import { Shield, LayoutDashboard, BadgeCheck, Store, AlertTriangle, LogOut, Settings as SettingsIcon, Lock, FileText, LayoutGrid } from "lucide-react";
+import DApps from "@/pages/DApps";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: false, staleTime: 30_000 } },
@@ -26,6 +27,7 @@ function Nav({ onLogout }: { onLogout: () => void }) {
     { href: "/merchants", label: "Merchants", Icon: Store },
     { href: "/disputes", label: "Disputes", Icon: AlertTriangle },
     { href: "/escrow", label: "Escrow", Icon: Lock },
+    { href: "/dapps", label: "DApps", Icon: LayoutGrid },
     { href: "/legal", label: "Legal", Icon: FileText },
     { href: "/settings", label: "Settings", Icon: SettingsIcon },
   ];
@@ -99,6 +101,7 @@ function AppShell() {
           <Route path="/merchants" component={Merchants} />
           <Route path="/disputes" component={Disputes} />
           <Route path="/escrow" component={Escrow} />
+          <Route path="/dapps" component={DApps} />
           <Route path="/legal" component={Legal} />
           <Route path="/settings" component={Settings} />
           <Route>

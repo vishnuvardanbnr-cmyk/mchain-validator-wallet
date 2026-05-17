@@ -248,6 +248,17 @@ export interface Reward {
   timestamp: string;
 }
 
+export interface FeaturedDapp {
+  id: string;
+  name: string;
+  description: string;
+  url: string;
+  icon: string;
+  color: string;
+  sortOrder: number;
+  comingSoon: boolean;
+}
+
 export interface ChainInfo {
   chainId: number;
   blockHeight: number;
@@ -445,6 +456,15 @@ export const api = {
     ),
 
   ping: () => request<unknown>("/ping"),
+
+  getFeaturedDapps: async (): Promise<FeaturedDapp[]> => {
+    const domain = typeof process !== "undefined" ? process.env.EXPO_PUBLIC_DOMAIN : undefined;
+    const base = domain ? `https://${domain}/api` : "/api";
+    const res = await fetch(`${base}/dapps`);
+    if (!res.ok) return [];
+    const data = (await res.json()) as { dapps: FeaturedDapp[] };
+    return data.dapps ?? [];
+  },
 
   getTokenTransfers: async (contractAddr: string, userEthAddr: string): Promise<TokenTransfer[]> => {
     const TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
