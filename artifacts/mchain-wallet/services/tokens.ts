@@ -1,7 +1,20 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { api } from "./api";
 
-const STORAGE_KEY = "mchain_custom_tokens_v1";
+// ─── Storage key strategy ─────────────────────────────────────────────────────
+// Regular wallet:  mchain_tokens_v2_{walletId}
+// NFC wallet:      mchain_tokens_nfc_{mxcAddress}
+//   → NFC wallets use the card's address so the same token list reappears
+//     every time that card is reconnected, regardless of the wallet session ID.
+//
+// Legacy global key "mchain_custom_tokens_v1" is migrated on first read.
+
+const LEGACY_KEY = "mchain_custom_tokens_v1";
+
+function storageKey(walletId: string, nfcTemporary?: boolean, mxcAddress?: string): string {
+  if (nfcTemporary && mxcAddress) return `mchain_tokens_nfc_${mxcAddress}`;
+  return `mchain_tokens_v2_${walletId}`;
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 export interface CustomToken {
@@ -140,33 +153,70 @@ export async function fetchTokenBalance(
   return (Number(raw) / divisor).toLocaleString("en-US", { maximumFractionDigits: 6 });
 }
 
-// ─── Storage helpers ──────────────────────────────────────────────────────────
+// ─── Per-wallet storage helpers ───────────────────────────────────────────────
 
-export async function getCustomTokens(): Promise<CustomToken[]> {
+/**
+ * Get tokens for a specific wallet.
+ * On first call for a regular wallet, migrates any tokens from the old global key.
+ */
+export async function getCustomTokens(
+  walletId: string,
+  nfcTemporary?: boolean,
+  mxcAddress?: string
+): Promise<CustomToken[]> {
+  if (!walletId) return [];
   try {
-    const json = await AsyncStorage.getItem(STORAGE_KEY);
-    return json ? (JSON.parse(json) as CustomToken[]) : [];
+    const key = storageKey(walletId, nfcTemporary, mxcAddress);
+    const json = await AsyncStorage.getItem(key);
+
+    if (json) return JSON.parse(json) as CustomToken[];
+
+    // First time for this regular (non-NFC) wallet — migrate legacy global tokens once
+    if (!nfcTemporary) {
+      const legacy = await AsyncStorage.getItem(LEGACY_KEY);
+      if (legacy) {
+        const tokens = JSON.parse(legacy) as CustomToken[];
+        if (tokens.length > 0) {
+          await AsyncStorage.setItem(key, legacy);
+          // Clear legacy key so it only migrates to the first wallet that reads it
+          await AsyncStorage.removeItem(LEGACY_KEY);
+          return tokens;
+        }
+      }
+    }
+
+    return [];
   } catch {
     return [];
   }
 }
 
 export async function addCustomToken(
-  token: Omit<CustomToken, "id" | "addedAt">
+  token: Omit<CustomToken, "id" | "addedAt">,
+  walletId: string,
+  nfcTemporary?: boolean,
+  mxcAddress?: string
 ): Promise<CustomToken> {
-  const tokens = await getCustomTokens();
+  const key = storageKey(walletId, nfcTemporary, mxcAddress);
+  const tokens = await getCustomTokens(walletId, nfcTemporary, mxcAddress);
   const entry: CustomToken = {
     ...token,
     id: token.contractAddress.toLowerCase(),
     addedAt: new Date().toISOString(),
   };
   const updated = [...tokens.filter((t) => t.id !== entry.id), entry];
-  await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+  await AsyncStorage.setItem(key, JSON.stringify(updated));
   return entry;
 }
 
-export async function removeCustomToken(contractAddress: string): Promise<void> {
-  const tokens = await getCustomTokens();
+export async function removeCustomToken(
+  contractAddress: string,
+  walletId: string,
+  nfcTemporary?: boolean,
+  mxcAddress?: string
+): Promise<void> {
+  const key = storageKey(walletId, nfcTemporary, mxcAddress);
+  const tokens = await getCustomTokens(walletId, nfcTemporary, mxcAddress);
   const updated = tokens.filter((t) => t.id !== contractAddress.toLowerCase());
-  await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+  await AsyncStorage.setItem(key, JSON.stringify(updated));
 }
