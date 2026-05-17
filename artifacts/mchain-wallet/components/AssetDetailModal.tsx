@@ -422,9 +422,13 @@ export function AssetDetailModal({
         : "";
 
   const filtered = allEntries.filter((e) => {
-    if (filter === "send") return e.fromEth.toLowerCase() === myEthAddress && e.toEth.toLowerCase() !== myEthAddress;
-    if (filter === "receive") return e.toEth.toLowerCase() === myEthAddress && e.fromEth.toLowerCase() !== myEthAddress;
-    return true;
+    const from = e.fromEth.toLowerCase();
+    const to = e.toEth.toLowerCase();
+    const mine = myEthAddress.toLowerCase();
+    if (filter === "send") return from === mine && to !== mine;
+    if (filter === "receive") return to === mine && from !== mine;
+    // "all": only show transactions where this wallet is the sender or receiver
+    return !mine || from === mine || to === mine;
   });
 
   const s = StyleSheet.create({
