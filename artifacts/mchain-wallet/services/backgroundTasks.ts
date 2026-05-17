@@ -4,6 +4,7 @@ import * as SecureStore from "expo-secure-store";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Platform } from "react-native";
 import { signEpochBlockHash } from "./crypto";
+import { sendNotifIfEnabled } from "./notificationPrefs";
 
 export const HEARTBEAT_TASK = "mchain-validator-heartbeat";
 
@@ -88,19 +89,11 @@ TaskManager.defineTask(HEARTBEAT_TASK, async () => {
 
       if (errorMsg === "validator_paused" || data.restartRequired === true) {
         await AsyncStorage.setItem(VALIDATOR_STATUS_KEY, "paused");
-        try {
-          // eslint-disable-next-line @typescript-eslint/no-var-requires
-          const Notifs = require("expo-notifications");
-          await Notifs.scheduleNotificationAsync({
-            content: {
-              title: "Validator Paused",
-              body: "Your phone was offline too long. Open the app to restart and keep earning.",
-            },
-            trigger: null,
-          });
-        } catch {
-          // Notifications unavailable in this environment (Expo Go)
-        }
+        await sendNotifIfEnabled(
+          "notif_validator_paused",
+          "Validator Paused",
+          "Your phone was offline too long. Open the app to restart and keep earning.",
+        );
       } else if (errorMsg.includes("pending")) {
         // awaiting approval — no action needed, just wait
       } else if (errorMsg.includes("inactive")) {
@@ -112,11 +105,33 @@ TaskManager.defineTask(HEARTBEAT_TASK, async () => {
       return BackgroundFetch.BackgroundFetchResult.Failed;
     }
 
+    // Notify: epoch successfully signed
+    if (epochSignature) {
+      await sendNotifIfEnabled(
+        "notif_epoch_signed",
+        "Checkpoint Signed",
+        `Epoch #${epochSignature.epochNumber} participation submitted successfully.`,
+      );
+    }
+
     // Store open epoch from response for the next signing cycle
     try {
+      const prevEpochJson = await AsyncStorage.getItem(OPEN_EPOCH_KEY);
+      const prevEpochNumber = prevEpochJson
+        ? (JSON.parse(prevEpochJson) as { epochNumber: number }).epochNumber
+        : null;
+
       const result = await response.json() as { openEpoch?: { epochNumber: number; blockHash: string; signingWindowClosesAt: string } | null };
       if (result.openEpoch) {
         await AsyncStorage.setItem(OPEN_EPOCH_KEY, JSON.stringify(result.openEpoch));
+        // Notify: new epoch window opened
+        if (result.openEpoch.epochNumber !== prevEpochNumber) {
+          await sendNotifIfEnabled(
+            "notif_new_epoch",
+            "New Epoch Window",
+            `Epoch #${result.openEpoch.epochNumber} signing window is now open.`,
+          );
+        }
       } else {
         await AsyncStorage.removeItem(OPEN_EPOCH_KEY);
       }
@@ -127,6 +142,11 @@ TaskManager.defineTask(HEARTBEAT_TASK, async () => {
     await AsyncStorage.setItem(VALIDATOR_STATUS_KEY, "active");
     return BackgroundFetch.BackgroundFetchResult.NewData;
   } catch {
+    await sendNotifIfEnabled(
+      "notif_heartbeat_failed",
+      "Heartbeat Failed",
+      "Could not reach the MChain server. Check your connection.",
+    );
     return BackgroundFetch.BackgroundFetchResult.Failed;
   }
 });

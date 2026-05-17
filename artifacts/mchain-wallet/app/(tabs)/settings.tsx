@@ -9,6 +9,7 @@ import {
   Platform,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   TouchableOpacity,
@@ -30,6 +31,13 @@ import {
   setNodeUrl,
   testNodeConnection,
 } from "@/services/node";
+import {
+  type NotifKey,
+  getAllNotifPrefs,
+  getNotificationPermissionStatus,
+  requestNotificationPermission,
+  setNotifPref,
+} from "@/services/notificationPrefs";
 import { useColors } from "@/hooks/useColors";
 
 type LegalType = "terms" | "privacy" | null;
@@ -70,6 +78,37 @@ export default function SettingsScreen() {
   const [privateKey, setPrivateKey] = useState<string | null>(null);
   const [loadingKey, setLoadingKey] = useState(false);
   const [legalModal, setLegalModal] = useState<LegalType>(null);
+
+  // ── Notification prefs ───────────────────────────────────────────────────────
+  const [notifPerms, setNotifPerms] = useState<"granted" | "denied" | "undetermined">("undetermined");
+  const [notifPrefs, setNotifPrefs] = useState<Record<NotifKey, boolean>>({
+    notif_validator_paused: true,
+    notif_epoch_signed: false,
+    notif_new_epoch: false,
+    notif_heartbeat_failed: true,
+  });
+
+  useEffect(() => {
+    getAllNotifPrefs().then(setNotifPrefs);
+    getNotificationPermissionStatus().then(setNotifPerms);
+  }, []);
+
+  async function handleNotifToggle(key: NotifKey, value: boolean) {
+    if (value && notifPerms !== "granted") {
+      const granted = await requestNotificationPermission();
+      setNotifPerms(granted ? "granted" : "denied");
+      if (!granted) {
+        Alert.alert(
+          "Notifications Blocked",
+          "Enable notifications for MChain Wallet in your device Settings to receive alerts.",
+        );
+        return;
+      }
+    }
+    await setNotifPref(key, value);
+    setNotifPrefs((p) => ({ ...p, [key]: value }));
+    if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  }
 
   const [currentNode, setCurrentNode] = useState(() => getNodeUrl());
   const [editingNode, setEditingNode] = useState(false);
@@ -301,6 +340,14 @@ export default function SettingsScreen() {
     keyBox: { backgroundColor: "#0D0000", marginHorizontal: 16, marginBottom: 12, borderRadius: 12, padding: 14, borderWidth: 1, borderColor: "#EF444420" },
     keyText: { fontSize: 11, fontFamily: "Inter_400Regular", color: "#F87171", lineHeight: 20, letterSpacing: 0.5 },
 
+    // ── Notification toggle row ───────────────────────────────────────────────────
+    notifPermBanner: {
+      flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 10,
+      backgroundColor: "#F59E0B12", borderRadius: 12, padding: 12,
+      borderWidth: 1, borderColor: "#F59E0B30",
+    },
+    notifPermText: { flex: 1, fontSize: 12, fontFamily: "Inter_400Regular", color: "#F59E0B", lineHeight: 17 },
+
     // ── Version / footer ─────────────────────────────────────────────────────────
     footer: { alignItems: "center", paddingVertical: 8, gap: 6 },
     version: { fontSize: 12, fontFamily: "Inter_400Regular", color: colors.mutedForeground },
@@ -526,6 +573,65 @@ export default function SettingsScreen() {
                 <Icon name="chevron-forward" size={14} color={colors.mutedForeground} style={s.rowChevron} />
               </View>
             </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* ── Notifications ────────────────────────────────────── */}
+        <View style={s.section}>
+          <View style={s.sectionHeader}>
+            <View style={s.sectionIcon}><Icon name="notifications-outline" size={13} color={colors.primary} /></View>
+            <Text style={s.sectionLabel}>NOTIFICATIONS</Text>
+          </View>
+
+          {notifPerms === "denied" && (
+            <View style={s.notifPermBanner}>
+              <Icon name="warning-outline" size={14} color="#F59E0B" />
+              <Text style={s.notifPermText}>Notifications are blocked. Enable them in your device Settings to receive alerts.</Text>
+            </View>
+          )}
+
+          <View style={s.card}>
+            {([
+              {
+                key: "notif_validator_paused" as NotifKey,
+                icon: "pause-circle-outline",
+                label: "Validator Paused",
+                sub: "Alert when your validator goes offline too long",
+              },
+              {
+                key: "notif_epoch_signed" as NotifKey,
+                icon: "checkmark-circle-outline",
+                label: "Checkpoint Signed",
+                sub: "Confirm when an epoch signature is submitted",
+              },
+              {
+                key: "notif_new_epoch" as NotifKey,
+                icon: "time-outline",
+                label: "New Epoch Window",
+                sub: "Alert when a new signing window opens",
+              },
+              {
+                key: "notif_heartbeat_failed" as NotifKey,
+                icon: "wifi-outline",
+                label: "Heartbeat Failed",
+                sub: "Warn when the server can't be reached",
+              },
+            ] as const).map((item, idx, arr) => (
+              <View key={item.key} style={[s.row, idx === arr.length - 1 && s.rowLast]}>
+                <View style={s.rowIcon}><Icon name={item.icon} size={16} color={colors.mutedForeground} /></View>
+                <View style={s.rowBody}>
+                  <Text style={s.rowLabel}>{item.label}</Text>
+                  <Text style={s.rowSub}>{item.sub}</Text>
+                </View>
+                <Switch
+                  value={notifPrefs[item.key]}
+                  onValueChange={(v) => handleNotifToggle(item.key, v)}
+                  trackColor={{ false: colors.border, true: colors.primary + "80" }}
+                  thumbColor={notifPrefs[item.key] ? colors.primary : colors.mutedForeground}
+                  ios_backgroundColor={colors.border}
+                />
+              </View>
+            ))}
           </View>
         </View>
 
