@@ -396,7 +396,28 @@ export const api = {
       `/rewards?validatorAddress=${encodeURIComponent(validatorAddress)}&limit=${limit}`
     ),
 
-  getChainInfo: () => request<ChainInfo>("/chain/info"),
+  getChainInfo: async (): Promise<ChainInfo> => {
+    type RawChainInfo = {
+      chainId: number;
+      totalSupply: string;
+      latestBlock?: { height: number };
+    };
+    const [raw, gasPriceHex] = await Promise.all([
+      request<RawChainInfo>("/chain/info"),
+      rpcRequest<string>("eth_gasPrice", []).catch(() => "0x0"),
+    ]);
+    const weiValue = parseInt(gasPriceHex, 16);
+    const gweiValue = weiValue / 1e9;
+    const gasPrice = gweiValue % 1 === 0
+      ? `${gweiValue} Gwei`
+      : `${gweiValue.toFixed(2)} Gwei`;
+    return {
+      chainId: raw.chainId,
+      blockHeight: raw.latestBlock?.height ?? 0,
+      totalSupply: raw.totalSupply,
+      gasPrice,
+    };
+  },
 
   healthCheck: () => request<{ status: string }>("/healthz"),
 
