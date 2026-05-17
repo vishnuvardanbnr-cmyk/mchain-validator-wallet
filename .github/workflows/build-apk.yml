@@ -40,7 +40,7 @@ jobs:
           restore-keys: ${{ runner.os }}-pnpm-
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --no-frozen-lockfile --shamefully-hoist
 
       - name: Run Expo prebuild (generate native Android project)
         working-directory: artifacts/mchain-wallet
