@@ -77,13 +77,9 @@ export default function SettingsScreen() {
   const [testingNode, setTestingNode] = useState(false);
   const [nodeTestMs, setNodeTestMs] = useState<number | null>(null);
   const [nodeTestError, setNodeTestError] = useState<string | null>(null);
-
-  const FALLBACK_NODES = [
-    { label: "Primary", url: "https://api.mxc.org/api" },
-    { label: "Node 1", url: "https://5.189.144.115/api" },
-    { label: "Node 2", url: "https://62.169.31.67/api" },
-    { label: "Node 3", url: "https://217.76.51.75/api" },
-  ];
+  const [testingPrimary, setTestingPrimary] = useState(false);
+  const [primaryTestMs, setPrimaryTestMs] = useState<number | null>(null);
+  const [primaryTestError, setPrimaryTestError] = useState<string | null>(null);
 
   const { data: chainInfo } = useQuery({
     queryKey: ["chainInfo"],
@@ -116,6 +112,22 @@ export default function SettingsScreen() {
       if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     } finally {
       setTestingNode(false);
+    }
+  }
+
+  async function handleTestPrimary() {
+    setTestingPrimary(true);
+    setPrimaryTestMs(null);
+    setPrimaryTestError(null);
+    try {
+      const ms = await testNodeConnection(DEFAULT_NODE_URL);
+      setPrimaryTestMs(ms);
+      if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (err) {
+      setPrimaryTestError(err instanceof Error ? err.message : "Connection failed");
+      if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    } finally {
+      setTestingPrimary(false);
     }
   }
 
@@ -262,6 +274,11 @@ export default function SettingsScreen() {
     nodeStatusText: { fontSize: 11, fontFamily: "Inter_400Regular", color: colors.mutedForeground },
     customBadge: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6, backgroundColor: colors.primary + "15", borderWidth: 1, borderColor: colors.primary + "35" },
     customBadgeText: { fontSize: 9, fontFamily: "Inter_700Bold", color: colors.primary, letterSpacing: 0.6 },
+    officialBadge: { paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6, backgroundColor: "#10B98118", borderWidth: 1, borderColor: "#10B98135" },
+    officialBadgeText: { fontSize: 9, fontFamily: "Inter_700Bold", color: "#10B981", letterSpacing: 0.6 },
+    nodeLabel: { fontSize: 11, fontFamily: "Inter_600SemiBold", color: colors.mutedForeground, letterSpacing: 0.5, textTransform: "uppercase" },
+    nodeDivider: { height: 1, backgroundColor: colors.border, marginVertical: 14 },
+    nodeEmptyText: { fontSize: 13, fontFamily: "Inter_400Regular", color: colors.mutedForeground, marginBottom: 10 },
 
     // Danger
     dangerCard: { backgroundColor: "#0d0000", borderRadius: 14, borderWidth: 1, borderColor: "#EF444425", overflow: "hidden" },
@@ -349,54 +366,75 @@ export default function SettingsScreen() {
           </View>
           <View style={s.nodeCard}>
             <View style={s.nodeRow}>
+
+              {/* Primary Node — read-only */}
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                <Icon name="lock-closed-outline" size={12} color={colors.mutedForeground} />
+                <Text style={s.nodeLabel}>Primary Node</Text>
+                <View style={s.officialBadge}>
+                  <Text style={s.officialBadgeText}>OFFICIAL</Text>
+                </View>
+              </View>
+              <Text style={s.nodeUrl} numberOfLines={1}>{DEFAULT_NODE_URL}</Text>
+              {(primaryTestMs !== null || primaryTestError) && (
+                <View style={s.nodeStatusRow}>
+                  <View style={[s.nodeStatusDot, { backgroundColor: primaryTestError ? "#EF4444" : "#10B981" }]} />
+                  <Text style={s.nodeStatusText}>{primaryTestError ? primaryTestError : `Connected · ${primaryTestMs} ms`}</Text>
+                </View>
+              )}
+              <View style={[s.nodeActions, { marginTop: 10 }]}>
+                <TouchableOpacity style={s.nodeActionBtn} onPress={handleTestPrimary} disabled={testingPrimary} activeOpacity={0.75}>
+                  {testingPrimary ? <ActivityIndicator size="small" color={colors.primary} style={{ width: 13, height: 13 }} /> : <Icon name="wifi-outline" size={13} color={colors.primary} />}
+                  <Text style={s.nodeActionText}>Test</Text>
+                </TouchableOpacity>
+              </View>
+
+              <View style={s.nodeDivider} />
+
+              {/* Custom RPC — optional, starts empty */}
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                <Icon name="settings-outline" size={12} color={colors.mutedForeground} />
+                <Text style={s.nodeLabel}>Custom RPC</Text>
+              </View>
+
               {!editingNode ? (
                 <>
-                  <View style={s.nodeUrlRow}>
-                    <Text style={s.nodeUrl} numberOfLines={2}>{currentNode}</Text>
-                    {!isDefaultNode() && (
-                      <View style={s.customBadge}>
-                        <Text style={s.customBadgeText}>CUSTOM</Text>
+                  {!isDefaultNode() ? (
+                    <>
+                      <Text style={s.nodeUrl} numberOfLines={1}>{currentNode}</Text>
+                      {(nodeTestMs !== null || nodeTestError) && (
+                        <View style={s.nodeStatusRow}>
+                          <View style={[s.nodeStatusDot, { backgroundColor: nodeTestError ? "#EF4444" : "#10B981" }]} />
+                          <Text style={s.nodeStatusText}>{nodeTestError ? nodeTestError : `Connected · ${nodeTestMs} ms`}</Text>
+                        </View>
+                      )}
+                      <View style={[s.nodeActions, { marginTop: 10 }]}>
+                        <TouchableOpacity style={s.nodeActionBtn} onPress={() => { setNodeInput(currentNode); setEditingNode(true); setNodeTestMs(null); setNodeTestError(null); }} activeOpacity={0.75}>
+                          <Icon name="pencil-outline" size={13} color={colors.primary} />
+                          <Text style={s.nodeActionText}>Edit</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={s.nodeActionBtn} onPress={() => handleTestNode(currentNode)} disabled={testingNode} activeOpacity={0.75}>
+                          {testingNode ? <ActivityIndicator size="small" color={colors.primary} style={{ width: 13, height: 13 }} /> : <Icon name="wifi-outline" size={13} color={colors.primary} />}
+                          <Text style={s.nodeActionText}>Test</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={s.nodeResetBtn} onPress={handleResetNode} activeOpacity={0.75}>
+                          <Icon name="trash-outline" size={13} color={colors.mutedForeground} />
+                          <Text style={s.nodeResetText}>Remove</Text>
+                        </TouchableOpacity>
                       </View>
-                    )}
-                  </View>
-                  {(nodeTestMs !== null || nodeTestError) && (
-                    <View style={s.nodeStatusRow}>
-                      <View style={[s.nodeStatusDot, { backgroundColor: nodeTestError ? "#EF4444" : "#10B981" }]} />
-                      <Text style={s.nodeStatusText}>
-                        {nodeTestError ? nodeTestError : `Connected · ${nodeTestMs} ms`}
-                      </Text>
-                    </View>
-                  )}
-                  <View style={[s.nodeActions, { marginTop: 12 }]}>
-                    <TouchableOpacity style={s.nodeActionBtn} onPress={() => { setNodeInput(currentNode); setEditingNode(true); setNodeTestMs(null); setNodeTestError(null); }} activeOpacity={0.75}>
-                      <Icon name="pencil-outline" size={13} color={colors.primary} />
-                      <Text style={s.nodeActionText}>Change</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={s.nodeActionBtn} onPress={() => handleTestNode(currentNode)} disabled={testingNode} activeOpacity={0.75}>
-                      {testingNode ? <ActivityIndicator size="small" color={colors.primary} style={{ width: 13, height: 13 }} /> : <Icon name="wifi-outline" size={13} color={colors.primary} />}
-                      <Text style={s.nodeActionText}>Test</Text>
-                    </TouchableOpacity>
-                    {!isDefaultNode() && (
-                      <TouchableOpacity style={s.nodeResetBtn} onPress={handleResetNode} activeOpacity={0.75}>
-                        <Icon name="refresh-outline" size={13} color={colors.mutedForeground} />
-                        <Text style={s.nodeResetText}>Reset</Text>
+                    </>
+                  ) : (
+                    <>
+                      <Text style={s.nodeEmptyText}>Not configured</Text>
+                      <TouchableOpacity style={[s.nodeActionBtn, { alignSelf: "flex-start" }]} onPress={() => { setNodeInput(""); setEditingNode(true); setNodeTestMs(null); setNodeTestError(null); }} activeOpacity={0.75}>
+                        <Icon name="add-circle-outline" size={13} color={colors.primary} />
+                        <Text style={s.nodeActionText}>Add custom RPC</Text>
                       </TouchableOpacity>
-                    )}
-                  </View>
+                    </>
+                  )}
                 </>
               ) : (
                 <>
-                  <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
-                    {FALLBACK_NODES.map((n) => {
-                      const isActive = nodeInput.trim().replace(/\/$/, "") === n.url;
-                      return (
-                        <TouchableOpacity key={n.url} onPress={() => { setNodeInput(n.url); setNodeTestMs(null); setNodeTestError(null); }}
-                          style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, borderWidth: 1, borderColor: isActive ? colors.primary : colors.border, backgroundColor: isActive ? colors.primary + "18" : colors.secondary }}>
-                          <Text style={{ fontSize: 11, fontFamily: "Inter_600SemiBold", color: isActive ? colors.primary : colors.mutedForeground }}>{n.label}</Text>
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </View>
                   <TextInput
                     style={s.nodeInput}
                     value={nodeInput}
@@ -427,6 +465,7 @@ export default function SettingsScreen() {
                   </View>
                 </>
               )}
+
             </View>
           </View>
         </View>
