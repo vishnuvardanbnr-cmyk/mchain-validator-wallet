@@ -4,11 +4,11 @@ import { sha256 } from "@noble/hashes/sha256";
 import { cbc } from "@noble/ciphers/aes.js";
 
 // ── NFC payload format written to card ────────────────────────────────────────
-// JSON: { v:1, enc:"<hex>", iv:"<hex>", addr:"<mxcAddress>", pub:"<publicKey>", label:"<label>" }
-// enc  = AES-256-CBC(privateKey, key=PBKDF2-SHA256(pin, 100k iters, 32 bytes), iv=random 16 bytes)
+// JSON: { v:1, enc:"<hex>", iv:"<hex>", addr:"<mxcAddress>", label:"<label>" }
+// enc  = AES-256-CBC(privateKey, key=PBKDF2-SHA256(pin, 50k iters, 32 bytes), iv=random 16 bytes)
 // iv   = 16-byte random IV, hex-encoded
 // addr = mxcAddress (plaintext, for display without decryption)
-// pub  = publicKey (plaintext)
+// pub  = removed in v1.1 to reduce payload size (was redundant — derivable after decryption)
 //
 // NOTE: Uses @noble/ciphers + @noble/hashes instead of Web Crypto API
 // because crypto.subtle is not available in React Native's Hermes engine.
@@ -18,7 +18,8 @@ export interface NfcWalletPayload {
   enc: string;
   iv: string;
   addr: string;
-  pub: string;
+  /** @deprecated pub was removed from written payload to save card space; may still be present on older cards */
+  pub?: string;
   label: string;
 }
 
@@ -140,36 +141,63 @@ export async function writePayloadToNfc(payload: NfcWalletPayload): Promise<void
   const { Ndef } = mod;
   const NfcManager = mod.default;
   try {
-    const json = JSON.stringify(payload);
+    // Strip pub before encoding — it's redundant and wastes ~130 bytes on the card
+    const { pub: _pub, ...writablePayload } = payload;
+    const json = JSON.stringify(writablePayload);
     const bytes = Ndef.encodeMessage([Ndef.textRecord(json)]);
     if (!bytes || bytes.length === 0) {
-      throw new Error("Failed to encode payload — card may be too small or incompatible.");
+      throw new Error("Failed to encode payload — card may be incompatible.");
     }
+
+    // ── Capacity check ────────────────────────────────────────────────────────
+    // Read the tag now (NFC session is already open from waitForNfcCard) to get
+    // its maxSize. Fail fast with a clear message instead of hanging for 12s.
+    // NTAG213 = 144 bytes, NTAG215 = 504 bytes, NTAG216 = 888 bytes.
+    // Our payload is ~210 bytes (post-pub removal), so NTAG213 won't work.
+    try {
+      const tag = await NfcManager.getTag();
+      const maxSize: number | undefined = (tag as Record<string, unknown>)?.maxSize as number | undefined
+        ?? (tag as Record<string, unknown>)?.ndefMessage as unknown as undefined;
+      if (typeof maxSize === "number" && maxSize > 0 && bytes.length > maxSize) {
+        throw new Error(
+          `Card too small (${maxSize} bytes available, ${bytes.length} bytes needed). ` +
+          `Use an NTAG215 or NTAG216 card.`
+        );
+      }
+    } catch (tagErr) {
+      // If it's our own capacity error, re-throw it
+      if (tagErr instanceof Error && tagErr.message.includes("Card too small")) throw tagErr;
+      // Otherwise getTag() just failed (some phones don't expose maxSize) — continue anyway
+    }
+
     // Helper to classify a raw NFC write error into a user-friendly message
     function classifyWriteError(err: unknown): Error {
       const msg = err instanceof Error ? err.message : String(err);
       const m = msg.toLowerCase();
       if (m.includes("readonly") || m.includes("read only"))
         return new Error("This card is read-only and cannot be written to.");
-      if (m.includes("size") || m.includes("capacity") || m.includes("overflow"))
-        return new Error("Card is too small. Use an NTAG215 or larger card.");
+      if (m.includes("size") || m.includes("capacity") || m.includes("overflow") || m.includes("too large"))
+        return new Error("Card is too small. Use an NTAG215 or NTAG216 card (504+ bytes).");
       if (m.includes("ioexception") || m.includes("tag was lost") || m.includes("lost"))
-        return new Error("Card lost during write — keep it pressed firmly and still against the back of your phone, then try again.");
+        return new Error("Card lost during write — keep it pressed firmly against the back of your phone and don't move it.");
       return new Error(`Write failed: ${msg}`);
     }
 
     await new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => {
-        reject(new Error("Write timed out — card moved out of range. Hold it flat and still, then try again."));
-      }, 12_000);
+        // 8s timeout — if we hit this, the card is almost certainly too small (silent overflow)
+        reject(new Error(
+          "Write timed out. Your card may be too small for this wallet — use an NTAG215 or NTAG216 card. " +
+          "If your card is NTAG215/216, press it firmly and hold it still while writing."
+        ));
+      }, 8_000);
 
       // First attempt: standard NDEF write
       NfcManager.ndefHandler.writeNdefMessage(bytes)
         .then(() => { clearTimeout(timer); resolve(); })
         .catch(() => {
           // Second attempt: format + write in one step.
-          // Some cards that show "empty tag" on Android are technically detected
-          // as NDEF but need an explicit NDEF format pass before their first write.
+          // Some blank cards are NDEF-detectable but not yet NDEF-formatted.
           NfcManager.ndefHandler.format(bytes)
             .then(() => { clearTimeout(timer); resolve(); })
             .catch((formatErr: unknown) => {

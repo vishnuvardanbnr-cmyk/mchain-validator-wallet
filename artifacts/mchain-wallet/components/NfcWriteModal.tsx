@@ -254,7 +254,7 @@ export function NfcWriteModal({ visible, privateKey, mxcAddress, publicKey, labe
 
       // Both done: card is in field and payload is ready — write immediately
       crossfadeTo("writing");
-      const payload: NfcWalletPayload = { v: 1, enc, iv, addr: mxcAddress, pub: publicKey, label };
+      const payload: NfcWalletPayload = { v: 1, enc, iv, addr: mxcAddress, label };
       await writePayloadToNfc(payload);
 
       if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
