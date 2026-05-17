@@ -153,6 +153,15 @@ export async function fetchTokenBalance(
   return (Number(raw) / divisor).toLocaleString("en-US", { maximumFractionDigits: 6 });
 }
 
+/** Returns the raw token balance as a bigint (wei-equivalent smallest unit). */
+export async function fetchTokenBalanceRaw(
+  contractAddress: string,
+  userEthAddress: string
+): Promise<bigint> {
+  const result = await api.rpcCall(contractAddress, encodeBalanceOfCall(userEthAddress));
+  return decodeAbiUint256(result.result ?? "0x");
+}
+
 // ─── Per-wallet storage helpers ───────────────────────────────────────────────
 
 /**
