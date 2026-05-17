@@ -202,99 +202,114 @@ export default function SettingsScreen() {
     container: { flex: 1, backgroundColor: colors.background },
     scroll: { paddingBottom: Platform.OS === "web" ? 34 : insets.bottom + 32 },
 
-    // Header
+    // ── Profile header ──────────────────────────────────────────────────────────
     header: {
       paddingTop: insets.top + (Platform.OS === "web" ? 67 : 16),
       paddingHorizontal: 20,
-      paddingBottom: 24,
+      paddingBottom: 28,
     },
-    headerTop: { flexDirection: "row", alignItems: "center", marginBottom: 4 },
-    avatar: {
-      width: 48, height: 48, borderRadius: 24,
-      backgroundColor: colors.primary + "20",
-      borderWidth: 1.5, borderColor: colors.primary + "50",
-      alignItems: "center", justifyContent: "center", marginRight: 14,
+    headerLabel: { fontSize: 26, fontFamily: "Inter_700Bold", color: colors.foreground, marginBottom: 20, letterSpacing: -0.3 },
+    profileCard: {
+      backgroundColor: colors.card, borderRadius: 20, borderWidth: 1, borderColor: colors.border,
+      padding: 18, flexDirection: "row", alignItems: "center", gap: 16,
     },
-    avatarText: { fontSize: 18, fontFamily: "Inter_700Bold", color: colors.primary },
-    headerInfo: { flex: 1 },
-    headerTitle: { fontSize: 20, fontFamily: "Inter_700Bold", color: colors.foreground },
-    headerSub: { fontSize: 12, fontFamily: "Inter_400Regular", color: colors.mutedForeground, marginTop: 1 },
+    avatarRing: {
+      width: 60, height: 60, borderRadius: 30,
+      borderWidth: 2, borderColor: colors.primary + "60",
+      alignItems: "center", justifyContent: "center",
+      backgroundColor: colors.primary + "18",
+    },
+    avatarText: { fontSize: 22, fontFamily: "Inter_700Bold", color: colors.primary },
+    profileInfo: { flex: 1 },
+    profileName: { fontSize: 18, fontFamily: "Inter_700Bold", color: colors.foreground, marginBottom: 3 },
+    profileAddr: { fontSize: 12, fontFamily: "Inter_400Regular", color: colors.mutedForeground },
+    profileBadge: { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: "#10B98112", borderRadius: 20, paddingHorizontal: 10, paddingVertical: 5, borderWidth: 1, borderColor: "#10B98130" },
+    profileBadgeDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: "#10B981" },
+    profileBadgeText: { fontSize: 10, fontFamily: "Inter_600SemiBold", color: "#10B981" },
 
-    // Sections
+    // ── Sections ────────────────────────────────────────────────────────────────
     section: { marginHorizontal: 20, marginBottom: 24 },
-    sectionHeader: { flexDirection: "row", alignItems: "center", gap: 7, marginBottom: 10 },
-    sectionIcon: { width: 24, height: 24, borderRadius: 7, backgroundColor: colors.primary + "18", alignItems: "center", justifyContent: "center" },
-    sectionLabel: { fontSize: 11, fontFamily: "Inter_700Bold", color: colors.mutedForeground, letterSpacing: 1.2 },
+    sectionHeader: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12 },
+    sectionIcon: { width: 26, height: 26, borderRadius: 8, backgroundColor: colors.primary + "18", alignItems: "center", justifyContent: "center" },
+    sectionLabel: { fontSize: 11, fontFamily: "Inter_700Bold", color: colors.mutedForeground, letterSpacing: 1.4 },
 
-    // Card
-    card: { backgroundColor: colors.card, borderRadius: 14, borderWidth: 1, borderColor: colors.border, overflow: "hidden" },
-
-    // Row
-    row: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 14, gap: 12, borderBottomWidth: 1, borderBottomColor: colors.border },
+    // ── Card / Row ───────────────────────────────────────────────────────────────
+    card: { backgroundColor: colors.card, borderRadius: 16, borderWidth: 1, borderColor: colors.border, overflow: "hidden" },
+    row: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 15, gap: 14, borderBottomWidth: 1, borderBottomColor: colors.border },
     rowLast: { borderBottomWidth: 0 },
-    rowIcon: { width: 32, height: 32, borderRadius: 10, backgroundColor: colors.secondary, alignItems: "center", justifyContent: "center" },
+    rowIcon: { width: 34, height: 34, borderRadius: 11, backgroundColor: colors.primary + "12", alignItems: "center", justifyContent: "center" },
     rowBody: { flex: 1 },
     rowLabel: { fontSize: 14, fontFamily: "Inter_500Medium", color: colors.foreground },
-    rowSub: { fontSize: 11, fontFamily: "Inter_400Regular", color: colors.mutedForeground, marginTop: 1 },
-    rowRight: { flexDirection: "row", alignItems: "center", gap: 4 },
-    rowValue: { fontSize: 12, fontFamily: "Inter_400Regular", color: colors.mutedForeground },
-    rowChevron: { opacity: 0.5 },
+    rowSub: { fontSize: 11, fontFamily: "Inter_400Regular", color: colors.mutedForeground, marginTop: 2 },
+    rowRight: { flexDirection: "row", alignItems: "center", gap: 6 },
+    rowValue: { fontSize: 12, fontFamily: "Inter_500Medium", color: colors.mutedForeground },
+    rowChevron: { opacity: 0.45 },
 
-    // Moniker
+    // ── Chain stats grid ─────────────────────────────────────────────────────────
+    chainGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
+    chainStat: { flex: 1, minWidth: "44%", backgroundColor: colors.card, borderRadius: 14, borderWidth: 1, borderColor: colors.border, padding: 14 },
+    chainStatLabel: { fontSize: 10, fontFamily: "Inter_600SemiBold", color: colors.mutedForeground, letterSpacing: 1.2, marginBottom: 6 },
+    chainStatValue: { fontSize: 16, fontFamily: "Inter_700Bold", color: colors.foreground },
+    chainStatSub: { fontSize: 11, fontFamily: "Inter_400Regular", color: colors.mutedForeground, marginTop: 2 },
+
+    // ── Moniker ──────────────────────────────────────────────────────────────────
     monikerInput: {
       flex: 1, fontSize: 15, fontFamily: "Inter_500Medium", color: colors.foreground,
-      backgroundColor: colors.input, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8,
-      borderWidth: 1, borderColor: colors.primary, marginRight: 8,
+      backgroundColor: colors.background, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8,
+      borderWidth: 1.5, borderColor: colors.primary + "70", marginRight: 8,
     },
 
-    // Node
-    nodeCard: { backgroundColor: colors.card, borderRadius: 14, borderWidth: 1, borderColor: colors.border, overflow: "hidden" },
+    // ── Node ─────────────────────────────────────────────────────────────────────
+    nodeCard: { backgroundColor: colors.card, borderRadius: 16, borderWidth: 1, borderColor: colors.border, overflow: "hidden" },
     nodeRow: { padding: 16 },
     nodeUrlRow: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 8 },
     nodeUrl: { flex: 1, fontSize: 12, fontFamily: "Inter_400Regular", color: colors.foreground },
     nodeActions: { flexDirection: "row", gap: 8 },
-    nodeActionBtn: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 8, backgroundColor: colors.primary + "15", borderWidth: 1, borderColor: colors.primary + "35" },
+    nodeActionBtn: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, backgroundColor: colors.primary + "12", borderWidth: 1, borderColor: colors.primary + "30" },
     nodeActionText: { fontSize: 12, fontFamily: "Inter_600SemiBold", color: colors.primary },
-    nodeResetBtn: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 10, paddingVertical: 7, borderRadius: 8, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border },
+    nodeResetBtn: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 10, paddingVertical: 8, borderRadius: 10, backgroundColor: colors.background, borderWidth: 1, borderColor: colors.border },
     nodeResetText: { fontSize: 12, fontFamily: "Inter_600SemiBold", color: colors.mutedForeground },
     nodeInput: {
-      backgroundColor: colors.input, borderRadius: 10, borderWidth: 1.5, borderColor: colors.primary + "60",
-      paddingHorizontal: 12, paddingVertical: 10, fontSize: 12, fontFamily: "Inter_400Regular",
+      backgroundColor: colors.background, borderRadius: 12, borderWidth: 1.5, borderColor: colors.primary + "60",
+      paddingHorizontal: 14, paddingVertical: 12, fontSize: 13, fontFamily: "Inter_400Regular",
       color: colors.foreground, marginBottom: 10,
     },
     nodeEditActions: { flexDirection: "row", gap: 8 },
-    nodeSaveBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 10, borderRadius: 10, backgroundColor: colors.primary },
-    nodeSaveBtnText: { fontSize: 13, fontFamily: "Inter_600SemiBold", color: "#FFFFFF" },
-    nodeTestBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 10, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border },
+    nodeSaveBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 11, borderRadius: 12, backgroundColor: colors.primary },
+    nodeSaveBtnText: { fontSize: 13, fontFamily: "Inter_700Bold", color: "#FFFFFF" },
+    nodeTestBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingHorizontal: 14, paddingVertical: 11, borderRadius: 12, backgroundColor: colors.background, borderWidth: 1, borderColor: colors.border },
     nodeTestBtnText: { fontSize: 13, fontFamily: "Inter_600SemiBold", color: colors.foreground },
-    nodeCancelBtn: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 10 },
+    nodeCancelBtn: { paddingHorizontal: 14, paddingVertical: 11, borderRadius: 12 },
     nodeCancelText: { fontSize: 13, fontFamily: "Inter_500Medium", color: colors.mutedForeground },
-    nodeStatusRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 6 },
+    nodeStatusRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 8 },
     nodeStatusDot: { width: 7, height: 7, borderRadius: 4 },
     nodeStatusText: { fontSize: 11, fontFamily: "Inter_400Regular", color: colors.mutedForeground },
     customBadge: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6, backgroundColor: colors.primary + "15", borderWidth: 1, borderColor: colors.primary + "35" },
     customBadgeText: { fontSize: 9, fontFamily: "Inter_700Bold", color: colors.primary, letterSpacing: 0.6 },
-    officialBadge: { paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6, backgroundColor: "#10B98118", borderWidth: 1, borderColor: "#10B98135" },
+    officialBadge: { paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6, backgroundColor: "#10B98115", borderWidth: 1, borderColor: "#10B98135" },
     officialBadgeText: { fontSize: 9, fontFamily: "Inter_700Bold", color: "#10B981", letterSpacing: 0.6 },
     nodeLabel: { fontSize: 11, fontFamily: "Inter_600SemiBold", color: colors.mutedForeground, letterSpacing: 0.5, textTransform: "uppercase" },
     nodeDivider: { height: 1, backgroundColor: colors.border, marginVertical: 14 },
     nodeEmptyText: { fontSize: 13, fontFamily: "Inter_400Regular", color: colors.mutedForeground, marginBottom: 10 },
 
-    // Danger
-    dangerCard: { backgroundColor: "#0d0000", borderRadius: 14, borderWidth: 1, borderColor: "#EF444425", overflow: "hidden" },
-    dangerRow: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 14, gap: 12, borderBottomWidth: 1, borderBottomColor: "#EF444420" },
+    // ── Danger zone ──────────────────────────────────────────────────────────────
+    dangerCard: { backgroundColor: "#0A0000", borderRadius: 16, borderWidth: 1, borderColor: "#EF444430", overflow: "hidden" },
+    dangerRow: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 15, gap: 14, borderBottomWidth: 1, borderBottomColor: "#EF444418" },
     dangerRowLast: { borderBottomWidth: 0 },
-    dangerIcon: { width: 32, height: 32, borderRadius: 10, backgroundColor: "#EF444415", alignItems: "center", justifyContent: "center" },
+    dangerIcon: { width: 34, height: 34, borderRadius: 11, backgroundColor: "#EF444415", alignItems: "center", justifyContent: "center" },
     dangerText: { fontSize: 14, fontFamily: "Inter_500Medium", color: "#F87171" },
-    keyBox: { backgroundColor: colors.secondary, marginHorizontal: 16, marginBottom: 12, borderRadius: 10, padding: 12, borderWidth: 1, borderColor: colors.border },
-    keyText: { fontSize: 11, fontFamily: "Inter_400Regular", color: colors.mutedForeground, lineHeight: 18, letterSpacing: 0.5 },
+    keyBox: { backgroundColor: "#0D0000", marginHorizontal: 16, marginBottom: 12, borderRadius: 12, padding: 14, borderWidth: 1, borderColor: "#EF444420" },
+    keyText: { fontSize: 11, fontFamily: "Inter_400Regular", color: "#F87171", lineHeight: 20, letterSpacing: 0.5 },
 
-    // Version
-    version: { fontSize: 12, fontFamily: "Inter_400Regular", color: colors.mutedForeground, textAlign: "center" },
+    // ── Version / footer ─────────────────────────────────────────────────────────
+    footer: { alignItems: "center", paddingVertical: 8, gap: 6 },
+    version: { fontSize: 12, fontFamily: "Inter_400Regular", color: colors.mutedForeground },
+    versionBadge: { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: colors.card, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 5, borderWidth: 1, borderColor: colors.border },
+    versionBadgeText: { fontSize: 11, fontFamily: "Inter_600SemiBold", color: colors.mutedForeground },
 
-    // Legal modal
-    modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "flex-end" },
-    modalSheet: { backgroundColor: colors.card, borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: "85%", overflow: "hidden" },
+    // ── Legal modal ──────────────────────────────────────────────────────────────
+    modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.7)", justifyContent: "flex-end" },
+    modalSheet: { backgroundColor: colors.card, borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: "85%", overflow: "hidden" },
     modalHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: colors.border },
     modalTitle: { fontSize: 17, fontFamily: "Inter_700Bold", color: colors.foreground },
     modalBody: { padding: 20 },
@@ -306,17 +321,22 @@ export default function SettingsScreen() {
 
   return (
     <View style={s.container}>
-      <ScrollView ref={scrollRef} contentContainerStyle={s.scroll}>
+      <ScrollView ref={scrollRef} contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
 
         {/* ── Header ──────────────────────────────────────────── */}
         <View style={s.header}>
-          <View style={s.headerTop}>
-            <View style={s.avatar}>
+          <Text style={s.headerLabel}>Settings</Text>
+          <View style={s.profileCard}>
+            <View style={s.avatarRing}>
               <Text style={s.avatarText}>{initials}</Text>
             </View>
-            <View style={s.headerInfo}>
-              <Text style={s.headerTitle}>{moniker || "My Wallet"}</Text>
-              <Text style={s.headerSub}>{mxcAddress ? shortenAddress(mxcAddress, 12) : "No wallet"}</Text>
+            <View style={s.profileInfo}>
+              <Text style={s.profileName}>{moniker || "My Wallet"}</Text>
+              <Text style={s.profileAddr}>{mxcAddress ? shortenAddress(mxcAddress, 16) : "No wallet"}</Text>
+            </View>
+            <View style={s.profileBadge}>
+              <View style={s.profileBadgeDot} />
+              <Text style={s.profileBadgeText}>Active</Text>
             </View>
           </View>
         </View>
@@ -552,17 +572,17 @@ export default function SettingsScreen() {
             <View style={s.sectionIcon}><Icon name="git-branch-outline" size={13} color={colors.primary} /></View>
             <Text style={s.sectionLabel}>CHAIN</Text>
           </View>
-          <View style={s.card}>
+          <View style={s.chainGrid}>
             {[
-              { label: "Network", value: "MChain", icon: "globe-outline" },
-              { label: "Chain ID", value: String(chainInfo?.chainId ?? "1888"), icon: "finger-print-outline" },
-              { label: "Block Height", value: chainInfo?.blockHeight?.toLocaleString() ?? "—", icon: "cube-outline" },
-              { label: "Gas Price", value: String(chainInfo?.gasPrice ?? "—"), icon: "flash-outline" },
-            ].map((item, i, arr) => (
-              <View key={item.label} style={[s.row, i === arr.length - 1 ? s.rowLast : undefined]}>
-                <View style={s.rowIcon}><Icon name={item.icon as never} size={15} color={colors.mutedForeground} /></View>
-                <View style={s.rowBody}><Text style={s.rowLabel}>{item.label}</Text></View>
-                <Text style={s.rowValue}>{item.value}</Text>
+              { label: "NETWORK", value: "MChain", sub: "Mainnet", icon: "globe-outline" },
+              { label: "CHAIN ID", value: String(chainInfo?.chainId ?? "1888"), sub: "EVM Compatible", icon: "finger-print-outline" },
+              { label: "BLOCK HEIGHT", value: chainInfo?.blockHeight?.toLocaleString() ?? "—", sub: "Latest", icon: "cube-outline" },
+              { label: "GAS PRICE", value: String(chainInfo?.gasPrice ?? "—"), sub: "Gwei", icon: "flash-outline" },
+            ].map((item) => (
+              <View key={item.label} style={s.chainStat}>
+                <Text style={s.chainStatLabel}>{item.label}</Text>
+                <Text style={s.chainStatValue}>{item.value}</Text>
+                <Text style={s.chainStatSub}>{item.sub}</Text>
               </View>
             ))}
           </View>
@@ -616,8 +636,12 @@ export default function SettingsScreen() {
         </View>
 
         {/* ── Version ──────────────────────────────────────────── */}
-        <View style={[s.section, { alignItems: "center" }]}>
-          <Text style={s.version}>MChain Validator Wallet v1.0.0</Text>
+        <View style={[s.section, s.footer]}>
+          <View style={s.versionBadge}>
+            <Icon name="cube-outline" size={11} color={colors.mutedForeground} />
+            <Text style={s.versionBadgeText}>v1.0.0</Text>
+          </View>
+          <Text style={s.version}>MChain Validator Wallet</Text>
         </View>
 
       </ScrollView>

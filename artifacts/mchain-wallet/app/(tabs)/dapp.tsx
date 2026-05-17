@@ -574,22 +574,35 @@ export default function DAppScreen() {
   // ── Styles ────────────────────────────────────────────────────────────────────
   const s = StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.background },
-    header: { paddingTop: insets.top + (Platform.OS === "web" ? 67 : 16), paddingHorizontal: 20, paddingBottom: 16 },
-    title: { fontSize: 24, fontFamily: "Inter_700Bold", color: colors.foreground, marginBottom: 4 },
+
+    // Home screen
+    homeScroll: { paddingBottom: 40 + insets.bottom },
+    header: { paddingTop: insets.top + (Platform.OS === "web" ? 67 : 20), paddingHorizontal: 20, paddingBottom: 20 },
+    headerRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 6 },
+    title: { fontSize: 26, fontFamily: "Inter_700Bold", color: colors.foreground, letterSpacing: -0.3 },
     subtitle: { fontSize: 13, fontFamily: "Inter_400Regular", color: colors.mutedForeground },
-    searchBar: { flexDirection: "row", alignItems: "center", marginHorizontal: 20, marginBottom: 24, backgroundColor: colors.card, borderRadius: 14, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 14, gap: 8 },
-    input: { flex: 1, paddingVertical: 13, fontSize: 14, fontFamily: "Inter_400Regular", color: colors.foreground },
-    goBtn: { width: 32, height: 32, borderRadius: 10, overflow: "hidden" as const },
-    goBtnGrad: { width: 32, height: 32, alignItems: "center" as const, justifyContent: "center" as const },
-    sectionLabel: { fontSize: 11, fontFamily: "Inter_600SemiBold", color: colors.mutedForeground, letterSpacing: 1.5, marginHorizontal: 20, marginBottom: 12 },
-    grid: { flexDirection: "row", flexWrap: "wrap", paddingHorizontal: 14, gap: 10, paddingBottom: 40 + insets.bottom },
-    card: { width: "47%", backgroundColor: colors.card, borderRadius: 16, borderWidth: 1, borderColor: colors.border, padding: 16, gap: 10 },
-    cardIconWrap: { width: 44, height: 44, borderRadius: 14, alignItems: "center" as const, justifyContent: "center" as const },
+    networkPill: { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: "#10B98112", borderRadius: 20, paddingHorizontal: 10, paddingVertical: 5, borderWidth: 1, borderColor: "#10B98130" },
+    networkDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: "#10B981" },
+    networkText: { fontSize: 10, fontFamily: "Inter_600SemiBold", color: "#10B981" },
+
+    searchWrap: { marginHorizontal: 20, marginBottom: 24 },
+    searchBar: { flexDirection: "row", alignItems: "center", backgroundColor: colors.card, borderRadius: 16, borderWidth: 1.5, borderColor: colors.border, paddingHorizontal: 16, gap: 10, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.12, shadowRadius: 8, elevation: 3 },
+    input: { flex: 1, paddingVertical: 15, fontSize: 14, fontFamily: "Inter_400Regular", color: colors.foreground },
+    goBtn: { width: 36, height: 36, borderRadius: 12, overflow: "hidden" as const },
+    goBtnGrad: { width: 36, height: 36, alignItems: "center" as const, justifyContent: "center" as const },
+
+    sectionRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginHorizontal: 20, marginBottom: 12 },
+    sectionLabel: { fontSize: 11, fontFamily: "Inter_700Bold", color: colors.mutedForeground, letterSpacing: 1.5 },
+    sectionAction: { fontSize: 12, fontFamily: "Inter_500Medium", color: colors.mutedForeground },
+
+    grid: { flexDirection: "row", flexWrap: "wrap", paddingHorizontal: 14, gap: 10, marginBottom: 8 },
+    card: { width: "47%", backgroundColor: colors.card, borderRadius: 18, borderWidth: 1, borderColor: colors.border, padding: 16, gap: 8 },
+    cardIconWrap: { width: 46, height: 46, borderRadius: 14, alignItems: "center" as const, justifyContent: "center" as const },
     cardName: { fontSize: 14, fontFamily: "Inter_700Bold", color: colors.foreground },
     cardDesc: { fontSize: 11, fontFamily: "Inter_400Regular", color: colors.mutedForeground, lineHeight: 16 },
-    openRow: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 4 },
+    openRow: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 2 },
     openText: { fontSize: 11, fontFamily: "Inter_600SemiBold" },
-    comingSoonBadge: { flexDirection: "row" as const, alignItems: "center" as const, gap: 4, marginTop: 4 },
+    comingSoonBadge: { flexDirection: "row" as const, alignItems: "center" as const, gap: 4, marginTop: 2 },
     comingSoonText: { fontSize: 10, fontFamily: "Inter_600SemiBold", color: "#F59E0B" },
 
     // Browser chrome
@@ -640,18 +653,18 @@ export default function DAppScreen() {
     dangerText: { fontSize: 15, fontFamily: "Inter_700Bold", color: "#FFF" },
 
     // History
-    historySection: { marginBottom: 8 },
+    historySection: { marginBottom: 20 },
     historySectionHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginHorizontal: 20, marginBottom: 10 },
-    historyItem: { flexDirection: "row", alignItems: "center", marginHorizontal: 14, marginBottom: 8, backgroundColor: colors.card, borderRadius: 14, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 14, paddingVertical: 11, gap: 10 },
-    historyIconWrap: { width: 32, height: 32, borderRadius: 10, backgroundColor: colors.background, alignItems: "center", justifyContent: "center" },
+    historyItem: { flexDirection: "row", alignItems: "center", marginHorizontal: 14, marginBottom: 8, backgroundColor: colors.card, borderRadius: 14, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 14, paddingVertical: 12, gap: 12 },
+    historyIconWrap: { width: 36, height: 36, borderRadius: 11, backgroundColor: colors.primary + "10", borderWidth: 1, borderColor: colors.primary + "25", alignItems: "center", justifyContent: "center" },
     historyTextWrap: { flex: 1 },
-    historyTitle: { fontSize: 13, fontFamily: "Inter_600SemiBold", color: colors.foreground, marginBottom: 1 },
+    historyTitle: { fontSize: 13, fontFamily: "Inter_600SemiBold", color: colors.foreground, marginBottom: 2 },
     historyUrl: { fontSize: 11, fontFamily: "Inter_400Regular", color: colors.mutedForeground },
     historyDelete: { width: 28, height: 28, borderRadius: 8, alignItems: "center", justifyContent: "center" },
     showMoreRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 4, marginVertical: 4, marginBottom: 16 },
     showMoreText: { fontSize: 12, fontFamily: "Inter_600SemiBold", color: colors.primary },
-    clearHistoryBtn: { paddingHorizontal: 8, paddingVertical: 2 },
-    clearHistoryText: { fontSize: 11, fontFamily: "Inter_400Regular", color: colors.mutedForeground },
+    clearHistoryBtn: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border },
+    clearHistoryText: { fontSize: 11, fontFamily: "Inter_500Medium", color: colors.mutedForeground },
   });
 
   // ── In-app browser ────────────────────────────────────────────────────────────
@@ -855,41 +868,52 @@ export default function DAppScreen() {
   // ── Home / dApp grid ──────────────────────────────────────────────────────────
   return (
     <View style={s.container}>
-      <ScrollView ref={dappScrollRef} keyboardShouldPersistTaps="handled">
+      <ScrollView ref={dappScrollRef} keyboardShouldPersistTaps="handled" contentContainerStyle={s.homeScroll} showsVerticalScrollIndicator={false}>
+
+        {/* ── Header ── */}
         <View style={s.header}>
-          <Text style={s.title}>dApp Browser</Text>
+          <View style={s.headerRow}>
+            <Text style={s.title}>dApp Browser</Text>
+            <View style={s.networkPill}>
+              <View style={s.networkDot} />
+              <Text style={s.networkText}>MChain</Text>
+            </View>
+          </View>
           <Text style={s.subtitle}>Explore the MChain ecosystem</Text>
         </View>
 
-        <View style={s.searchBar}>
-          <Icon name="globe-outline" size={16} color={colors.mutedForeground} />
-          <TextInput
-            style={s.input}
-            value={urlInput}
-            onChangeText={setUrlInput}
-            placeholder="Enter dApp URL…"
-            placeholderTextColor={colors.mutedForeground}
-            autoCapitalize="none"
-            autoCorrect={false}
-            keyboardType="url"
-            returnKeyType="go"
-            onSubmitEditing={() => openDApp(urlInput, { saveHistory: true })}
-          />
-          {urlInput.trim().length > 0 && (
-            <TouchableOpacity style={s.goBtn} onPress={() => openDApp(urlInput, { saveHistory: true })} activeOpacity={0.85}>
-              <LinearGradient colors={["#0EA5E9", "#0284C7"]} style={s.goBtnGrad}>
-                <Icon name="arrow-forward" size={16} color="#FFF" />
-              </LinearGradient>
-            </TouchableOpacity>
-          )}
+        {/* ── Search bar ── */}
+        <View style={s.searchWrap}>
+          <View style={s.searchBar}>
+            <Icon name="search-outline" size={17} color={colors.mutedForeground} />
+            <TextInput
+              style={s.input}
+              value={urlInput}
+              onChangeText={setUrlInput}
+              placeholder="Search or enter dApp URL…"
+              placeholderTextColor={colors.mutedForeground}
+              autoCapitalize="none"
+              autoCorrect={false}
+              keyboardType="url"
+              returnKeyType="go"
+              onSubmitEditing={() => openDApp(urlInput, { saveHistory: true })}
+            />
+            {urlInput.trim().length > 0 && (
+              <TouchableOpacity style={s.goBtn} onPress={() => openDApp(urlInput, { saveHistory: true })} activeOpacity={0.85}>
+                <LinearGradient colors={["#0EA5E9", "#0284C7"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={s.goBtnGrad}>
+                  <Icon name="arrow-forward" size={16} color="#FFF" />
+                </LinearGradient>
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
 
-        {/* ── Recent history ─────────────────────────────────────────── */}
+        {/* ── Recent history ── */}
         {history.length > 0 && (() => {
           const visible = showAllHistory ? history : history.slice(0, HISTORY_PREVIEW);
           return (
             <View style={s.historySection}>
-              <View style={s.historySectionHeader}>
+              <View style={s.sectionRow}>
                 <Text style={s.sectionLabel}>RECENT</Text>
                 <TouchableOpacity style={s.clearHistoryBtn} onPress={clearHistory} activeOpacity={0.7}>
                   <Text style={s.clearHistoryText}>Clear all</Text>
@@ -918,23 +942,15 @@ export default function DAppScreen() {
                       hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                       activeOpacity={0.7}
                     >
-                      <Icon name="close" size={15} color={colors.mutedForeground} />
+                      <Icon name="close" size={14} color={colors.mutedForeground} />
                     </TouchableOpacity>
                   </TouchableOpacity>
                 );
               })}
 
               {history.length > HISTORY_PREVIEW && (
-                <TouchableOpacity
-                  style={s.showMoreRow}
-                  onPress={() => setShowAllHistory(!showAllHistory)}
-                  activeOpacity={0.7}
-                >
-                  <Icon
-                    name={showAllHistory ? "chevron-up-outline" : "chevron-down-outline"}
-                    size={14}
-                    color={colors.primary}
-                  />
+                <TouchableOpacity style={s.showMoreRow} onPress={() => setShowAllHistory(!showAllHistory)} activeOpacity={0.7}>
+                  <Icon name={showAllHistory ? "chevron-up-outline" : "chevron-down-outline"} size={14} color={colors.primary} />
                   <Text style={s.showMoreText}>
                     {showAllHistory ? "Show less" : `Show ${history.length - HISTORY_PREVIEW} more`}
                   </Text>
@@ -944,16 +960,18 @@ export default function DAppScreen() {
           );
         })()}
 
+        {/* ── Featured dApps ── */}
         {featuredDapps.length > 0 && (
           <>
-            <Text style={s.sectionLabel}>FEATURED DAPPS</Text>
+            <View style={s.sectionRow}>
+              <Text style={s.sectionLabel}>FEATURED DAPPS</Text>
+            </View>
             <View style={s.grid}>
               {featuredDapps.map((dapp) => {
                 const isComingSoon = dapp.comingSoon;
-                const cardStyle = [s.card, isComingSoon && { opacity: 0.65 }] as const;
                 return isComingSoon ? (
-                  <View key={dapp.id} style={cardStyle}>
-                    <View style={[s.cardIconWrap, { backgroundColor: dapp.color + "20" }]}>
+                  <View key={dapp.id} style={[s.card, { opacity: 0.6 }]}>
+                    <View style={[s.cardIconWrap, { backgroundColor: dapp.color + "18" }]}>
                       <Icon name={dapp.icon as Parameters<typeof Icon>[0]["name"]} size={22} color={dapp.color} />
                     </View>
                     <Text style={s.cardName}>{dapp.name}</Text>
@@ -964,8 +982,8 @@ export default function DAppScreen() {
                     </View>
                   </View>
                 ) : (
-                  <TouchableOpacity key={dapp.id} style={s.card} onPress={() => openDApp(dapp.url, dapp.name)} activeOpacity={0.8}>
-                    <View style={[s.cardIconWrap, { backgroundColor: dapp.color + "20" }]}>
+                  <TouchableOpacity key={dapp.id} style={s.card} onPress={() => openDApp(dapp.url, dapp.name)} activeOpacity={0.78}>
+                    <View style={[s.cardIconWrap, { backgroundColor: dapp.color + "18" }]}>
                       <Icon name={dapp.icon as Parameters<typeof Icon>[0]["name"]} size={22} color={dapp.color} />
                     </View>
                     <Text style={s.cardName}>{dapp.name}</Text>
@@ -980,6 +998,7 @@ export default function DAppScreen() {
             </View>
           </>
         )}
+
       </ScrollView>
     </View>
   );
