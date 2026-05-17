@@ -1,11 +1,17 @@
 import { Platform } from "react-native";
+import { pbkdf2 } from "@noble/hashes/pbkdf2";
+import { sha256 } from "@noble/hashes/sha256";
+import { cbc } from "@noble/ciphers/aes.js";
 
 // ── NFC payload format written to card ────────────────────────────────────────
-// JSON: { v: 1, enc: "<hex>", iv: "<hex>", addr: "<mxcAddress>", pub: "<publicKey>", label: "<label>" }
-// enc  = AES-256-CBC(privateKey, key=PBKDF2(pin, 100k iters), iv=random 16 bytes), hex-encoded
+// JSON: { v:1, enc:"<hex>", iv:"<hex>", addr:"<mxcAddress>", pub:"<publicKey>", label:"<label>" }
+// enc  = AES-256-CBC(privateKey, key=PBKDF2-SHA256(pin, 100k iters, 32 bytes), iv=random 16 bytes)
 // iv   = 16-byte random IV, hex-encoded
 // addr = mxcAddress (plaintext, for display without decryption)
 // pub  = publicKey (plaintext)
+//
+// NOTE: Uses @noble/ciphers + @noble/hashes instead of Web Crypto API
+// because crypto.subtle is not available in React Native's Hermes engine.
 
 export interface NfcWalletPayload {
   v: 1;
@@ -16,23 +22,9 @@ export interface NfcWalletPayload {
   label: string;
 }
 
-// ── AES-256-CBC + PBKDF2 helpers ─────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
-async function pinToKey(pin: string): Promise<CryptoKey> {
-  const enc = new TextEncoder();
-  const keyMaterial = await crypto.subtle.importKey(
-    "raw", enc.encode(pin), { name: "PBKDF2" }, false, ["deriveKey"]
-  );
-  return crypto.subtle.deriveKey(
-    { name: "PBKDF2", salt: enc.encode("mchain_nfc_v1"), iterations: 100_000, hash: "SHA-256" },
-    keyMaterial,
-    { name: "AES-CBC", length: 256 },
-    false,
-    ["encrypt", "decrypt"]
-  );
-}
-
-/** Convert a Uint8Array to lowercase hex string — avoids .buffer offset/length bugs */
+/** Convert a Uint8Array to lowercase hex string */
 function uint8ToHex(arr: Uint8Array): string {
   return Array.from(arr).map(b => b.toString(16).padStart(2, "0")).join("");
 }
@@ -45,28 +37,47 @@ function hexToBytes(hex: string): Uint8Array {
   return arr;
 }
 
+/** Cryptographically secure random bytes — uses getRandomValues (available in Hermes) */
+function secureRandomBytes(n: number): Uint8Array {
+  const buf = new Uint8Array(n);
+  // crypto.getRandomValues is available in React Native Hermes; crypto.subtle is not
+  (globalThis as unknown as { crypto: { getRandomValues: (b: Uint8Array) => void } })
+    .crypto.getRandomValues(buf);
+  return buf;
+}
+
+/** Derive a 32-byte AES key from a PIN using PBKDF2-SHA256 (pure JS, no Web Crypto) */
+function pinToKey(pin: string): Uint8Array {
+  const pinBytes = new TextEncoder().encode(pin);
+  const salt = new TextEncoder().encode("mchain_nfc_v1");
+  return pbkdf2(sha256, pinBytes, salt, { c: 100_000, dkLen: 32 });
+}
+
+// ── Encrypt / Decrypt ─────────────────────────────────────────────────────────
+
 /** Encrypt a private key with a PIN. Returns hex-encoded ciphertext and IV. */
-export async function encryptPrivateKey(privateKey: string, pin: string): Promise<{ enc: string; iv: string }> {
-  const key = await pinToKey(pin);
-  const ivBytes = new Uint8Array(16);
-  crypto.getRandomValues(ivBytes);
-  const encoded = new TextEncoder().encode(privateKey);
-  const encrypted = await crypto.subtle.encrypt({ name: "AES-CBC", iv: ivBytes as BufferSource }, key, encoded as BufferSource);
-  return { enc: uint8ToHex(new Uint8Array(encrypted)), iv: uint8ToHex(ivBytes) };
+export async function encryptPrivateKey(
+  privateKey: string,
+  pin: string
+): Promise<{ enc: string; iv: string }> {
+  const key = pinToKey(pin);
+  const iv = secureRandomBytes(16);
+  const data = new TextEncoder().encode(privateKey);
+  const encrypted = cbc(key, iv).encrypt(data);
+  return { enc: uint8ToHex(encrypted), iv: uint8ToHex(iv) };
 }
 
 /** Decrypt a private key from a card payload using a PIN.
- *  Throws a DOMException (AES padding error) if the PIN is wrong — callers should treat any
- *  thrown error as "wrong PIN". */
-export async function decryptPrivateKey(enc: string, iv: string, pin: string): Promise<string> {
-  const key = await pinToKey(pin);
+ *  Throws if the PIN is wrong (AES-CBC padding error). */
+export async function decryptPrivateKey(
+  enc: string,
+  iv: string,
+  pin: string
+): Promise<string> {
+  const key = pinToKey(pin);
   const ivBytes = hexToBytes(iv);
   const encBytes = hexToBytes(enc);
-  const decrypted = await crypto.subtle.decrypt(
-    { name: "AES-CBC", iv: ivBytes as BufferSource },
-    key,
-    encBytes as BufferSource
-  );
+  const decrypted = cbc(key, ivBytes).decrypt(encBytes);
   return new TextDecoder().decode(decrypted);
 }
 
@@ -116,7 +127,6 @@ export async function writeWalletToNfc(payload: NfcWalletPayload): Promise<void>
     }
     await NfcManager.ndefHandler.writeNdefMessage(bytes);
   } finally {
-    // Always release the technology regardless of success or failure
     NfcManager.cancelTechnologyRequest().catch(() => {});
   }
 }
@@ -138,11 +148,10 @@ export async function readWalletFromNfc(): Promise<NfcWalletPayload | null> {
       try {
         const text = Ndef.text.decodePayload(record.payload as unknown as Uint8Array);
         const parsed = JSON.parse(text) as NfcWalletPayload;
-        // Validate required fields before accepting
         if (
           parsed.v === 1 &&
           typeof parsed.enc === "string" && parsed.enc.length > 0 &&
-          typeof parsed.iv === "string" && parsed.iv.length === 32 &&  // 16 bytes = 32 hex chars
+          typeof parsed.iv === "string" && parsed.iv.length === 32 &&
           typeof parsed.addr === "string" && parsed.addr.length > 0
         ) {
           return parsed;
@@ -151,7 +160,7 @@ export async function readWalletFromNfc(): Promise<NfcWalletPayload | null> {
         // Skip non-wallet / non-JSON records silently
       }
     }
-    return null; // Card had NDEF data but no valid wallet payload
+    return null;
   } finally {
     NfcManager.cancelTechnologyRequest().catch(() => {});
   }
