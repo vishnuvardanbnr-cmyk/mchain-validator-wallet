@@ -177,6 +177,7 @@ export default function DashboardScreen() {
     setSessionExpired,
     sessionExpiresAt,
     isStaked,
+    activeWallet,
   } = useWallet();
   const { restartSession } = useHeartbeat();
   const [toastMessage, setToastMessage] = React.useState("");
@@ -283,8 +284,9 @@ export default function DashboardScreen() {
     data: customTokens = [],
     refetch: refetchTokens,
   } = useQuery<CustomToken[]>({
-    queryKey: ["customTokens"],
-    queryFn: getCustomTokens,
+    queryKey: ["customTokens", activeWallet?.id],
+    queryFn: () => getCustomTokens(activeWallet?.id ?? "", activeWallet?.nfcTemporary, activeWallet?.mxcAddress),
+    enabled: !!activeWallet?.id,
     staleTime: 0,
   });
 
@@ -882,7 +884,7 @@ export default function DashboardScreen() {
                   userEthAddress={ethAddress ?? null}
                   price={prices[token.symbol.toUpperCase()] ?? 0}
                   onRemove={async () => {
-                    await removeCustomToken(token.contractAddress);
+                    await removeCustomToken(token.contractAddress, activeWallet?.id ?? "", activeWallet?.nfcTemporary, activeWallet?.mxcAddress);
                     refetchTokens();
                   }}
                   onPress={() => setSelectedAsset({ kind: "token", token, balance: "—", address: ethAddress ?? "" })}
