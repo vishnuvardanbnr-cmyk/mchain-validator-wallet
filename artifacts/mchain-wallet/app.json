@@ -21,7 +21,9 @@
       }
     },
     "android": {
-      "permissions": ["CAMERA", "RECEIVE_BOOT_COMPLETED"]
+      "package": "com.mchain.wallet",
+      "permissions": ["CAMERA", "RECEIVE_BOOT_COMPLETED"],
+      "versionCode": 1
     },
     "web": {
       "favicon": "./assets/images/icon.png"
