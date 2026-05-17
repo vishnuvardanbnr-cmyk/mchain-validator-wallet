@@ -2,7 +2,7 @@ import { Icon } from "@/components/Icon";
 import { useWallet } from "@/context/WalletContext";
 import { useColors } from "@/hooks/useColors";
 import { getNodeUrl } from "@/services/node";
-import { api } from "@/services/api";
+import { api, type FeaturedDapp } from "@/services/api";
 import { useQuery } from "@tanstack/react-query";
 import {
   signEvmTransaction,
@@ -11,6 +11,7 @@ import {
 } from "@/services/crypto";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
+import { BlurView } from "expo-blur";
 import { LinearGradient } from "expo-linear-gradient";
 import { useFocusEffect, useNavigation } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
@@ -215,6 +216,121 @@ interface SendTxReq {
   data: string;
   gas: string;
   origin: string;
+}
+
+// ── Featured Projects component ────────────────────────────────────────────────
+function FeaturedProjects({
+  dapps,
+  onOpen,
+  colors,
+}: {
+  dapps: FeaturedDapp[];
+  onOpen: (dapp: FeaturedDapp) => void;
+  colors: ReturnType<typeof useColors>;
+}) {
+  if (dapps.length === 0) return null;
+
+  const activeCount = dapps.filter((d) => !d.comingSoon).length;
+  const isDark = colors.background === "#0A0E14" || colors.background < "#888888";
+
+  return (
+    <View style={{ marginTop: 4, marginBottom: 32 }}>
+      {/* ── Section header ── */}
+      <View style={{ flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between", marginHorizontal: 20, marginBottom: 16 }}>
+        <View>
+          <Text style={{ fontSize: 11, fontFamily: "Inter_700Bold", color: colors.mutedForeground, letterSpacing: 1.5, marginBottom: 3 }}>
+            FEATURED PROJECTS
+          </Text>
+          <Text style={{ fontSize: 13, fontFamily: "Inter_500Medium", color: colors.foreground }}>
+            {activeCount} live · {dapps.length - activeCount} coming soon
+          </Text>
+        </View>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "#10B98112", borderRadius: 20, paddingHorizontal: 10, paddingVertical: 5, borderWidth: 1, borderColor: "#10B98130" }}>
+          <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: "#10B981" }} />
+          <Text style={{ fontSize: 10, fontFamily: "Inter_600SemiBold", color: "#10B981" }}>MChain</Text>
+        </View>
+      </View>
+
+      {/* ── Cards ── */}
+      <View style={{ paddingHorizontal: 14, gap: 10 }}>
+        {dapps.map((dapp) => {
+          const isComingSoon = dapp.comingSoon;
+
+          const cardContent = (
+            <View
+              style={{
+                backgroundColor: colors.card,
+                borderRadius: 20,
+                borderWidth: 1,
+                borderColor: isComingSoon ? colors.border + "60" : colors.border,
+                overflow: "hidden",
+              }}
+            >
+              {/* Main row */}
+              <View style={{ flexDirection: "row", alignItems: "center", padding: 16, gap: 14, opacity: isComingSoon ? 0.55 : 1 }}>
+                {/* Icon */}
+                <LinearGradient
+                  colors={[dapp.color + "28", dapp.color + "10"]}
+                  style={{ width: 52, height: 52, borderRadius: 16, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: dapp.color + "25" }}
+                >
+                  <Icon name={dapp.icon as Parameters<typeof Icon>[0]["name"]} size={26} color={isComingSoon ? colors.mutedForeground : dapp.color} />
+                </LinearGradient>
+
+                {/* Text block */}
+                <View style={{ flex: 1, gap: 3 }}>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                    <Text style={{ fontSize: 15, fontFamily: "Inter_700Bold", color: isComingSoon ? colors.mutedForeground : colors.foreground }} numberOfLines={1}>
+                      {dapp.name}
+                    </Text>
+                    {isComingSoon && (
+                      <View style={{ backgroundColor: "#F59E0B18", borderRadius: 6, paddingHorizontal: 7, paddingVertical: 2, borderWidth: 1, borderColor: "#F59E0B40" }}>
+                        <Text style={{ fontSize: 9, fontFamily: "Inter_700Bold", color: "#F59E0B", letterSpacing: 0.8 }}>SOON</Text>
+                      </View>
+                    )}
+                  </View>
+                  <Text style={{ fontSize: 12, fontFamily: "Inter_400Regular", color: colors.mutedForeground, lineHeight: 17 }} numberOfLines={2}>
+                    {dapp.description}
+                  </Text>
+                </View>
+
+                {/* Action */}
+                {isComingSoon ? (
+                  <View style={{ width: 36, height: 36, borderRadius: 12, alignItems: "center", justifyContent: "center", backgroundColor: colors.background }}>
+                    <Icon name="time-outline" size={18} color={colors.mutedForeground} />
+                  </View>
+                ) : (
+                  <LinearGradient
+                    colors={[dapp.color, dapp.color + "CC"]}
+                    style={{ width: 36, height: 36, borderRadius: 12, alignItems: "center", justifyContent: "center" }}
+                  >
+                    <Icon name="arrow-forward" size={16} color="#FFF" />
+                  </LinearGradient>
+                )}
+              </View>
+
+              {/* Coming soon footer strip */}
+              {isComingSoon && (
+                <View style={{ borderTopWidth: 1, borderTopColor: colors.border + "50", backgroundColor: colors.background + "80" }}>
+                  <BlurView intensity={isDark ? 18 : 12} tint={isDark ? "dark" : "light"} style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 9 }}>
+                    <Icon name="time-outline" size={13} color="#F59E0B" />
+                    <Text style={{ fontSize: 11, fontFamily: "Inter_600SemiBold", color: "#F59E0B", letterSpacing: 0.5 }}>Launching Soon</Text>
+                  </BlurView>
+                </View>
+              )}
+            </View>
+          );
+
+          return isComingSoon ? (
+            <View key={dapp.id}>{cardContent}</View>
+          ) : (
+            <TouchableOpacity key={dapp.id} activeOpacity={0.76} onPress={() => onOpen(dapp)}>
+              {cardContent}
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    </View>
+  );
 }
 
 export default function DAppScreen() {
@@ -960,44 +1076,8 @@ export default function DAppScreen() {
           );
         })()}
 
-        {/* ── Featured dApps ── */}
-        {featuredDapps.length > 0 && (
-          <>
-            <View style={s.sectionRow}>
-              <Text style={s.sectionLabel}>FEATURED DAPPS</Text>
-            </View>
-            <View style={s.grid}>
-              {featuredDapps.map((dapp) => {
-                const isComingSoon = dapp.comingSoon;
-                return isComingSoon ? (
-                  <View key={dapp.id} style={[s.card, { opacity: 0.6 }]}>
-                    <View style={[s.cardIconWrap, { backgroundColor: dapp.color + "18" }]}>
-                      <Icon name={dapp.icon as Parameters<typeof Icon>[0]["name"]} size={22} color={dapp.color} />
-                    </View>
-                    <Text style={s.cardName}>{dapp.name}</Text>
-                    <Text style={s.cardDesc}>{dapp.description}</Text>
-                    <View style={s.comingSoonBadge}>
-                      <Icon name="time-outline" size={10} color="#F59E0B" />
-                      <Text style={s.comingSoonText}>Coming Soon</Text>
-                    </View>
-                  </View>
-                ) : (
-                  <TouchableOpacity key={dapp.id} style={s.card} onPress={() => openDApp(dapp.url, dapp.name)} activeOpacity={0.78}>
-                    <View style={[s.cardIconWrap, { backgroundColor: dapp.color + "18" }]}>
-                      <Icon name={dapp.icon as Parameters<typeof Icon>[0]["name"]} size={22} color={dapp.color} />
-                    </View>
-                    <Text style={s.cardName}>{dapp.name}</Text>
-                    <Text style={s.cardDesc}>{dapp.description}</Text>
-                    <View style={s.openRow}>
-                      <Icon name="open-outline" size={11} color={dapp.color} />
-                      <Text style={[s.openText, { color: dapp.color }]}>Open</Text>
-                    </View>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          </>
-        )}
+        {/* ── Featured Projects ── */}
+        <FeaturedProjects dapps={featuredDapps} onOpen={(dapp) => openDApp(dapp.url, { saveHistory: true, title: dapp.name })} colors={colors} />
 
       </ScrollView>
     </View>
