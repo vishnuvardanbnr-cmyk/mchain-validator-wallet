@@ -47,6 +47,7 @@ jobs:
         run: pnpm exec expo prebuild --platform android --clean --no-install
         env:
           EXPO_NO_TELEMETRY: 1
+          EXPO_PUBLIC_API_URL: http://5.189.184.202
 
       - name: Make gradlew executable
         working-directory: artifacts/mchain-wallet/android
