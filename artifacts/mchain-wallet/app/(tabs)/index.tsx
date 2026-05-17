@@ -183,6 +183,7 @@ export default function DashboardScreen() {
   const [toastMessage, setToastMessage] = React.useState("");
   const [isRestarting, setIsRestarting] = React.useState(false);
   const [showScanner, setShowScanner] = React.useState(false);
+  const [showNfcVault, setShowNfcVault] = React.useState(false);
   const [showNewWallet, setShowNewWallet] = React.useState(false);
   const [showSwitcher, setShowSwitcher] = React.useState(false);
   const [activeTab, setActiveTab] = React.useState<"assets" | "nft" | "approvals">("assets");
@@ -778,6 +779,9 @@ export default function DashboardScreen() {
             )}
           </TouchableOpacity>
           <View style={s.headerRight}>
+            <TouchableOpacity style={s.headerIconBtn} onPress={() => setShowNfcVault(true)}>
+              <Icon name="wifi-outline" size={18} color={colors.foreground} />
+            </TouchableOpacity>
             <TouchableOpacity style={s.headerIconBtn} onPress={() => setShowNewWallet(true)}>
               <Icon name="wallet" size={18} color={colors.foreground} />
             </TouchableOpacity>
@@ -833,7 +837,7 @@ export default function DashboardScreen() {
           </PressableScale>
         </View>
 
-        <NfcWalletCard />
+        <NfcWalletCard open={showNfcVault} onClose={() => setShowNfcVault(false)} />
 
         {/* ── Portfolio tabs ─────────────────────────────────── */}
         <View style={s.tabsContainer}>

@@ -113,7 +113,13 @@ function CardIllustration() {
   );
 }
 
-export function NfcWalletCard() {
+interface NfcWalletCardProps {
+  /** When true the Card Vault modal opens immediately (controlled from outside) */
+  open?: boolean;
+  onClose?: () => void;
+}
+
+export function NfcWalletCard({ open, onClose }: NfcWalletCardProps = {}) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { addNfcTemporaryWallet, switchWallet } = useWallet();
@@ -135,6 +141,11 @@ export function NfcWalletCard() {
   useEffect(() => {
     isNfcSupported().then(setNfcSupported);
   }, []);
+
+  // Open modal when parent sets open=true (header button)
+  useEffect(() => {
+    if (open) openModal();
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (nfcSupported) {
@@ -192,7 +203,10 @@ export function NfcWalletCard() {
     Animated.parallel([
       Animated.timing(slideAnim, { toValue: 600, duration: 280, useNativeDriver: true, easing: Easing.in(Easing.ease) }),
       Animated.timing(overlayOpacity, { toValue: 0, duration: 220, useNativeDriver: true }),
-    ]).start(() => setModalVisible(false));
+    ]).start(() => {
+      setModalVisible(false);
+      onClose?.();
+    });
   }
 
   async function startScan() {
