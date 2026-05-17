@@ -15,6 +15,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { NfcSigningModal } from "@/components/NfcSigningModal";
 import { PinModal } from "@/components/PinModal";
+import { ScreenProtection } from "@/components/ScreenProtection";
 import { SplashLoader } from "@/components/SplashLoader";
 import { PinProvider, usePinContext } from "@/context/PinContext";
 import { WalletProvider, useWallet } from "@/context/WalletContext";
@@ -122,6 +123,7 @@ export default function RootLayout() {
       <ErrorBoundary>
         <QueryClientProvider client={queryClient}>
           <GestureHandlerRootView style={{ flex: 1, backgroundColor: "#060E1A" }}>
+            <ScreenProtection>
 
             <WalletProvider>
               <PinProvider>
@@ -147,6 +149,7 @@ export default function RootLayout() {
              */}
             <SplashLoader ready={appReady} onDone={() => {}} />
 
+            </ScreenProtection>
           </GestureHandlerRootView>
         </QueryClientProvider>
       </ErrorBoundary>
