@@ -367,10 +367,10 @@ export default function SettingsScreen() {
           <View style={s.nodeCard}>
             <View style={s.nodeRow}>
 
-              {/* Primary Node — read-only */}
+              {/* Public Node — read-only */}
               <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 8 }}>
                 <Icon name="lock-closed-outline" size={12} color={colors.mutedForeground} />
-                <Text style={s.nodeLabel}>Primary Node</Text>
+                <Text style={s.nodeLabel}>Public Node</Text>
                 <View style={s.officialBadge}>
                   <Text style={s.officialBadgeText}>OFFICIAL</Text>
                 </View>
