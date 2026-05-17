@@ -1,8 +1,4 @@
 import { Platform } from "react-native";
-<<<<<<< HEAD
-=======
-import { getNodeUrl, isDefaultNode } from "./node";
->>>>>>> 5c0767a (Improve P2P service routing and fix rate limiter errors)
 import { getPublicApiBase } from "./api";
 import { ethAddressToMxc } from "./crypto";
 
