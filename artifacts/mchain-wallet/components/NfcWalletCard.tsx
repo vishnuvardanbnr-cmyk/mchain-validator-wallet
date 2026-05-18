@@ -117,9 +117,11 @@ interface NfcWalletCardProps {
   /** When true the Card Vault modal opens immediately (controlled from outside) */
   open?: boolean;
   onClose?: () => void;
+  /** When true the visible card is not rendered — only the modal is kept (for header-icon-only access) */
+  hideCard?: boolean;
 }
 
-export function NfcWalletCard({ open, onClose }: NfcWalletCardProps = {}) {
+export function NfcWalletCard({ open, onClose, hideCard }: NfcWalletCardProps = {}) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { addNfcTemporaryWallet, switchWallet } = useWallet();
@@ -487,7 +489,7 @@ export function NfcWalletCard({ open, onClose }: NfcWalletCardProps = {}) {
 
   return (
     <>
-      <TouchableOpacity onPress={openModal} activeOpacity={0.78} style={s.card}>
+      {!hideCard && <TouchableOpacity onPress={openModal} activeOpacity={0.78} style={s.card}>
         <View style={s.cardBorder}>
           <Animated.View style={{
             ...StyleSheet.absoluteFillObject,
@@ -508,7 +510,7 @@ export function NfcWalletCard({ open, onClose }: NfcWalletCardProps = {}) {
             </LinearGradient>
           </LinearGradient>
         </View>
-      </TouchableOpacity>
+      </TouchableOpacity>}
 
       <Modal visible={modalVisible} transparent animationType="none" onRequestClose={closeModal} statusBarTranslucent>
         <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: "rgba(0,0,0,0.8)", opacity: overlayOpacity }]} pointerEvents="none" />

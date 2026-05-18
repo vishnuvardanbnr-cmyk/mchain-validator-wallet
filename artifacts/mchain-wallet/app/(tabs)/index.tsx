@@ -840,7 +840,7 @@ export default function DashboardScreen() {
           </PressableScale>
         </View>
 
-        <NfcWalletCard open={showNfcVault} onClose={() => setShowNfcVault(false)} />
+        <NfcWalletCard open={showNfcVault} onClose={() => setShowNfcVault(false)} hideCard />
 
         {/* ── Portfolio tabs ─────────────────────────────────── */}
         <View style={s.tabsContainer}>

@@ -251,19 +251,16 @@ export default function P2PScreen() {
 
   function handleDisconnect() {
     Alert.alert(
-      "Disconnect P2P Wallet",
-      "Your profile will be removed from the P2P market. You can reconnect anytime.",
+      "Hide from Market",
+      "Your profile and ads will be hidden from the P2P market on this device. All your data (orders, trade history, ads) is preserved — switching back to this wallet restores everything.",
       [
         { text: "Cancel", style: "cancel" },
         {
-          text: "Disconnect",
+          text: "Hide",
           style: "destructive",
-          onPress: async () => {
-            try {
-              if (mxcAddress) await p2pApi.disconnectProfile(mxcAddress);
-            } catch {
-              // ignore — even if server fails, clear locally
-            }
+          onPress: () => {
+            // Only clear local cache — server data is never deleted.
+            // Switching back to this wallet address automatically reloads the profile.
             queryClient.setQueryData(["p2p_profile", mxcAddress], null);
             if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
           },
