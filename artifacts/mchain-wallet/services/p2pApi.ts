@@ -208,7 +208,7 @@ async function req<T>(path: string, options?: RequestInit, timeoutMs = 10_000): 
 
 export const p2pApi = {
   // ── Profile ──────────────────────────────────────────────────────────────
-  getProfile: async (address: string) => cvtProfile(await req<P2pProfile>(`/profiles/${address}`)),
+  getProfile: async (address: string) => cvtProfile(await req<P2pProfile>(`/profiles/${address}`, {}, 5_000)),
   upsertProfile: async (body: { mxcAddress: string; displayName: string; phone?: string }) =>
     cvtProfile(await req<P2pProfile>("/profiles", { method: "POST", body: JSON.stringify(body) })),
   submitKyc: async (body: { mxcAddress: string; kycName: string; kycDocType: string; displayName: string; kycDocImage?: string }) =>
