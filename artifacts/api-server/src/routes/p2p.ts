@@ -1,6 +1,20 @@
 import { Router } from "express";
-import { db } from "@workspace/db";
+import { db, pool } from "@workspace/db";
 import { cached, invalidate } from "../lib/redis";
+
+// ── Migration: add ad-level escrow columns if they don't exist ────────────────
+(async () => {
+  try {
+    await pool.query(`
+      ALTER TABLE p2p_ads
+        ADD COLUMN IF NOT EXISTS escrow_tx_hash    TEXT,
+        ADD COLUMN IF NOT EXISTS escrow_status     p2p_escrow_status NOT NULL DEFAULT 'none',
+        ADD COLUMN IF NOT EXISTS escrow_locked_at  TIMESTAMPTZ;
+    `);
+  } catch (e) {
+    console.error("p2p_ads escrow migration failed:", e);
+  }
+})();
 
 // Cache key for the public active-ads feed (no owner filter).
 // Per-filter combinations are encoded in the key; owner-specific queries are never cached.
@@ -177,7 +191,12 @@ router.post("/p2p/ads", async (req, res) => {
   const body = v.data as z.infer<typeof createAdRequestSchema> & { ownerAddress?: string };
   const ownerAddress = toEth((req.body as { ownerAddress?: string }).ownerAddress);
   if (!ownerAddress) { res.status(400).json({ error: "ownerAddress required" }); return; }
+  // Sell ads must have escrow locked before posting
+  if (body.side === "sell" && !body.escrowTxHash && isEscrowConfigured()) {
+    res.status(400).json({ error: "Sell ads require escrow. Please lock funds in escrow first." }); return;
+  }
   await ensureProfile(ownerAddress);
+  const escrowLocked = !!body.escrowTxHash;
   const [ad] = await db.insert(p2pAds).values({
     ownerAddress,
     token: body.token,
@@ -189,6 +208,9 @@ router.post("/p2p/ads", async (req, res) => {
     paymentMethods: body.paymentMethods,
     paymentWindow: body.paymentWindow,
     terms: body.terms,
+    escrowTxHash: body.escrowTxHash ?? null,
+    escrowStatus: escrowLocked ? "locked" : "none",
+    escrowLockedAt: escrowLocked ? new Date() : null,
   }).returning();
   // New ad posted — bust all public ad feed cache keys
   await Promise.all([
@@ -218,6 +240,65 @@ router.patch("/p2p/ads/:id/status", async (req, res) => {
     invalidate(adsCacheKey("USDT", "buy")), invalidate(adsCacheKey("USDT", "sell")),
   ]);
   res.json(updated);
+});
+
+// ── Cancel ad with escrow refund ──────────────────────────────────────────────
+router.post("/p2p/ads/:id/cancel", async (req, res) => {
+  const { id } = req.params;
+  const ownerAddress = toEth((req.body as { ownerAddress?: string }).ownerAddress);
+  if (!ownerAddress) { res.status(400).json({ error: "ownerAddress required" }); return; }
+
+  const [ad] = await db.select().from(p2pAds).where(eq(p2pAds.id, id)).limit(1);
+  if (!ad) { res.status(404).json({ error: "Ad not found" }); return; }
+  if (ad.ownerAddress !== ownerAddress) { res.status(403).json({ error: "Not your ad" }); return; }
+  if (ad.status === "cancelled") { res.status(409).json({ error: "Ad already cancelled" }); return; }
+
+  // Block cancel if any active orders exist
+  const activeOrders = await db.select({ id: p2pOrders.id }).from(p2pOrders)
+    .where(and(
+      eq(p2pOrders.adId, id),
+      sql`${p2pOrders.status} IN ('pending', 'paid', 'disputed')`,
+    )).limit(1);
+  if (activeOrders.length > 0) {
+    res.status(409).json({ error: "Cannot cancel — there is an active order in progress" }); return;
+  }
+
+  // Refund escrow back to seller if funds were locked
+  let refundTxHash: string | null = null;
+  if (ad.escrowStatus === "locked" && ad.escrowTxHash && isEscrowConfigured()) {
+    try {
+      const remaining = parseFloat(String(ad.availableAmount));
+      if (remaining > 0) {
+        if (ad.token === "MC") {
+          const result = await broadcastMcTransaction(ownerAddress, String(remaining));
+          refundTxHash = result.txHash;
+        } else if (ad.token === "USDT") {
+          const result = await broadcastUsdtTransaction(ownerAddress, String(remaining));
+          refundTxHash = result.txHash;
+        }
+      }
+    } catch (e) {
+      console.error("Escrow refund failed:", e);
+      res.status(500).json({ error: "Failed to refund escrow — please contact support", detail: e instanceof Error ? e.message : String(e) });
+      return;
+    }
+  }
+
+  const [cancelled] = await db.update(p2pAds)
+    .set({
+      status: "cancelled",
+      escrowStatus: refundTxHash ? "refunded" : ad.escrowStatus,
+      updatedAt: new Date(),
+    })
+    .where(eq(p2pAds.id, id))
+    .returning();
+
+  await Promise.all([
+    invalidate(adsCacheKey()), invalidate(adsCacheKey(ad.token)), invalidate(adsCacheKey(undefined, ad.side)),
+    invalidate(adsCacheKey(ad.token, ad.side)),
+  ]);
+
+  res.json({ ...cancelled, refundTxHash });
 });
 
 // ── Orders ────────────────────────────────────────────────────────────────────
@@ -278,6 +359,9 @@ router.post("/p2p/orders", async (req, res) => {
   const sellerAddress = ad.side === "sell" ? ad.ownerAddress : buyerAddress;
   const buyerFinal = ad.side === "sell" ? buyerAddress : ad.ownerAddress;
 
+  // If ad already has escrow locked, new orders inherit that status automatically
+  const inheritEscrow = ad.escrowStatus === "locked";
+
   const [order] = await db.insert(p2pOrders).values({
     adId: ad.id,
     buyerAddress: buyerFinal,
@@ -290,6 +374,9 @@ router.post("/p2p/orders", async (req, res) => {
     paymentMethod: body.paymentMethod,
     paymentDetails: paymentDetails ?? "",
     paymentDeadline: deadline,
+    escrowStatus: inheritEscrow ? "locked" : "none",
+    escrowTxHash: inheritEscrow ? ad.escrowTxHash : null,
+    escrowLockedAt: inheritEscrow ? new Date() : null,
   }).returning();
 
   // Deduct from available amount
@@ -379,11 +466,12 @@ router.post("/p2p/orders/:id/release", async (req, res) => {
 // ── Escrow ─────────────────────────────────────────────────────────────────────
 
 router.get("/p2p/escrow/info", (_req, res) => {
+  const usdtContractAddress = process.env["USDT_CONTRACT_ADDRESS"] ?? null;
   if (!isEscrowConfigured()) {
-    res.json({ configured: false, escrowAddress: null });
+    res.json({ configured: false, escrowAddress: null, usdtContractAddress });
     return;
   }
-  res.json({ configured: true, escrowAddress: toEth(getEscrowAddress()) });
+  res.json({ configured: true, escrowAddress: toEth(getEscrowAddress()), usdtContractAddress });
 });
 
 router.post("/p2p/orders/:id/lock-escrow", async (req, res) => {

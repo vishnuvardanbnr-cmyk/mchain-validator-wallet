@@ -70,6 +70,10 @@ export const p2pAds = pgTable("p2p_ads", {
   terms: text("terms"),
   status: p2pAdStatusEnum("status").notNull().default("active"),
   completedOrders: integer("completed_orders").notNull().default(0),
+  // Ad-level escrow: funds locked at ad creation time (sell ads only)
+  escrowTxHash: text("escrow_tx_hash"),
+  escrowStatus: p2pEscrowStatusEnum("escrow_status").notNull().default("none"),
+  escrowLockedAt: timestamp("escrow_locked_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (t) => [
@@ -173,6 +177,7 @@ export const createAdRequestSchema = z.object({
   paymentMethods: z.array(z.string()).min(1),
   paymentWindow: z.number().int().min(5).max(60).default(15),
   terms: z.string().max(500).optional(),
+  escrowTxHash: z.string().optional(),
 });
 
 export const createOrderRequestSchema = z.object({

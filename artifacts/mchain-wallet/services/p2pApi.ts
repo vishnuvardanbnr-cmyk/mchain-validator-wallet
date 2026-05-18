@@ -81,6 +81,7 @@ export interface P2pOrder {
 export interface EscrowInfo {
   configured: boolean;
   escrowAddress: string | null;
+  usdtContractAddress: string | null;
 }
 
 export interface P2pMessage {
@@ -233,9 +234,12 @@ export const p2pApi = {
     ownerAddress: string; token: string; side: string; price: string;
     minAmount: string; maxAmount: string; availableAmount: string;
     paymentMethods: string[]; paymentWindow: number; terms?: string;
+    escrowTxHash?: string;
   }) => cvtAd(await req<P2pAd>("/ads", { method: "POST", body: JSON.stringify(body) })),
   updateAdStatus: (id: string, status: string) =>
     req<P2pAd>(`/ads/${id}/status`, { method: "PATCH", body: JSON.stringify({ status }) }),
+  cancelAd: (id: string, ownerAddress: string) =>
+    req<P2pAd & { refundTxHash: string | null }>(`/ads/${id}/cancel`, { method: "POST", body: JSON.stringify({ ownerAddress }) }),
 
   // ── Orders ───────────────────────────────────────────────────────────────
   getMyOrders: async (address: string, offset = 0) => {
