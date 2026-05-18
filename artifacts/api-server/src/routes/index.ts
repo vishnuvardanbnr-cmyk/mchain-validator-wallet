@@ -8,6 +8,7 @@ import legalRouter from "./legal";
 import dappsRouter, { ensureDappsTable } from "./dapps";
 import tokensRouter, { ensureTokensTable } from "./tokens";
 import pricesRouter, { ensurePricesTable } from "./prices";
+import monitorRouter from "./monitor";
 
 const router: IRouter = Router();
 
@@ -20,5 +21,7 @@ router.use(legalRouter);
 router.use(dappsRouter);
 router.use(tokensRouter);
 router.use(pricesRouter);
+router.use(monitorRouter);
 
+export { ensureDappsTable, ensureTokensTable, ensurePricesTable };
 export default router;

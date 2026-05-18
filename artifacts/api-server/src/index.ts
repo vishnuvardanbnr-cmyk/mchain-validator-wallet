@@ -1,8 +1,6 @@
 import app from "./app";
 import { logger } from "./lib/logger";
-import { ensureDappsTable } from "./routes/dapps";
-import { ensureTokensTable } from "./routes/tokens";
-import { ensurePricesTable } from "./routes/prices";
+import { ensureDappsTable, ensureTokensTable, ensurePricesTable } from "./routes";
 
 const rawPort = process.env["PORT"];
 
