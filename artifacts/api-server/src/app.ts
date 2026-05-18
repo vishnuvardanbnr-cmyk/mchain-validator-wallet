@@ -65,9 +65,17 @@ app.use("/api", router);
 // Serve admin panel static files at /admin
 const adminDist = path.resolve(__dirname, "admin");
 if (existsSync(adminDist)) {
-  app.use("/admin", express.static(adminDist));
+  // Hashed assets (JS/CSS) — long cache, immutable
+  app.use("/admin/assets", express.static(path.join(adminDist, "assets"), {
+    maxAge: "1y",
+    immutable: true,
+  }));
+  // index.html and other root files — never cache so browsers always get latest
+  app.use("/admin", express.static(adminDist, { maxAge: 0, etag: false }));
   // SPA fallback — serve index.html for any /admin/* route
   app.get("/admin/*splat", (_req, res) => {
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+    res.setHeader("Pragma", "no-cache");
     res.sendFile(path.join(adminDist, "index.html"));
   });
 }
