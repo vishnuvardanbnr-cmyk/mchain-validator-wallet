@@ -217,14 +217,23 @@ export default function P2PScreen() {
   const {
     data: profile,
     isLoading: profileLoading,
+    isError: profileError,
+    error: profileErrorObj,
     refetch: refetchProfile,
   } = useQuery({
     queryKey: ["p2p_profile", mxcAddress],
     queryFn: async () => {
       try { return await p2pApi.getProfile(mxcAddress!); }
-      catch { return null; }
+      catch (e) {
+        // 404 / "not found" → user has no profile yet, show connect form
+        const msg = e instanceof Error ? e.message.toLowerCase() : "";
+        if (msg.includes("not found") || msg.includes("404") || msg.includes("no profile")) return null;
+        // Timeout / network error → propagate so isError=true
+        throw e;
+      }
     },
     enabled: !!mxcAddress,
+    retry: 1,
   });
 
   const [activating, setActivating] = useState(false);
@@ -306,12 +315,35 @@ export default function P2PScreen() {
   const profileReady = !profileLoading;
   const hasProfile = profile != null;
 
-  // Render a neutral loading state — prevents the P2P market from flashing
-  // before the profile query resolves and the connect-wallet screen appears.
+  // Skeleton while loading
   if (profileLoading) {
     return (
       <View style={{ flex: 1, backgroundColor: colors.background, paddingTop: insets.top + 60 }}>
         {[1,2,3].map(i => <AdCardSkeleton key={i} />)}
+      </View>
+    );
+  }
+
+  // Network / timeout error — server unreachable
+  if (profileError) {
+    const errMsg = profileErrorObj instanceof Error ? profileErrorObj.message : "Could not connect to the P2P server.";
+    return (
+      <View style={{ flex: 1, backgroundColor: colors.background, alignItems: "center", justifyContent: "center", padding: 32 }}>
+        <View style={{ width: 72, height: 72, borderRadius: 24, backgroundColor: "#EF444415", borderWidth: 1.5, borderColor: "#EF444435", alignItems: "center", justifyContent: "center", marginBottom: 20 }}>
+          <Icon name="cloud-offline-outline" size={34} color="#EF4444" />
+        </View>
+        <Text style={{ fontSize: 20, fontFamily: "Inter_700Bold", color: colors.foreground, textAlign: "center", marginBottom: 8 }}>
+          P2P Unavailable
+        </Text>
+        <Text style={{ fontSize: 13, fontFamily: "Inter_400Regular", color: colors.mutedForeground, textAlign: "center", lineHeight: 20, marginBottom: 28 }}>
+          {errMsg}
+        </Text>
+        <TouchableOpacity
+          onPress={() => void refetchProfile()}
+          style={{ backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: 14, paddingHorizontal: 24, paddingVertical: 14 }}
+        >
+          <Text style={{ fontSize: 14, fontFamily: "Inter_600SemiBold", color: colors.foreground }}>Try Again</Text>
+        </TouchableOpacity>
       </View>
     );
   }

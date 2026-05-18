@@ -177,21 +177,33 @@ function getApiBase(): string {
   return `${getPublicApiBase()}/p2p`;
 }
 
-async function req<T>(path: string, options?: RequestInit): Promise<T> {
+async function req<T>(path: string, options?: RequestInit, timeoutMs = 10_000): Promise<T> {
   const base = getApiBase();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
 
-  const res = await fetch(`${base}${path}`, {
-    headers: { "Content-Type": "application/json", ...(options?.headers ?? {}) },
-    ...options,
-  });
+  try {
+    const res = await fetch(`${base}${path}`, {
+      headers: { "Content-Type": "application/json", ...(options?.headers ?? {}) },
+      signal: controller.signal,
+      ...options,
+    });
 
-  if (!res.ok) {
-    const text = await res.text().catch(() => "Request failed");
-    let msg = text;
-    try { msg = (JSON.parse(text) as { error?: string; message?: string }).error ?? (JSON.parse(text) as { message?: string }).message ?? text; } catch { /* use raw */ }
-    throw new Error(msg);
+    if (!res.ok) {
+      const text = await res.text().catch(() => "Request failed");
+      let msg = text;
+      try { msg = (JSON.parse(text) as { error?: string; message?: string }).error ?? (JSON.parse(text) as { message?: string }).message ?? text; } catch { /* use raw */ }
+      throw new Error(msg);
+    }
+    return res.json() as Promise<T>;
+  } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") {
+      throw new Error("Request timed out — check your connection and try again.");
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
   }
-  return res.json() as Promise<T>;
 }
 
 export const p2pApi = {
