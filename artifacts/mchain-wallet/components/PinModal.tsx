@@ -4,6 +4,7 @@ import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import React, { useEffect, useRef, useState } from "react";
 import {
+  ActivityIndicator,
   Animated,
   Modal,
   Platform,
@@ -37,6 +38,7 @@ export function PinModal({ visible, title, subtitle, onSuccess, onCancel, animat
   const [digits, setDigits] = useState("");
   const [error, setError] = useState("");
   const [checking, setChecking] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
   const shakeAnim = useRef(new Animated.Value(0)).current;
   const dotScale = useRef(new Animated.Value(1)).current;
 
@@ -45,6 +47,7 @@ export function PinModal({ visible, title, subtitle, onSuccess, onCancel, animat
       setDigits("");
       setError("");
       setChecking(false);
+      setSubmitted(false);
     }
   }, [visible]);
 
@@ -79,9 +82,10 @@ export function PinModal({ visible, title, subtitle, onSuccess, onCancel, animat
     setChecking(true);
     const ok = await verifyPin(pin);
     if (ok) {
+      // Lock the modal immediately — keeps keypad disabled while caller does async work
+      setSubmitted(true);
       setDigits("");
       setError("");
-      setChecking(false);
       onSuccess();
     } else {
       if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
@@ -93,7 +97,7 @@ export function PinModal({ visible, title, subtitle, onSuccess, onCancel, animat
   }
 
   function pressKey(key: string) {
-    if (checking) return;
+    if (checking || submitted) return;
     setError("");
     if (digits.length < PIN_LENGTH) {
       if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -102,7 +106,7 @@ export function PinModal({ visible, title, subtitle, onSuccess, onCancel, animat
   }
 
   function pressDelete() {
-    if (checking) return;
+    if (checking || submitted) return;
     setError("");
     if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setDigits((d) => d.slice(0, -1));
@@ -267,7 +271,11 @@ export function PinModal({ visible, title, subtitle, onSuccess, onCancel, animat
               })}
             </Animated.View>
 
-            <Text style={s.error}>{error}</Text>
+            {submitted ? (
+              <ActivityIndicator color={PRIMARY} style={{ marginTop: 20 }} />
+            ) : (
+              <Text style={s.error}>{error}</Text>
+            )}
           </View>
 
           {/* ── Keypad ───────────────────────────────────────────── */}

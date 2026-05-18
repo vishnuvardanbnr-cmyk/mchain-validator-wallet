@@ -11,7 +11,7 @@ import {
 } from "@/services/crypto";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   ActivityIndicator, KeyboardAvoidingView, Modal, Platform,
@@ -47,6 +47,7 @@ export function OrderModal({ visible, ad, onClose, onOrderPlaced }: Props) {
   const [paymentDetails, setPaymentDetails] = useState("");
   const [step,           setStep]           = useState<Step>("idle");
   const [toast,          setToast]          = useState("");
+  const submittingRef = useRef(false);
 
   const loading = step !== "idle";
 
@@ -98,7 +99,8 @@ export function OrderModal({ visible, ad, onClose, onOrderPlaced }: Props) {
 
   // ── Escrow lock + place order (SELL side — responding to a BUY ad) ────────
   async function doEscrowAndPlace() {
-    if (!mxcAddress) return;
+    if (!mxcAddress || submittingRef.current) return;
+    submittingRef.current = true;
     try {
       const escrowInfo = await p2pApi.getEscrowInfo();
       if (!escrowInfo.configured || !escrowInfo.escrowAddress) {
@@ -152,6 +154,8 @@ export function OrderModal({ visible, ad, onClose, onOrderPlaced }: Props) {
       if (/account not found/i.test(msg)) msg = "Wallet has no on-chain funds. Top up before selling.";
       setToast(msg);
       setStep("idle");
+    } finally {
+      submittingRef.current = false;
     }
   }
 

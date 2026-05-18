@@ -183,6 +183,7 @@ export default function SendScreen() {
   const [selectedAsset, setSelectedAsset] = useState<SelectedAsset>({ kind: "native" });
   const [showAssetPicker, setShowAssetPicker] = useState(false);
 
+  const submittingRef = useRef(false);
   const slideAnim = useRef(new Animated.Value(0)).current;
   const successScale = useRef(new Animated.Value(0)).current;
   const successOpacity = useRef(new Animated.Value(0)).current;
@@ -305,7 +306,8 @@ export default function SendScreen() {
   }
 
   async function handleSend() {
-    if (!mxcAddress) return;
+    if (!mxcAddress || submittingRef.current) return;
+    submittingRef.current = true;
     setLoading(true);
     try {
       const privateKey = await getPrivateKey();
@@ -345,6 +347,7 @@ export default function SendScreen() {
       setToast(msg);
       if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     } finally {
+      submittingRef.current = false;
       setLoading(false);
     }
   }
@@ -370,6 +373,7 @@ export default function SendScreen() {
   }
 
   function fullReset() {
+    submittingRef.current = false;
     slideAnim.stopAnimation(); slideAnim.setValue(0);
     successScale.setValue(0); successOpacity.setValue(0);
     checkRotate.setValue(0); hashOpacity.setValue(0);
