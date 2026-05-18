@@ -21,9 +21,4 @@ router.use(dappsRouter);
 router.use(tokensRouter);
 router.use(pricesRouter);
 
-// Auto-create tables on startup
-ensureDappsTable().catch(console.error);
-ensureTokensTable().catch(console.error);
-ensurePricesTable().catch(console.error);
-
 export default router;

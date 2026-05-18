@@ -1,5 +1,8 @@
 import app from "./app";
 import { logger } from "./lib/logger";
+import { ensureDappsTable } from "./routes/dapps";
+import { ensureTokensTable } from "./routes/tokens";
+import { ensurePricesTable } from "./routes/prices";
 
 const rawPort = process.env["PORT"];
 
@@ -15,11 +18,29 @@ if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
 }
 
-app.listen(port, (err) => {
-  if (err) {
-    logger.error({ err }, "Error listening on port");
-    process.exit(1);
-  }
+async function start() {
+  // Ensure all DB tables exist before accepting any traffic.
+  // Previously these ran fire-and-forget, causing race conditions where the
+  // first API requests would fail with "relation does not exist".
+  logger.info("Initialising database tables…");
+  await Promise.all([
+    ensureDappsTable(),
+    ensureTokensTable(),
+    ensurePricesTable(),
+  ]);
+  logger.info("Database tables ready");
 
-  logger.info({ port }, "Server listening");
+  app.listen(port, (err) => {
+    if (err) {
+      logger.error({ err }, "Error listening on port");
+      process.exit(1);
+    }
+
+    logger.info({ port }, "Server listening");
+  });
+}
+
+start().catch((err) => {
+  logger.error({ err }, "Failed to start server");
+  process.exit(1);
 });
