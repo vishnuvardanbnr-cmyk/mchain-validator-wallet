@@ -625,4 +625,70 @@ router.post("/p2p/orders/:id/rate", async (req, res) => {
   res.json({ ok: true });
 });
 
+// ── GET /p2p/market-price — lowest/highest price from active ads ──────────────
+router.get("/p2p/market-price", async (req, res) => {
+  const { token, side } = req.query as { token?: string; side?: string };
+  try {
+    const where = and(
+      eq(p2pAds.status, "active"),
+      ...(token ? [eq(p2pAds.token, token as "MC" | "USDT")] : []),
+      ...(side  ? [eq(p2pAds.side,  side  as "buy" | "sell")] : []),
+    );
+    const rows = await db.select({ price: p2pAds.price }).from(p2pAds).where(where);
+    const prices = rows.map(r => parseFloat(r.price)).filter(p => !isNaN(p) && p > 0);
+    if (prices.length === 0) {
+      res.json({ lowestPrice: null, highestPrice: null, count: 0 });
+      return;
+    }
+    res.json({
+      lowestPrice:  Math.min(...prices),
+      highestPrice: Math.max(...prices),
+      count: prices.length,
+    });
+  } catch {
+    res.status(500).json({ error: "Failed to fetch market price" });
+  }
+});
+
+// ── GET /p2p/wallet-balance/:address — MC + USDT on MChain ───────────────────
+router.get("/p2p/wallet-balance/:address", async (req, res) => {
+  const { address } = req.params;
+  if (!address) { res.status(400).json({ error: "address required" }); return; }
+
+  const { createPublicClient, http, formatEther, parseAbi } = await import("viem");
+  const MCHAIN_RPC = "https://chain.mvault.pro/api/rpc";
+  const mchain = {
+    id: 1888, name: "Mchain",
+    nativeCurrency: { name: "MC", symbol: "MC", decimals: 18 },
+    rpcUrls: { default: { http: [MCHAIN_RPC] } },
+  } as const;
+
+  try {
+    const addr = address.toLowerCase() as `0x${string}`;
+    const client = createPublicClient({ chain: mchain as never, transport: http(MCHAIN_RPC) });
+
+    const [mcWei, usdtRaw] = await Promise.allSettled([
+      client.getBalance({ address: addr }),
+      (async () => {
+        const usdtContract = process.env["USDT_CONTRACT_ADDRESS"];
+        if (!usdtContract) return 0n;
+        const erc20Abi = parseAbi(["function balanceOf(address) view returns (uint256)"]);
+        return client.readContract({
+          address: usdtContract.toLowerCase() as `0x${string}`,
+          abi: erc20Abi,
+          functionName: "balanceOf",
+          args: [addr],
+        }) as Promise<bigint>;
+      })(),
+    ]);
+
+    const mc   = mcWei.status   === "fulfilled" ? parseFloat(formatEther(mcWei.value)).toFixed(6)   : "0";
+    const usdt = usdtRaw.status === "fulfilled" ? (Number(usdtRaw.value) / 1e6).toFixed(6) : "0";
+
+    res.json({ mc, usdt });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : "Failed to fetch balance" });
+  }
+});
+
 export default router;

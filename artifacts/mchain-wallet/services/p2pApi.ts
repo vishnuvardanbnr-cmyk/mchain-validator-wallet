@@ -274,6 +274,15 @@ export const p2pApi = {
   rateOrder: (orderId: string, body: { raterAddress: string; ratedAddress: string; score: number; comment?: string }) =>
     req<{ ok: boolean }>(`/orders/${orderId}/rate`, { method: "POST", body: JSON.stringify(body) }),
 
+  // ── Market price & wallet balance ─────────────────────────────────────────
+  getMarketPrice: async (token: string, side: string): Promise<{ lowestPrice: number | null; highestPrice: number | null; count: number }> => {
+    const qs = new URLSearchParams({ token, side });
+    return req(`/market-price?${qs.toString()}`);
+  },
+  getWalletBalance: async (address: string): Promise<{ mc: string; usdt: string }> => {
+    return req(`/wallet-balance/${encodeURIComponent(address)}`);
+  },
+
   // ── Payment Details ───────────────────────────────────────────────────────
   getPaymentDetails: async (address: string) => {
     const rows = await req<PaymentDetail[]>(`/payment-details/${address}`);
