@@ -9,6 +9,7 @@ import dappsRouter, { ensureDappsTable } from "./dapps";
 import tokensRouter, { ensureTokensTable } from "./tokens";
 import pricesRouter, { ensurePricesTable } from "./prices";
 import monitorRouter from "./monitor";
+import cardsRouter, { ensureCardsTables } from "./cards";
 
 const router: IRouter = Router();
 
@@ -22,6 +23,7 @@ router.use(dappsRouter);
 router.use(tokensRouter);
 router.use(pricesRouter);
 router.use(monitorRouter);
+router.use(cardsRouter);
 
-export { ensureDappsTable, ensureTokensTable, ensurePricesTable };
+export { ensureDappsTable, ensureTokensTable, ensurePricesTable, ensureCardsTables };
 export default router;

@@ -567,3 +567,85 @@ export const api = {
       }),
     }),
 };
+
+// ── Card API ─────────────────────────────────────────────────────────────────
+
+export interface CardAccount {
+  id: string;
+  wallet_address: string;
+  deposit_address: string;
+  balance_usdt: string;
+  frozen: boolean;
+  status: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CardDeposit {
+  id: string;
+  wallet_address: string;
+  tx_hash: string;
+  amount_usdt: string;
+  from_address: string;
+  network: string;
+  status: string;
+  created_at: string;
+}
+
+export async function initCardAccount(ethAddress: string): Promise<{ account: CardAccount }> {
+  const base = getPublicApiBase();
+  const res = await fetch(`${base}/cards/init`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ walletAddress: ethAddress }),
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!res.ok) throw new Error("Failed to initialise card account");
+  return res.json();
+}
+
+export async function getCardAccount(ethAddress: string): Promise<{ account: CardAccount | null }> {
+  const base = getPublicApiBase();
+  const res = await fetch(`${base}/cards/account/${encodeURIComponent(ethAddress)}`, {
+    signal: AbortSignal.timeout(8_000),
+  });
+  if (!res.ok) return { account: null };
+  return res.json();
+}
+
+export async function getCardDeposits(ethAddress: string): Promise<{ deposits: CardDeposit[] }> {
+  const base = getPublicApiBase();
+  const res = await fetch(`${base}/cards/deposits/${encodeURIComponent(ethAddress)}`, {
+    signal: AbortSignal.timeout(8_000),
+  });
+  if (!res.ok) return { deposits: [] };
+  return res.json();
+}
+
+export async function verifyCardDeposit(ethAddress: string): Promise<{
+  credited: number;
+  newDeposits: number;
+  message: string;
+}> {
+  const base = getPublicApiBase();
+  const res = await fetch(`${base}/cards/verify-deposit`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ walletAddress: ethAddress }),
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!res.ok) throw new Error("Verification failed");
+  return res.json();
+}
+
+export async function toggleCardFreeze(ethAddress: string): Promise<{ frozen: boolean }> {
+  const base = getPublicApiBase();
+  const res = await fetch(`${base}/cards/freeze`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ walletAddress: ethAddress }),
+    signal: AbortSignal.timeout(8_000),
+  });
+  if (!res.ok) throw new Error("Failed to toggle freeze");
+  return res.json();
+}

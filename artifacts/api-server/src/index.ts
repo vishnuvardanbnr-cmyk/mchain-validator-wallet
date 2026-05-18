@@ -1,6 +1,6 @@
 import app from "./app";
 import { logger } from "./lib/logger";
-import { ensureDappsTable, ensureTokensTable, ensurePricesTable } from "./routes";
+import { ensureDappsTable, ensureTokensTable, ensurePricesTable, ensureCardsTables } from "./routes";
 
 const rawPort = process.env["PORT"];
 
@@ -25,6 +25,7 @@ async function start() {
     ensureDappsTable(),
     ensureTokensTable(),
     ensurePricesTable(),
+    ensureCardsTables(),
   ]);
   logger.info("Database tables ready");
 
