@@ -1,4 +1,9 @@
 import { Icon } from "@/components/Icon";
+import { Toast } from "@/components/Toast";
+import { useColors } from "@/hooks/useColors";
+import { useWallet } from "@/context/WalletContext";
+import { getCustomTokens, type CustomToken } from "@/services/tokens";
+import { useQuery } from "@tanstack/react-query";
 import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
@@ -19,20 +24,19 @@ import {
 } from "react-native";
 import QRCode from "react-native-qrcode-svg";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useWallet } from "@/context/WalletContext";
-import { Toast } from "@/components/Toast";
-import { useColors } from "@/hooks/useColors";
 
 export default function ReceiveScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { mxcAddress } = useWallet();
+  const { mxcAddress, activeWallet } = useWallet();
 
   const [requestAmount, setRequestAmount] = useState("");
   const [showAmountInput, setShowAmountInput] = useState(false);
   const [copied, setCopied] = useState(false);
   const [toast, setToast] = useState("");
   const [amountFocused, setAmountFocused] = useState(false);
+  // null = native MC, otherwise a custom token
+  const [selectedToken, setSelectedToken] = useState<CustomToken | null>(null);
 
   const glowAnim = useRef(new Animated.Value(0)).current;
   const glowAnim2 = useRef(new Animated.Value(0)).current;
@@ -40,6 +44,18 @@ export default function ReceiveScreen() {
   const qrScale = useRef(new Animated.Value(0.92)).current;
   const amountHeight = useRef(new Animated.Value(0)).current;
   const scrollRef = useRef<ScrollView>(null);
+
+  const { data: customTokens = [] } = useQuery<CustomToken[]>({
+    queryKey: ["customTokens", activeWallet?.id],
+    queryFn: () => getCustomTokens(activeWallet?.id ?? "", activeWallet?.nfcTemporary, activeWallet?.mxcAddress),
+    enabled: !!activeWallet?.id,
+  });
+
+  // Reset amount when token changes
+  useEffect(() => {
+    setRequestAmount("");
+    setShowAmountInput(false);
+  }, [selectedToken]);
 
   useFocusEffect(
     React.useCallback(() => {
@@ -74,9 +90,20 @@ export default function ReceiveScreen() {
     }).start();
   }, [showAmountInput, amountHeight]);
 
-  const qrValue = requestAmount && parseFloat(requestAmount) > 0
-    ? `${mxcAddress ?? ""}?amount=${requestAmount}`
-    : (mxcAddress ?? "");
+  const tokenSymbol = selectedToken ? selectedToken.symbol : "MC";
+  const hasAmount = !!requestAmount && parseFloat(requestAmount) > 0;
+
+  // Build QR value: include amount and token info when set
+  const qrValue = (() => {
+    if (!mxcAddress) return "";
+    const params: string[] = [];
+    if (hasAmount) params.push(`amount=${requestAmount}`);
+    if (selectedToken) {
+      params.push(`token=${selectedToken.symbol}`);
+      params.push(`contract=${selectedToken.contractAddress}`);
+    }
+    return params.length > 0 ? `${mxcAddress}?${params.join("&")}` : mxcAddress;
+  })();
 
   async function handleCopy() {
     if (!mxcAddress) return;
@@ -92,8 +119,8 @@ export default function ReceiveScreen() {
 
   async function handleShare() {
     if (!mxcAddress) return;
-    const msg = requestAmount && parseFloat(requestAmount) > 0
-      ? `Send ${requestAmount} MC to my MChain address:\n${mxcAddress}`
+    const msg = hasAmount
+      ? `Send ${requestAmount} ${tokenSymbol} to my MChain address:\n${mxcAddress}`
       : `My MChain address:\n${mxcAddress}`;
     try {
       await Share.share({ message: msg });
@@ -118,125 +145,95 @@ export default function ReceiveScreen() {
       gap: 12,
     },
     backBtn: {
-      width: 38,
-      height: 38,
-      borderRadius: 19,
-      backgroundColor: colors.card,
-      borderWidth: 1,
-      borderColor: colors.border,
-      alignItems: "center",
-      justifyContent: "center",
+      width: 38, height: 38, borderRadius: 19,
+      backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
+      alignItems: "center", justifyContent: "center",
     },
     headerTitle: { fontSize: 22, fontFamily: "Inter_700Bold", color: colors.foreground },
     qrSection: { alignItems: "center", paddingHorizontal: 24, paddingTop: 8 },
     qrOuter: { alignItems: "center", justifyContent: "center", marginBottom: 24 },
     glowRing: {
-      position: "absolute",
-      width: 290,
-      height: 290,
-      borderRadius: 145,
+      position: "absolute", width: 290, height: 290, borderRadius: 145,
       backgroundColor: colors.primary,
     },
     glowRing2: {
-      position: "absolute",
-      width: 290,
-      height: 290,
-      borderRadius: 145,
+      position: "absolute", width: 290, height: 290, borderRadius: 145,
       backgroundColor: colors.primary,
     },
     qrCard: {
-      backgroundColor: "#FFFFFF",
-      borderRadius: 20,
-      padding: 20,
-      shadowColor: colors.primary,
-      shadowOpacity: 0.2,
-      shadowRadius: 20,
-      shadowOffset: { width: 0, height: 4 },
-      elevation: 8,
+      backgroundColor: "#FFFFFF", borderRadius: 20, padding: 20,
+      shadowColor: colors.primary, shadowOpacity: 0.2, shadowRadius: 20,
+      shadowOffset: { width: 0, height: 4 }, elevation: 8,
     },
     networkBadge: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 6,
-      backgroundColor: colors.primary + "15",
-      paddingHorizontal: 14,
-      paddingVertical: 6,
-      borderRadius: 20,
-      borderWidth: 1,
-      borderColor: colors.primary + "25",
-      marginBottom: 20,
+      flexDirection: "row", alignItems: "center", gap: 6,
+      backgroundColor: colors.primary + "15", paddingHorizontal: 14, paddingVertical: 6,
+      borderRadius: 20, borderWidth: 1, borderColor: colors.primary + "25", marginBottom: 20,
     },
     networkBadgeText: { fontSize: 12, fontFamily: "Inter_600SemiBold", color: colors.primary },
+
+    tokenPickerWrap: { width: "100%", marginBottom: 16 },
+    tokenPickerLabel: { fontSize: 10, fontFamily: "Inter_700Bold", color: colors.mutedForeground, letterSpacing: 1.5, marginBottom: 8 },
+    tokenPickerRow: { flexDirection: "row", gap: 8, flexWrap: "wrap" },
+    tokenChip: {
+      flexDirection: "row", alignItems: "center", gap: 6,
+      paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20,
+      borderWidth: 1.5, borderColor: colors.border, backgroundColor: colors.card,
+    },
+    tokenChipActive: { borderColor: colors.primary, backgroundColor: colors.primary + "12" },
+    tokenChipText: { fontSize: 13, fontFamily: "Inter_600SemiBold", color: colors.mutedForeground },
+    tokenChipTextActive: { color: colors.primary },
+    tokenChipDot: { width: 7, height: 7, borderRadius: 3.5, backgroundColor: colors.border },
+    tokenChipDotActive: { backgroundColor: colors.primary },
+
     addressCard: {
-      width: "100%",
-      backgroundColor: colors.card,
-      borderRadius: colors.radius + 2,
-      borderWidth: 1,
-      borderColor: colors.border,
-      padding: 16,
-      marginBottom: 12,
+      width: "100%", backgroundColor: colors.card, borderRadius: colors.radius + 2,
+      borderWidth: 1, borderColor: colors.border, padding: 16, marginBottom: 12,
     },
     addressLabel: { fontSize: 10, fontFamily: "Inter_600SemiBold", color: colors.mutedForeground, letterSpacing: 1.5, marginBottom: 8 },
     addressText: { fontSize: 13, fontFamily: "Inter_400Regular", color: colors.primary, lineHeight: 21 },
     amountRequestRow: {
-      width: "100%",
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "space-between",
-      marginBottom: 8,
+      width: "100%", flexDirection: "row", alignItems: "center",
+      justifyContent: "space-between", marginBottom: 8,
     },
     amountRequestLabel: { fontSize: 12, fontFamily: "Inter_500Medium", color: colors.mutedForeground },
     amountToggle: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 5,
-      paddingHorizontal: 10,
-      paddingVertical: 5,
-      borderRadius: 10,
-      backgroundColor: colors.card,
-      borderWidth: 1,
-      borderColor: colors.border,
+      flexDirection: "row", alignItems: "center", gap: 5,
+      paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10,
+      backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
     },
     amountToggleText: { fontSize: 12, fontFamily: "Inter_600SemiBold", color: colors.primary },
     amountInputWrap: { width: "100%", overflow: "hidden", marginBottom: 12 },
     amountInputRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      backgroundColor: colors.card,
-      borderRadius: colors.radius,
-      borderWidth: 1,
-      borderColor: colors.border,
+      flexDirection: "row", alignItems: "center",
+      backgroundColor: colors.card, borderRadius: colors.radius,
+      borderWidth: 1, borderColor: colors.border,
     },
     amountInputRowFocused: { borderColor: colors.primary },
     amountInput: { flex: 1, paddingHorizontal: 14, paddingVertical: 12, fontSize: 18, fontFamily: "Inter_600SemiBold", color: colors.foreground },
     amountSuffix: { paddingHorizontal: 10, fontSize: 14, fontFamily: "Inter_600SemiBold", color: colors.mutedForeground },
     amountSetBtn: {
       backgroundColor: colors.primary,
-      borderTopRightRadius: colors.radius,
-      borderBottomRightRadius: colors.radius,
-      paddingHorizontal: 16,
-      paddingVertical: 12,
-      justifyContent: "center",
-      alignItems: "center",
+      borderTopRightRadius: colors.radius, borderBottomRightRadius: colors.radius,
+      paddingHorizontal: 16, paddingVertical: 12,
+      justifyContent: "center", alignItems: "center",
     },
     amountSetBtnText: { fontSize: 14, fontFamily: "Inter_600SemiBold", color: "#FFFFFF" },
     amountHint: { fontSize: 11, fontFamily: "Inter_400Regular", color: colors.mutedForeground, marginTop: 4 },
     actionRow: { width: "100%", flexDirection: "row", gap: 10, paddingHorizontal: 0 },
     copyBtn: { flex: 1, borderRadius: colors.radius, overflow: "hidden" },
     shareBtn: {
-      flex: 1,
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "center",
-      gap: 8,
-      backgroundColor: colors.card,
-      borderRadius: colors.radius,
-      borderWidth: 1,
-      borderColor: colors.border,
-      paddingVertical: 14,
+      flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
+      backgroundColor: colors.card, borderRadius: colors.radius,
+      borderWidth: 1, borderColor: colors.border, paddingVertical: 14,
     },
     shareBtnText: { fontSize: 15, fontFamily: "Inter_600SemiBold", color: colors.foreground },
   });
+
+  const allTokens: Array<{ label: string; token: CustomToken | null }> = [
+    { label: "MC", token: null },
+    ...customTokens.map(t => ({ label: t.symbol, token: t })),
+  ];
 
   return (
     <View style={s.container}>
@@ -245,7 +242,7 @@ export default function ReceiveScreen() {
           <TouchableOpacity style={s.backBtn} onPress={() => router.back()}>
             <Icon name="close" size={18} color={colors.foreground} />
           </TouchableOpacity>
-          <Text style={s.headerTitle}>Receive MC</Text>
+          <Text style={s.headerTitle}>Receive {tokenSymbol}</Text>
         </View>
 
         <View style={s.qrSection}>
@@ -259,17 +256,40 @@ export default function ReceiveScreen() {
             <Animated.View style={[s.glowRing, { opacity: glowOpacity1, transform: [{ scale: glowScale1 }] }]} />
             <Animated.View style={[s.qrCard, { transform: [{ scale: qrScale }] }]}>
               {mxcAddress ? (
-                <QRCode value={qrValue} size={200} color="#000000" backgroundColor="#FFFFFF" />
+                <QRCode value={qrValue || mxcAddress} size={200} color="#000000" backgroundColor="#FFFFFF" />
               ) : (
                 <View style={{ width: 200, height: 200, backgroundColor: "#F0F0F0", borderRadius: 8 }} />
               )}
             </Animated.View>
           </View>
 
+          {/* ── Token picker ── */}
+          {allTokens.length > 1 && (
+            <View style={s.tokenPickerWrap}>
+              <Text style={s.tokenPickerLabel}>TOKEN</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.tokenPickerRow}>
+                {allTokens.map(({ label, token }) => {
+                  const isActive = selectedToken?.id === token?.id;
+                  return (
+                    <TouchableOpacity
+                      key={label}
+                      style={[s.tokenChip, isActive && s.tokenChipActive]}
+                      onPress={() => setSelectedToken(token)}
+                      activeOpacity={0.75}
+                    >
+                      <View style={[s.tokenChipDot, isActive && s.tokenChipDotActive]} />
+                      <Text style={[s.tokenChipText, isActive && s.tokenChipTextActive]}>{label}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            </View>
+          )}
+
           <View style={s.amountRequestRow}>
             <Text style={s.amountRequestLabel}>
-              {requestAmount && parseFloat(requestAmount) > 0
-                ? `Requesting ${requestAmount} MC`
+              {hasAmount
+                ? `Requesting ${requestAmount} ${tokenSymbol}`
                 : "Request specific amount"}
             </Text>
             <TouchableOpacity style={s.amountToggle} onPress={() => setShowAmountInput((v) => !v)}>
@@ -298,7 +318,7 @@ export default function ReceiveScreen() {
                 onBlur={() => setAmountFocused(false)}
                 keyboardType="decimal-pad"
               />
-              <Text style={s.amountSuffix}>MC</Text>
+              <Text style={s.amountSuffix}>{tokenSymbol}</Text>
               <TouchableOpacity
                 style={s.amountSetBtn}
                 onPress={() => {
