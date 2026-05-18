@@ -277,6 +277,7 @@ export function NfcWriteModal({ visible, privateKey, mxcAddress, publicKey, labe
   const [confirmPin, setConfirmPin] = useState("");
   const [pinStep, setPinStep] = useState<"enter" | "confirm">("enter");
   const [errorMsg, setErrorMsg] = useState("");
+  const [saving, setSaving] = useState(false);
 
   const slideAnim = useRef(new Animated.Value(600)).current;
   const overlayOpacity = useRef(new Animated.Value(0)).current;
@@ -629,9 +630,20 @@ export function NfcWriteModal({ visible, privateKey, mxcAddress, publicKey, labe
             <Icon name="shield-checkmark" size={14} color="#10B981" />
             <Text style={s.successPillText}>PIN-protected · AES-256 encrypted</Text>
           </View>
-          <TouchableOpacity style={s.primaryBtn} onPress={() => { onSuccess(); onClose(); }} activeOpacity={0.85}>
+          <TouchableOpacity
+            style={[s.primaryBtn, saving && { opacity: 0.7 }]}
+            disabled={saving}
+            onPress={async () => {
+              setSaving(true);
+              try { await onSuccess(); } finally { setSaving(false); }
+              onClose();
+            }}
+            activeOpacity={0.85}
+          >
             <LinearGradient colors={["#10B981", "#059669"]} style={s.primaryGrad}>
-              <Text style={s.primaryBtnText}>Done</Text>
+              {saving
+                ? <ActivityIndicator color="#FFF" />
+                : <Text style={s.primaryBtnText}>Done</Text>}
             </LinearGradient>
           </TouchableOpacity>
         </View>
