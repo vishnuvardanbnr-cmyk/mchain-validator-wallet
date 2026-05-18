@@ -779,6 +779,9 @@ export default function DashboardScreen() {
             )}
           </TouchableOpacity>
           <View style={s.headerRight}>
+            <TouchableOpacity style={s.headerIconBtn} onPress={() => router.push("/(tabs)/cards")}>
+              <Icon name="card-outline" size={18} color={colors.foreground} />
+            </TouchableOpacity>
             <TouchableOpacity style={s.headerIconBtn} onPress={() => setShowNfcVault(true)}>
               <Icon name="wifi-outline" size={18} color={colors.foreground} />
             </TouchableOpacity>

@@ -57,6 +57,7 @@ export default function TabLayout() {
       />
       <Tabs.Screen name="send" options={{ href: null }} />
       <Tabs.Screen name="receive" options={{ href: null }} />
+      <Tabs.Screen name="cards" options={{ href: null }} />
       <Tabs.Screen
         name="validator"
         options={{
