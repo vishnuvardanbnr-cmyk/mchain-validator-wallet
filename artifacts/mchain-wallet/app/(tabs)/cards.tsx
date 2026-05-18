@@ -67,11 +67,11 @@ function ContactlessIcon({ color = "rgba(255,255,255,0.7)" }: { color?: string }
 function NetworkBadge() {
   return (
     <View style={{ flexDirection: "row", alignItems: "center", gap: 6,
-      backgroundColor: "#F0B90B18", borderWidth: 1, borderColor: "#F0B90B30",
+      backgroundColor: "#0EA5E918", borderWidth: 1, borderColor: "#0EA5E930",
       borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6, alignSelf: "flex-start" }}>
-      <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: "#F0B90B" }} />
-      <Text style={{ fontSize: 12, fontFamily: "Inter_600SemiBold", color: "#F0B90B", letterSpacing: 0.3 }}>
-        BNB Smart Chain · BEP20
+      <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: "#0EA5E9" }} />
+      <Text style={{ fontSize: 12, fontFamily: "Inter_600SemiBold", color: "#0EA5E9", letterSpacing: 0.3 }}>
+        MChain Network · USDT
       </Text>
     </View>
   );

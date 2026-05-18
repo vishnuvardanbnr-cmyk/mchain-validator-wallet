@@ -2,12 +2,34 @@ import { Router } from "express";
 import { pool } from "@workspace/db";
 import { keccak_256 } from "@noble/hashes/sha3";
 import { privateKeyToAddress } from "viem/accounts";
+import { createPublicClient, http, parseAbiItem, type Hex } from "viem";
 
 const router = Router();
 
-const BSC_USDT_CONTRACT = "0x55d398326f99059fF775485246999027B3197955";
-const BSCSCAN_API = "https://api.bscscan.com/api";
-const USDT_DECIMALS = 18;
+// ── MChain config ────────────────────────────────────────────────────────────
+const MCHAIN_RPC = "https://chain.mvault.pro/api/rpc";
+const USDT_DECIMALS = 6;
+
+const mchain = {
+  id: 1888,
+  name: "Mchain",
+  nativeCurrency: { name: "MC", symbol: "MC", decimals: 18 },
+  rpcUrls: { default: { http: [MCHAIN_RPC] } },
+} as const;
+
+function getUsdtContract(): `0x${string}` {
+  const addr = process.env["USDT_CONTRACT_ADDRESS"];
+  if (!addr) throw new Error("USDT_CONTRACT_ADDRESS is not configured");
+  return addr.toLowerCase() as `0x${string}`;
+}
+
+const TRANSFER_EVENT = parseAbiItem(
+  "event Transfer(address indexed from, address indexed to, uint256 value)"
+);
+
+function getPublicClient() {
+  return createPublicClient({ chain: mchain as never, transport: http(MCHAIN_RPC) });
+}
 
 // ── Address derivation ───────────────────────────────────────────────────────
 function getUserDepositAddress(ethAddress: string): string {
@@ -40,7 +62,7 @@ export async function ensureCardsTables(): Promise<void> {
       tx_hash TEXT NOT NULL UNIQUE,
       amount_usdt NUMERIC(20, 6) NOT NULL,
       from_address TEXT NOT NULL DEFAULT '',
-      network TEXT NOT NULL DEFAULT 'bsc',
+      network TEXT NOT NULL DEFAULT 'mchain',
       status TEXT NOT NULL DEFAULT 'confirmed',
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
@@ -73,7 +95,7 @@ router.post("/cards/init", async (req, res): Promise<void> => {
       [addr, depositAddress.toLowerCase()]
     );
     res.json({ account: result.rows[0] });
-  } catch (err) {
+  } catch {
     res.status(500).json({ error: "Failed to initialise card account" });
   }
 });
@@ -127,83 +149,68 @@ router.post("/cards/verify-deposit", async (req, res): Promise<void> => {
       res.status(404).json({ error: "Card account not found" });
       return;
     }
-    const account = accountResult.rows[0] as {
-      deposit_address: string;
-      balance_usdt: string;
-    };
-    const depositAddress = account.deposit_address;
+    const account = accountResult.rows[0] as { deposit_address: string };
+    const depositAddress = account.deposit_address as Hex;
 
-    // Fetch on-chain USDT transfers to this deposit address from BSCScan
-    const bscscanUrl = new URL(BSCSCAN_API);
-    bscscanUrl.searchParams.set("module", "account");
-    bscscanUrl.searchParams.set("action", "tokentx");
-    bscscanUrl.searchParams.set("contractaddress", BSC_USDT_CONTRACT);
-    bscscanUrl.searchParams.set("address", depositAddress);
-    bscscanUrl.searchParams.set("sort", "desc");
-    bscscanUrl.searchParams.set("offset", "50");
-    bscscanUrl.searchParams.set("page", "1");
-    if (process.env["BSCSCAN_API_KEY"]) {
-      bscscanUrl.searchParams.set("apikey", process.env["BSCSCAN_API_KEY"]);
-    }
-
-    const bscscanRes = await fetch(bscscanUrl.toString(), {
-      signal: AbortSignal.timeout(10_000),
-    });
-    const bscscanData = await bscscanRes.json() as {
-      status: string;
-      result: Array<{
-        hash: string;
-        from: string;
-        to: string;
-        value: string;
-        tokenSymbol: string;
-        tokenDecimal: string;
-        timeStamp: string;
-      }> | string;
-    };
-
-    // No transactions found
-    if (bscscanData.status !== "1" || !Array.isArray(bscscanData.result)) {
-      res.json({ credited: 0, newDeposits: 0, message: "No deposits found on chain" });
+    // Check USDT contract is configured
+    let usdtContract: Hex;
+    try {
+      usdtContract = getUsdtContract();
+    } catch {
+      res.status(503).json({ error: "USDT_CONTRACT_ADDRESS is not configured on the server" });
       return;
     }
 
-    // Filter to incoming transfers only
-    const incoming = bscscanData.result.filter(
-      (tx) => tx.to.toLowerCase() === depositAddress.toLowerCase()
-    );
+    const client = getPublicClient();
 
-    if (incoming.length === 0) {
-      res.json({ credited: 0, newDeposits: 0, message: "No incoming USDT deposits found" });
+    // Get latest block to set a reasonable scan window
+    const latestBlock = await client.getBlockNumber();
+    const fromBlock = latestBlock > 500_000n ? latestBlock - 500_000n : 0n;
+
+    // Query Transfer events where `to` = depositAddress
+    const logs = await client.getLogs({
+      address: usdtContract,
+      event: TRANSFER_EVENT,
+      args: { to: depositAddress },
+      fromBlock,
+      toBlock: "latest",
+    });
+
+    if (logs.length === 0) {
+      res.json({ credited: 0, newDeposits: 0, message: "No USDT deposits found on MChain" });
       return;
     }
 
     // Find which tx hashes we haven't credited yet
-    const hashes = incoming.map((tx) => tx.hash);
+    const hashes = logs.map((l) => l.transactionHash).filter(Boolean);
     const existingResult = await pool.query(
       `SELECT tx_hash FROM card_deposits WHERE tx_hash = ANY($1)`,
       [hashes]
     );
-    const existingHashes = new Set(existingResult.rows.map((r: { tx_hash: string }) => r.tx_hash));
+    const existingHashes = new Set(
+      existingResult.rows.map((r: { tx_hash: string }) => r.tx_hash)
+    );
 
-    const newTxs = incoming.filter((tx) => !existingHashes.has(tx.hash));
-    if (newTxs.length === 0) {
+    const newLogs = logs.filter(
+      (l) => l.transactionHash && !existingHashes.has(l.transactionHash)
+    );
+
+    if (newLogs.length === 0) {
       res.json({ credited: 0, newDeposits: 0, message: "All deposits already credited" });
       return;
     }
 
-    // Credit each new deposit
     let totalCredited = 0;
-    for (const tx of newTxs) {
-      const decimals = parseInt(tx.tokenDecimal) || USDT_DECIMALS;
-      const amountUsdt = Number(BigInt(tx.value)) / Math.pow(10, decimals);
+    for (const log of newLogs) {
+      if (!log.args?.value || !log.transactionHash) continue;
+      const amountUsdt = Number(log.args.value) / Math.pow(10, USDT_DECIMALS);
       if (amountUsdt <= 0) continue;
 
       await pool.query(
         `INSERT INTO card_deposits (wallet_address, tx_hash, amount_usdt, from_address, network)
-         VALUES ($1, $2, $3, $4, 'bsc')
+         VALUES ($1, $2, $3, $4, 'mchain')
          ON CONFLICT (tx_hash) DO NOTHING`,
-        [addr, tx.hash, amountUsdt.toFixed(6), tx.from.toLowerCase()]
+        [addr, log.transactionHash, amountUsdt.toFixed(6), (log.args.from ?? "").toLowerCase()]
       );
       totalCredited += amountUsdt;
     }
@@ -219,13 +226,14 @@ router.post("/cards/verify-deposit", async (req, res): Promise<void> => {
 
     res.json({
       credited: totalCredited,
-      newDeposits: newTxs.length,
+      newDeposits: newLogs.length,
       message: totalCredited > 0
         ? `${totalCredited.toFixed(2)} USDT credited to your card`
         : "All deposits already credited",
     });
   } catch (err) {
-    res.status(500).json({ error: "Failed to verify deposit" });
+    const msg = err instanceof Error ? err.message : "Unknown error";
+    res.status(500).json({ error: `Verification failed: ${msg}` });
   }
 });
 

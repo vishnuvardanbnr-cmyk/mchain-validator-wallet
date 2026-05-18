@@ -7,6 +7,7 @@ import {
   Settings as SettingsIcon, Globe, ArrowRightLeft, Trophy, ShieldCheck,
   Save, RotateCcw, AlertTriangle, CheckCircle2, Info, Zap, Clock,
   TrendingUp, Users, DollarSign, Scale, BadgeCheck, UserX, Medal,
+  KeyRound, Eye, EyeOff, Trash2, Plus,
 } from "lucide-react";
 
 function Toggle({ checked, onCheckedChange }: { checked: boolean; onCheckedChange: (v: boolean) => void }) {
@@ -30,6 +31,7 @@ const NAV = [
   { id: "trading",  label: "Trading Rules", icon: ArrowRightLeft,  desc: "Order limits & dispute settings" },
   { id: "tiers",    label: "Volume Tiers",  icon: Trophy,          desc: "Trader badge thresholds" },
   { id: "kyc",      label: "KYC & Trust",   icon: ShieldCheck,     desc: "Verification requirements" },
+  { id: "apikeys",  label: "API Keys",       icon: KeyRound,        desc: "Third-party service credentials" },
 ] as const;
 
 type SectionId = (typeof NAV)[number]["id"];
@@ -365,6 +367,233 @@ function KycSection() {
   );
 }
 
+// ── API Keys Section ──────────────────────────────────────────────────────────
+
+interface ApiKeyEntry {
+  name: string;
+  label: string;
+  hint: string;
+  configured: boolean;
+  masked: string | null;
+  updated_at: string | null;
+}
+
+function ApiKeyRow({ entry, onSave, onDelete }: {
+  entry: ApiKeyEntry;
+  onSave: (name: string, value: string) => Promise<void>;
+  onDelete: (name: string) => Promise<void>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState("");
+  const [show, setShow] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const { toast } = useToast();
+
+  async function handleSave() {
+    if (!value.trim() || value.trim().length < 8) return;
+    setSaving(true);
+    try {
+      await onSave(entry.name, value.trim());
+      setValue("");
+      setEditing(false);
+      setShow(false);
+      toast({ title: `${entry.label} saved` });
+    } catch (e) {
+      toast({ title: "Error", description: e instanceof Error ? e.message : "Failed", variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDelete() {
+    if (!confirm(`Remove ${entry.label}? This cannot be undone.`)) return;
+    setDeleting(true);
+    try {
+      await onDelete(entry.name);
+      toast({ title: `${entry.label} removed` });
+    } catch (e) {
+      toast({ title: "Error", description: e instanceof Error ? e.message : "Failed", variant: "destructive" });
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  return (
+    <div className="px-6 py-5 hover:bg-muted/10 transition-colors">
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex items-start gap-3 flex-1 min-w-0">
+          <div className={`mt-0.5 p-1.5 rounded-lg ${entry.configured ? "bg-emerald-500/10" : "bg-muted/40"}`}>
+            <KeyRound size={13} className={entry.configured ? "text-emerald-400" : "text-muted-foreground"} />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-sm font-medium text-foreground">{entry.label}</span>
+              {entry.configured
+                ? <span className="flex items-center gap-1 text-xs text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">
+                    <CheckCircle2 size={10} /> Configured
+                  </span>
+                : <span className="text-xs text-muted-foreground bg-muted/40 border border-border px-2 py-0.5 rounded-full">
+                    Not set
+                  </span>
+              }
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">{entry.hint}</p>
+            {entry.configured && entry.masked && !editing && (
+              <div className="mt-2 flex items-center gap-2">
+                <code className="text-xs font-mono text-muted-foreground bg-muted/30 px-2 py-1 rounded border border-border">
+                  {entry.masked}
+                </code>
+                {entry.updated_at && (
+                  <span className="text-xs text-muted-foreground">
+                    · Updated {new Date(entry.updated_at).toLocaleDateString()}
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0">
+          {!editing && (
+            <>
+              <button
+                onClick={() => setEditing(true)}
+                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-border text-muted-foreground hover:text-foreground hover:border-primary/40 transition-colors"
+              >
+                <Plus size={11} />
+                {entry.configured ? "Update" : "Add Key"}
+              </button>
+              {entry.configured && (
+                <button
+                  onClick={handleDelete}
+                  disabled={deleting}
+                  className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg border border-red-500/20 text-red-400 hover:bg-red-500/10 transition-colors disabled:opacity-50"
+                >
+                  <Trash2 size={11} />
+                </button>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+
+      {editing && (
+        <div className="mt-4 ml-9 space-y-3">
+          <div className="relative">
+            <input
+              type={show ? "text" : "password"}
+              value={value}
+              onChange={e => setValue(e.target.value)}
+              placeholder={entry.hint}
+              autoFocus
+              className="w-full bg-background border border-border rounded-lg px-3 py-2.5 pr-10 text-sm font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 placeholder:font-sans placeholder:text-muted-foreground/60"
+            />
+            <button
+              type="button"
+              onClick={() => setShow(s => !s)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+            >
+              {show ? <EyeOff size={14} /> : <Eye size={14} />}
+            </button>
+          </div>
+          {value.length > 0 && value.length < 8 && (
+            <p className="text-xs text-red-400">Key must be at least 8 characters</p>
+          )}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleSave}
+              disabled={saving || value.trim().length < 8}
+              className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              <Save size={11} />
+              {saving ? "Saving…" : "Save Key"}
+            </button>
+            <button
+              onClick={() => { setEditing(false); setValue(""); setShow(false); }}
+              className="text-xs px-3 py-1.5 rounded-lg border border-border text-muted-foreground hover:text-foreground transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ApiKeysSection() {
+  const qc = useQueryClient();
+  const { data, isLoading, error } = useQuery<{ keys: ApiKeyEntry[] }>({
+    queryKey: ["admin-api-keys"],
+    queryFn: () => get<{ keys: ApiKeyEntry[] }>("/api-keys"),
+  });
+
+  async function handleSave(name: string, value: string) {
+    await fetch(`/api/admin/api-keys/${name}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", "x-admin-key": localStorage.getItem("adminKey") ?? "" },
+      body: JSON.stringify({ value }),
+    }).then(async r => {
+      if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error((d as {error?: string}).error ?? `HTTP ${r.status}`); }
+    });
+    qc.invalidateQueries({ queryKey: ["admin-api-keys"] });
+  }
+
+  async function handleDelete(name: string) {
+    await fetch(`/api/admin/api-keys/${name}`, {
+      method: "DELETE",
+      headers: { "x-admin-key": localStorage.getItem("adminKey") ?? "" },
+    }).then(async r => {
+      if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error((d as {error?: string}).error ?? `HTTP ${r.status}`); }
+    });
+    qc.invalidateQueries({ queryKey: ["admin-api-keys"] });
+  }
+
+  if (isLoading) return <SectionSkeleton />;
+  if (error) return (
+    <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-6 text-sm text-red-400">
+      Failed to load API keys.
+    </div>
+  );
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 px-5 py-4 flex items-start gap-3">
+        <AlertTriangle size={15} className="text-amber-400 mt-0.5 shrink-0" />
+        <div>
+          <p className="text-sm font-medium text-amber-300">Keys are stored securely in the database</p>
+          <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+            Keys are encrypted at rest and never exposed in plaintext after saving. Only the last 4 characters are shown for verification. Do not share your admin credentials with anyone.
+          </p>
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-card-border bg-card overflow-hidden">
+        <div className="px-6 py-4 border-b border-card-border bg-card/60 flex items-center gap-3">
+          <div className="p-2 rounded-lg bg-primary/10">
+            <KeyRound size={14} className="text-primary" />
+          </div>
+          <div>
+            <h2 className="text-sm font-semibold text-foreground">Third-Party API Credentials</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">Manage keys for payment providers, card issuers, and other services</p>
+          </div>
+        </div>
+        <div className="divide-y divide-card-border">
+          {(data?.keys ?? []).map(entry => (
+            <ApiKeyRow
+              key={entry.name}
+              entry={entry}
+              onSave={handleSave}
+              onDelete={handleDelete}
+            />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Skeleton ──────────────────────────────────────────────────────────────────
 
 function SectionSkeleton() {
@@ -445,6 +674,7 @@ export default function Settings() {
         {active === "trading"  && <TradingSection />}
         {active === "tiers"    && <TiersSection />}
         {active === "kyc"      && <KycSection />}
+        {active === "apikeys"  && <ApiKeysSection />}
       </div>
     </div>
   );

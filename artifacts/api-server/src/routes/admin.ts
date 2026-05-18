@@ -1,5 +1,5 @@
 import { Router, type Request, type Response, type NextFunction } from "express";
-import { db } from "@workspace/db";
+import { db, pool } from "@workspace/db";
 import { p2pProfiles, p2pOrders, p2pDisputes, p2pAds, p2pMessages, appSettings, DEFAULT_VOLUME_TIERS, type VolumeTiers } from "@workspace/db";
 import { eq, and, desc, count, sql, asc } from "drizzle-orm";
 import { normalizeAddress } from "../escrow";
@@ -457,6 +457,99 @@ router.post("/admin/escrow/orders/:id/refund", async (req, res) => {
     isSystem: true,
   });
   res.json(updated);
+});
+
+// ── API Keys (stored in DB, admin-only) ──────────────────────────────────────
+
+const ALLOWED_API_KEYS = [
+  { name: "stripe_secret_key",    label: "Stripe Secret Key",      hint: "sk_live_ or sk_test_" },
+  { name: "card_issuer_api_key",  label: "Card Issuer API Key",     hint: "Immersve / M2P key" },
+  { name: "bscscan_api_key",      label: "BSCScan API Key",         hint: "Optional — for BSC monitoring" },
+  { name: "sendgrid_api_key",     label: "SendGrid API Key",        hint: "Email notifications" },
+] as const;
+
+type AllowedKeyName = (typeof ALLOWED_API_KEYS)[number]["name"];
+
+async function ensureApiKeysTable(): Promise<void> {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS platform_api_keys (
+      key_name TEXT PRIMARY KEY,
+      key_value TEXT NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+}
+ensureApiKeysTable().catch(() => {});
+
+function maskKey(value: string): string {
+  if (value.length <= 8) return "••••••••";
+  return value.slice(0, 7) + "•".repeat(Math.min(16, value.length - 11)) + value.slice(-4);
+}
+
+router.get("/admin/api-keys", async (_req, res): Promise<void> => {
+  try {
+    const result = await pool.query(
+      "SELECT key_name, key_value, updated_at FROM platform_api_keys"
+    );
+    const stored = new Map(result.rows.map((r: { key_name: string; key_value: string; updated_at: string }) =>
+      [r.key_name, { value: r.key_value, updated_at: r.updated_at }]
+    ));
+
+    const keys = ALLOWED_API_KEYS.map(({ name, label, hint }) => {
+      const entry = stored.get(name);
+      return {
+        name,
+        label,
+        hint,
+        configured: !!entry,
+        masked: entry ? maskKey(entry.value) : null,
+        updated_at: entry?.updated_at ?? null,
+      };
+    });
+
+    res.json({ keys });
+  } catch {
+    res.status(500).json({ error: "Failed to fetch API keys" });
+  }
+});
+
+router.put("/admin/api-keys/:keyName", async (req, res): Promise<void> => {
+  const keyName = req.params["keyName"] as AllowedKeyName;
+  const { value } = req.body as { value?: string };
+
+  if (!ALLOWED_API_KEYS.find((k) => k.name === keyName)) {
+    res.status(400).json({ error: "Unknown key name" });
+    return;
+  }
+  if (!value || typeof value !== "string" || value.trim().length < 8) {
+    res.status(400).json({ error: "Key value must be at least 8 characters" });
+    return;
+  }
+
+  try {
+    await pool.query(
+      `INSERT INTO platform_api_keys (key_name, key_value, updated_at)
+       VALUES ($1, $2, NOW())
+       ON CONFLICT (key_name) DO UPDATE SET key_value = $2, updated_at = NOW()`,
+      [keyName, value.trim()]
+    );
+    res.json({ success: true, masked: maskKey(value.trim()) });
+  } catch {
+    res.status(500).json({ error: "Failed to save API key" });
+  }
+});
+
+router.delete("/admin/api-keys/:keyName", async (req, res): Promise<void> => {
+  const keyName = req.params["keyName"] as AllowedKeyName;
+  if (!ALLOWED_API_KEYS.find((k) => k.name === keyName)) {
+    res.status(400).json({ error: "Unknown key name" }); return;
+  }
+  try {
+    await pool.query("DELETE FROM platform_api_keys WHERE key_name = $1", [keyName]);
+    res.json({ success: true });
+  } catch {
+    res.status(500).json({ error: "Failed to delete API key" });
+  }
 });
 
 export default router;
