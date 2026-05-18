@@ -177,42 +177,33 @@ export default function P2PScreen() {
   const [selectedAd, setSelectedAd] = useState<P2pAd | null>(null);
   const [showMyOrders, setShowMyOrders] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
-
-  // ── Paginated ads state ──────────────────────────────────────────────────
-  const [adItems, setAdItems] = useState<P2pAd[]>([]);
-  const [adTotal, setAdTotal] = useState(0);
   const [adPage, setAdPage] = useState(0);
-  const [adLoading, setAdLoading] = useState(false);
 
+  // ── Ads via React Query — instant cache on revisit, background refresh ──
+  const {
+    data: adsPage,
+    isFetching: adLoading,
+    refetch: refetchAds,
+  } = useQuery({
+    queryKey: ["p2p_ads", token, side, adPage],
+    queryFn: () => p2pApi.getAds({ token, side, offset: adPage * AD_LIMIT }),
+    staleTime: 30_000,        // show cached ads instantly for 30s
+    refetchInterval: 15_000,  // silently refresh every 15s in background
+    placeholderData: (prev) => prev, // keep showing old page while new one loads
+  });
+
+  const adItems = adsPage?.ads ?? [];
+  const adTotal = adsPage?.total ?? 0;
   const totalPages = Math.ceil(adTotal / AD_LIMIT);
 
+  // When token/side changes, jump back to page 0
+  useEffect(() => { setAdPage(0); }, [token, side]);
+
+  // Expose a loadAds shim for places that call it manually (pull-to-refresh etc.)
   const loadAds = useCallback(async (page: number) => {
-    setAdLoading(true);
-    try {
-      const res = await p2pApi.getAds({ token, side, offset: page * AD_LIMIT });
-      setAdItems(res.ads);
-      setAdTotal(res.total);
-      setAdPage(page);
-    } catch {
-      // silently ignore
-    } finally {
-      setAdLoading(false);
-    }
-  }, [token, side]);
-
-  // Reset to page 0 and reload when token/side changes (loadAds identity changes)
-  useEffect(() => {
-    setAdItems([]);
-    setAdTotal(0);
-    setAdPage(0);
-    void loadAds(0);
-  }, [loadAds]);
-
-  // Auto-refresh current page every 15 s
-  useEffect(() => {
-    const id = setInterval(() => { void loadAds(adPage); }, 15_000);
-    return () => clearInterval(id);
-  }, [loadAds, adPage]);
+    setAdPage(page);
+    await refetchAds();
+  }, [refetchAds]);
 
   const {
     data: profile,
@@ -234,6 +225,8 @@ export default function P2PScreen() {
     },
     enabled: !!mxcAddress,
     retry: 1,
+    staleTime: 2 * 60_000,   // profile barely changes — cache for 2 min
+    gcTime: 10 * 60_000,     // keep in memory for 10 min so revisits are instant
   });
 
   const [activating, setActivating] = useState(false);
