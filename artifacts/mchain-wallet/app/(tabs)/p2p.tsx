@@ -305,17 +305,7 @@ export default function P2PScreen() {
     }
   }
 
-  const profileReady = !profileLoading;
   const hasProfile = profile != null;
-
-  // Skeleton while loading
-  if (profileLoading) {
-    return (
-      <View style={{ flex: 1, backgroundColor: colors.background, paddingTop: insets.top + 60 }}>
-        {[1,2,3].map(i => <AdCardSkeleton key={i} />)}
-      </View>
-    );
-  }
 
   // Network / timeout error — server unreachable
   if (profileError) {
@@ -420,13 +410,21 @@ export default function P2PScreen() {
     connectNote: { fontSize: 12, fontFamily: "Inter_400Regular", color: colors.mutedForeground, lineHeight: 18, flex: 1 },
   });
 
-  if (profileReady && !hasProfile) {
+  if (!hasProfile) {
     return (
       <KeyboardAvoidingView
         style={[s.container, { paddingTop: insets.top + (Platform.OS === "web" ? 67 : 8) }]}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
       >
         <ScrollView contentContainerStyle={s.connectScroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+
+          {/* ── Subtle profile-check banner ── */}
+          {profileLoading && (
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginHorizontal: 20, marginBottom: 8, paddingHorizontal: 14, paddingVertical: 10, backgroundColor: colors.card, borderRadius: 12, borderWidth: 1, borderColor: colors.border }}>
+              <ActivityIndicator size="small" color={colors.primary} />
+              <Text style={{ fontSize: 13, fontFamily: "Inter_400Regular", color: colors.mutedForeground }}>Checking your wallet…</Text>
+            </View>
+          )}
 
           {/* ── Hero ── */}
           <View style={s.connectHero}>
