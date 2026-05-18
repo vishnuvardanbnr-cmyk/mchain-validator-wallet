@@ -219,15 +219,43 @@ interface SendTxReq {
 }
 
 // ── Featured Projects component ────────────────────────────────────────────────
+function FeaturedProjectsSkeleton({ colors }: { colors: ReturnType<typeof useColors> }) {
+  return (
+    <View style={{ marginTop: 4, marginBottom: 32 }}>
+      <View style={{ flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between", marginHorizontal: 20, marginBottom: 16 }}>
+        <View>
+          <View style={{ width: 130, height: 10, borderRadius: 5, backgroundColor: colors.border, marginBottom: 6 }} />
+          <View style={{ width: 90, height: 12, borderRadius: 5, backgroundColor: colors.border }} />
+        </View>
+      </View>
+      <View style={{ paddingHorizontal: 14, gap: 10 }}>
+        {[1, 2].map(i => (
+          <View key={i} style={{ backgroundColor: colors.card, borderRadius: 20, borderWidth: 1, borderColor: colors.border, padding: 16, flexDirection: "row", alignItems: "center", gap: 14 }}>
+            <View style={{ width: 52, height: 52, borderRadius: 16, backgroundColor: colors.border }} />
+            <View style={{ flex: 1, gap: 8 }}>
+              <View style={{ width: "50%", height: 13, borderRadius: 5, backgroundColor: colors.border }} />
+              <View style={{ width: "80%", height: 11, borderRadius: 5, backgroundColor: colors.border }} />
+            </View>
+            <View style={{ width: 36, height: 36, borderRadius: 12, backgroundColor: colors.border }} />
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
+
 function FeaturedProjects({
   dapps,
+  loading,
   onOpen,
   colors,
 }: {
   dapps: FeaturedDapp[];
+  loading?: boolean;
   onOpen: (dapp: FeaturedDapp) => void;
   colors: ReturnType<typeof useColors>;
 }) {
+  if (loading) return <FeaturedProjectsSkeleton colors={colors} />;
   if (dapps.length === 0) return null;
 
   const activeCount = dapps.filter((d) => !d.comingSoon).length;
@@ -359,10 +387,11 @@ export default function DAppScreen() {
   );
 
   // ── Featured DApps from API ──────────────────────────────────────────────────
-  const { data: featuredDapps = [] } = useQuery({
+  const { data: featuredDapps = [], isLoading: dappsLoading } = useQuery({
     queryKey: ["featuredDapps"],
     queryFn: () => api.getFeaturedDapps(),
-    staleTime: 60_000,
+    staleTime: 2 * 60_000,
+    gcTime: 10 * 60_000,
   });
 
   // ── History state ────────────────────────────────────────────────────────────
@@ -1077,7 +1106,7 @@ export default function DAppScreen() {
         })()}
 
         {/* ── Featured Projects ── */}
-        <FeaturedProjects dapps={featuredDapps} onOpen={(dapp) => openDApp(dapp.url, { saveHistory: true, title: dapp.name })} colors={colors} />
+        <FeaturedProjects dapps={featuredDapps} loading={dappsLoading} onOpen={(dapp) => openDApp(dapp.url, { saveHistory: true, title: dapp.name })} colors={colors} />
 
       </ScrollView>
     </View>
