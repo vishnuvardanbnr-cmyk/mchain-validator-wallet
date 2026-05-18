@@ -459,6 +459,156 @@ router.post("/admin/escrow/orders/:id/refund", async (req, res) => {
   res.json(updated);
 });
 
+// ── Escrow wallet status + migration ─────────────────────────────────────────
+
+router.get("/admin/escrow/wallet", async (_req, res) => {
+  const {
+    isEscrowConfigured, getEscrowAddress, normalizeAddress,
+  } = await import("../escrow");
+
+  if (!isEscrowConfigured()) {
+    res.json({ configured: false, address: null, mc: "0", usdt: "0", lockedOrders: 0 });
+    return;
+  }
+
+  const rawAddress = getEscrowAddress();
+  const address = normalizeAddress(rawAddress);
+
+  const [lockedResult] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(p2pOrders)
+    .where(eq(p2pOrders.escrowStatus, "locked"));
+
+  try {
+    const { createPublicClient, http, formatEther, parseAbi } = await import("viem");
+    const MCHAIN_RPC = "https://chain.mvault.pro/api/rpc";
+    const mchain = {
+      id: 1888, name: "Mchain",
+      nativeCurrency: { name: "MC", symbol: "MC", decimals: 18 },
+      rpcUrls: { default: { http: [MCHAIN_RPC] } },
+    } as const;
+    const client = createPublicClient({ chain: mchain as never, transport: http(MCHAIN_RPC) });
+
+    const [mcResult, usdtResult] = await Promise.allSettled([
+      client.getBalance({ address }),
+      (async () => {
+        const usdtContract = process.env["USDT_CONTRACT_ADDRESS"];
+        if (!usdtContract) return 0n;
+        const erc20Abi = parseAbi(["function balanceOf(address) view returns (uint256)"]);
+        return client.readContract({
+          address: usdtContract.toLowerCase() as `0x${string}`,
+          abi: erc20Abi,
+          functionName: "balanceOf",
+          args: [address],
+        }) as Promise<bigint>;
+      })(),
+    ]);
+
+    res.json({
+      configured: true,
+      address: rawAddress,
+      mc:   mcResult.status   === "fulfilled" ? parseFloat(formatEther(mcResult.value)).toFixed(6) : "0",
+      usdt: usdtResult.status === "fulfilled" ? (Number(usdtResult.value) / 1e6).toFixed(6) : "0",
+      lockedOrders: lockedResult?.count ?? 0,
+    });
+  } catch (e) {
+    res.status(500).json({ error: e instanceof Error ? e.message : "Failed to fetch balance" });
+  }
+});
+
+router.post("/admin/escrow/migrate", async (req, res) => {
+  const { newAddress, newPrivateKey } = req.body as { newAddress?: string; newPrivateKey?: string };
+  if (!newAddress?.trim() || !newPrivateKey?.trim()) {
+    res.status(400).json({ error: "newAddress and newPrivateKey are required" });
+    return;
+  }
+
+  const {
+    isEscrowConfigured, getEscrowAddress, getEscrowPrivateKey,
+    normalizeAddress, broadcastMcTransaction, broadcastUsdtTransaction,
+    mcToWei, saveEscrowConfig,
+  } = await import("../escrow");
+
+  // If no existing config, just save the new one directly
+  if (!isEscrowConfigured()) {
+    saveEscrowConfig(newAddress.trim(), newPrivateKey.trim());
+    res.json({ migrated: false, newAddress: newAddress.trim(), message: "Escrow wallet saved — no prior wallet to migrate from." });
+    return;
+  }
+
+  const oldAddress = getEscrowAddress();
+  const oldPk      = getEscrowPrivateKey();
+  const oldEth     = normalizeAddress(oldAddress);
+
+  // ── Fetch current balances ────────────────────────────────────────────────
+  const { createPublicClient, http, formatEther, parseAbi } = await import("viem");
+  const MCHAIN_RPC = "https://chain.mvault.pro/api/rpc";
+  const mchain = {
+    id: 1888, name: "Mchain",
+    nativeCurrency: { name: "MC", symbol: "MC", decimals: 18 },
+    rpcUrls: { default: { http: [MCHAIN_RPC] } },
+  } as const;
+  const client = createPublicClient({ chain: mchain as never, transport: http(MCHAIN_RPC) });
+
+  let mcWei = 0n, usdtRaw = 0n;
+  try {
+    mcWei = await client.getBalance({ address: oldEth });
+  } catch { /* leave 0 */ }
+
+  const usdtContract = process.env["USDT_CONTRACT_ADDRESS"];
+  if (usdtContract) {
+    try {
+      const erc20Abi = parseAbi(["function balanceOf(address) view returns (uint256)"]);
+      usdtRaw = await client.readContract({
+        address: usdtContract.toLowerCase() as `0x${string}`,
+        abi: erc20Abi,
+        functionName: "balanceOf",
+        args: [oldEth],
+      }) as bigint;
+    } catch { /* leave 0 */ }
+  }
+
+  const txHashes: { mc?: string; usdt?: string } = {};
+  const GAS_RESERVE = BigInt(mcToWei("0.05")); // reserve 0.05 MC for gas
+
+  // ── Move USDT first (it costs MC gas) ────────────────────────────────────
+  if (usdtRaw > 0n) {
+    try {
+      const usdtAmount = (Number(usdtRaw) / 1e6).toFixed(6);
+      txHashes.usdt = await broadcastUsdtTransaction(oldPk, newAddress.trim(), usdtAmount);
+    } catch (e) {
+      res.status(502).json({ error: `USDT transfer failed: ${e instanceof Error ? e.message : "Unknown"}` });
+      return;
+    }
+  }
+
+  // ── Move MC (leave gas reserve) ───────────────────────────────────────────
+  const sendableMc = mcWei > GAS_RESERVE ? mcWei - GAS_RESERVE : 0n;
+  if (sendableMc > 0n) {
+    try {
+      txHashes.mc = await broadcastMcTransaction(oldAddress, newAddress.trim(), sendableMc.toString(), oldPk);
+    } catch (e) {
+      res.status(502).json({
+        error: `MC transfer failed: ${e instanceof Error ? e.message : "Unknown"}`,
+        partialTxHashes: txHashes,
+      });
+      return;
+    }
+  }
+
+  // ── Persist new config ────────────────────────────────────────────────────
+  saveEscrowConfig(newAddress.trim(), newPrivateKey.trim());
+
+  res.json({
+    migrated: true,
+    oldAddress,
+    newAddress: newAddress.trim(),
+    mcMoved:   sendableMc > 0n ? parseFloat(formatEther(sendableMc)).toFixed(6) : "0",
+    usdtMoved: usdtRaw   > 0n ? (Number(usdtRaw) / 1e6).toFixed(6) : "0",
+    txHashes,
+  });
+});
+
 // ── API Keys (stored in DB, admin-only) ──────────────────────────────────────
 
 const ALLOWED_API_KEYS = [

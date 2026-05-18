@@ -4,6 +4,9 @@ import {
   type WalletClient, type Chain,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 // ── Hex helpers ───────────────────────────────────────────────────────────────
 
@@ -139,20 +142,60 @@ export async function broadcastUsdtTransaction(
   return txHash;
 }
 
-// ── Escrow wallet env helpers ─────────────────────────────────────────────────
+// ── Escrow wallet config (file-based override > env vars) ─────────────────────
+
+interface EscrowFileConfig {
+  address: string;
+  privateKey: string;
+}
+
+// Path: one level above the compiled bundle directory
+// Dev:  <project>/artifacts/api-server/escrow-config.json
+// VPS:  /opt/mchain-api/escrow-config.json
+function configFilePath(): string {
+  try {
+    return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "escrow-config.json");
+  } catch {
+    return path.resolve(process.cwd(), "escrow-config.json");
+  }
+}
+
+// In-memory cache — undefined = not yet attempted, null = file absent/invalid
+let _fileConfig: EscrowFileConfig | null | undefined = undefined;
+
+function loadFileConfig(): EscrowFileConfig | null {
+  if (_fileConfig !== undefined) return _fileConfig;
+  try {
+    const raw = fs.readFileSync(configFilePath(), "utf8");
+    _fileConfig = JSON.parse(raw) as EscrowFileConfig;
+  } catch {
+    _fileConfig = null;
+  }
+  return _fileConfig;
+}
+
+/** Persist a new escrow wallet config to disk and refresh the in-memory cache. */
+export function saveEscrowConfig(address: string, privateKey: string): void {
+  fs.writeFileSync(configFilePath(), JSON.stringify({ address, privateKey }, null, 2), "utf8");
+  _fileConfig = { address, privateKey };
+}
 
 export function getEscrowAddress(): string {
-  const addr = process.env["P2P_ESCROW_ADDRESS"];
+  const addr = loadFileConfig()?.address ?? process.env["P2P_ESCROW_ADDRESS"];
   if (!addr) throw new Error("P2P_ESCROW_ADDRESS is not configured");
   return addr;
 }
 
 export function getEscrowPrivateKey(): string {
-  const key = process.env["P2P_ESCROW_PRIVATE_KEY"];
+  const key = loadFileConfig()?.privateKey ?? process.env["P2P_ESCROW_PRIVATE_KEY"];
   if (!key) throw new Error("P2P_ESCROW_PRIVATE_KEY is not configured");
   return key;
 }
 
 export function isEscrowConfigured(): boolean {
-  return !!(process.env["P2P_ESCROW_ADDRESS"] && process.env["P2P_ESCROW_PRIVATE_KEY"]);
+  const cfg = loadFileConfig();
+  return !!(
+    (cfg?.address || process.env["P2P_ESCROW_ADDRESS"]) &&
+    (cfg?.privateKey || process.env["P2P_ESCROW_PRIVATE_KEY"])
+  );
 }
