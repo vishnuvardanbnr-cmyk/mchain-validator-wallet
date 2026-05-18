@@ -5,7 +5,10 @@ import {
   Inter_700Bold,
 } from "@expo-google-fonts/inter";
 import { useFonts } from "expo-font";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient } from "@tanstack/react-query";
+import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
+import { createAsyncStoragePersister } from "@tanstack/query-async-storage-persister";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import React, { useEffect, useState } from "react";
@@ -28,6 +31,14 @@ const queryClient = new QueryClient({
   defaultOptions: {
     queries: { retry: 2, staleTime: 5_000 },
   },
+});
+
+// Persist the React Query cache to AsyncStorage so cold app restarts
+// show cached data immediately instead of loading from network every time.
+const asyncStoragePersister = createAsyncStoragePersister({
+  storage: AsyncStorage,
+  key: "mchain_rq_cache",
+  throttleTime: 2_000, // write to storage at most every 2s
 });
 
 /**
@@ -121,7 +132,10 @@ export default function RootLayout() {
   return (
     <SafeAreaProvider style={{ backgroundColor: "#060E1A" }}>
       <ErrorBoundary>
-        <QueryClientProvider client={queryClient}>
+        <PersistQueryClientProvider
+          client={queryClient}
+          persistOptions={{ persister: asyncStoragePersister, maxAge: 24 * 60 * 60_000 }}
+        >
           <GestureHandlerRootView style={{ flex: 1, backgroundColor: "#060E1A" }}>
             <ScreenProtection>
 
@@ -151,7 +165,7 @@ export default function RootLayout() {
 
             </ScreenProtection>
           </GestureHandlerRootView>
-        </QueryClientProvider>
+        </PersistQueryClientProvider>
       </ErrorBoundary>
     </SafeAreaProvider>
   );
