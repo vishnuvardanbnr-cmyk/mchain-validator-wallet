@@ -161,7 +161,7 @@ function shortenAddr(addr: string) {
 export default function P2PScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { mxcAddress } = useWallet();
+  const { mxcAddress, activeWallet } = useWallet();
   const queryClient = useQueryClient();
   const scrollRef = useRef<ScrollView>(null);
 
@@ -378,6 +378,26 @@ export default function P2PScreen() {
     connectNoteRow: { flexDirection: "row", alignItems: "flex-start", gap: 8, paddingHorizontal: 4 },
     connectNote: { fontSize: 12, fontFamily: "Inter_400Regular", color: colors.mutedForeground, lineHeight: 18, flex: 1 },
   });
+
+  if (activeWallet?.nfcTemporary) {
+    return (
+      <View style={[s.container, { alignItems: "center", justifyContent: "center", paddingHorizontal: 32 }]}>
+        <View style={{
+          width: 72, height: 72, borderRadius: 36,
+          backgroundColor: "#F59E0B15", borderWidth: 1, borderColor: "#F59E0B40",
+          alignItems: "center", justifyContent: "center", marginBottom: 20,
+        }}>
+          <Icon name="wifi-outline" size={32} color="#F59E0B" />
+        </View>
+        <Text style={{ fontSize: 20, fontFamily: "Inter_700Bold", color: colors.foreground, textAlign: "center", marginBottom: 10 }}>
+          P2P Not Available
+        </Text>
+        <Text style={{ fontSize: 14, fontFamily: "Inter_400Regular", color: colors.mutedForeground, textAlign: "center", lineHeight: 22 }}>
+          NFC card wallets are temporary sessions and cannot be used for P2P trading.{"\n\n"}Switch to a saved wallet to access the P2P market.
+        </Text>
+      </View>
+    );
+  }
 
   if (!hasProfile) {
     return (

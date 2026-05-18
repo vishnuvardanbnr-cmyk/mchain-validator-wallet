@@ -124,7 +124,7 @@ interface NfcWalletCardProps {
 export function NfcWalletCard({ open, onClose, hideCard }: NfcWalletCardProps = {}) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { addNfcTemporaryWallet, switchWallet } = useWallet();
+  const { wallets, addNfcTemporaryWallet, switchWallet } = useWallet();
 
   const [nfcSupported, setNfcSupported] = useState<boolean | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
@@ -266,8 +266,14 @@ export function NfcWalletCard({ open, onClose, hideCard }: NfcWalletCardProps = 
         ethAddress, mxcAddress,
       };
 
-      const entry = await addNfcTemporaryWallet(keypair, scannedPayload.label || "NFC Wallet");
-      await switchWallet(entry.id);
+      // If this wallet is already saved in the app, switch to it instead of creating a duplicate session
+      const existing = wallets.find(w => w.mxcAddress === mxcAddress && !w.nfcTemporary);
+      if (existing) {
+        await switchWallet(existing.id);
+      } else {
+        const entry = await addNfcTemporaryWallet(keypair, scannedPayload.label || "NFC Wallet");
+        await switchWallet(entry.id);
+      }
       if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       crossfadeTo("success");
     } catch {
