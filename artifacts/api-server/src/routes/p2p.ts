@@ -269,12 +269,12 @@ router.post("/p2p/ads/:id/cancel", async (req, res) => {
     try {
       const remaining = parseFloat(String(ad.availableAmount));
       if (remaining > 0) {
+        const escrowPk   = getEscrowPrivateKey();
+        const escrowAddr = getEscrowAddress();
         if (ad.token === "MC") {
-          const result = await broadcastMcTransaction(ownerAddress, String(remaining));
-          refundTxHash = result.txHash;
+          refundTxHash = await broadcastMcTransaction(escrowAddr, ownerAddress, mcToWei(String(remaining)), escrowPk);
         } else if (ad.token === "USDT") {
-          const result = await broadcastUsdtTransaction(ownerAddress, String(remaining));
-          refundTxHash = result.txHash;
+          refundTxHash = await broadcastUsdtTransaction(escrowPk, ownerAddress, String(remaining));
         }
       }
     } catch (e) {
@@ -338,7 +338,7 @@ router.post("/p2p/orders", async (req, res) => {
   const v = validate(createOrderRequestSchema, req.body);
   if ("error" in v) { res.status(400).json({ error: v.error }); return; }
   const body = v.data as z.infer<typeof createOrderRequestSchema>;
-  const { buyerAddress: rawBuyer, paymentDetails } = req.body as { buyerAddress?: string; paymentDetails?: string };
+  const { buyerAddress: rawBuyer, paymentDetails, escrowTxHash: orderEscrowTxHash } = req.body as { buyerAddress?: string; paymentDetails?: string; escrowTxHash?: string };
   const buyerAddress = toEth(rawBuyer);
   if (!buyerAddress) { res.status(400).json({ error: "buyerAddress required" }); return; }
 
@@ -359,8 +359,18 @@ router.post("/p2p/orders", async (req, res) => {
   const sellerAddress = ad.side === "sell" ? ad.ownerAddress : buyerAddress;
   const buyerFinal = ad.side === "sell" ? buyerAddress : ad.ownerAddress;
 
-  // If ad already has escrow locked, new orders inherit that status automatically
-  const inheritEscrow = ad.escrowStatus === "locked";
+  // SELL ad → escrow inherited from the ad-level lock (set at ad creation)
+  // BUY ad  → seller locks at order creation, escrowTxHash comes from the request
+  const inheritEscrow = ad.side === "sell" && ad.escrowStatus === "locked";
+  const sellerEscrow  = ad.side === "buy"  && !!orderEscrowTxHash;
+
+  // For BUY ads: seller must have locked escrow before placing the order
+  if (ad.side === "buy" && isEscrowConfigured() && !orderEscrowTxHash) {
+    res.status(400).json({ error: "Escrow required — lock your funds in escrow before placing this order" }); return;
+  }
+
+  const escrowStatus: "locked" | "none" = (inheritEscrow || sellerEscrow) ? "locked" : "none";
+  const escrowTxHash = inheritEscrow ? ad.escrowTxHash : (sellerEscrow ? orderEscrowTxHash : null);
 
   const [order] = await db.insert(p2pOrders).values({
     adId: ad.id,
@@ -374,9 +384,9 @@ router.post("/p2p/orders", async (req, res) => {
     paymentMethod: body.paymentMethod,
     paymentDetails: paymentDetails ?? "",
     paymentDeadline: deadline,
-    escrowStatus: inheritEscrow ? "locked" : "none",
-    escrowTxHash: inheritEscrow ? ad.escrowTxHash : null,
-    escrowLockedAt: inheritEscrow ? new Date() : null,
+    escrowStatus,
+    escrowTxHash: escrowTxHash ?? null,
+    escrowLockedAt: escrowStatus === "locked" ? new Date() : null,
   }).returning();
 
   // Deduct from available amount

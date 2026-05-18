@@ -249,7 +249,7 @@ export const p2pApi = {
   getOrder: async (id: string) => cvtOrder(await req<P2pOrder>(`/orders/${id}`)),
   createOrder: async (body: {
     adId: string; buyerAddress: string; cryptoAmount: string;
-    paymentMethod: string; paymentDetails?: string;
+    paymentMethod: string; paymentDetails?: string; escrowTxHash?: string;
   }) => cvtOrder(await req<P2pOrder>("/orders", { method: "POST", body: JSON.stringify(body) })),
   markPaid: async (id: string, address: string) =>
     cvtOrder(await req<P2pOrder>(`/orders/${id}/pay`, { method: "POST", body: JSON.stringify({ address }) })),
