@@ -3,6 +3,7 @@ import { pool } from "@workspace/db";
 import { keccak_256 } from "@noble/hashes/sha3";
 import { privateKeyToAddress } from "viem/accounts";
 import { createPublicClient, http, parseAbiItem, type Hex } from "viem";
+import Stripe from "stripe";
 
 const router = Router();
 
@@ -31,6 +32,24 @@ function getPublicClient() {
   return createPublicClient({ chain: mchain as never, transport: http(MCHAIN_RPC) });
 }
 
+// ── Stripe helpers ───────────────────────────────────────────────────────────
+async function getStripeKey(): Promise<string | null> {
+  try {
+    const res = await pool.query(
+      "SELECT key_value FROM platform_api_keys WHERE key_name = 'stripe_secret_key'"
+    );
+    return (res.rows[0]?.key_value as string) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function getStripeClient(): Promise<Stripe | null> {
+  const key = await getStripeKey();
+  if (!key) return null;
+  return new Stripe(key, { apiVersion: "2025-04-30.basil" });
+}
+
 // ── Address derivation ───────────────────────────────────────────────────────
 function getUserDepositAddress(ethAddress: string): string {
   const escrowKey = process.env["P2P_ESCROW_PRIVATE_KEY"] ?? "mchain-cards-no-key";
@@ -53,9 +72,15 @@ export async function ensureCardsTables(): Promise<void> {
       balance_usdt NUMERIC(20, 6) NOT NULL DEFAULT 0,
       frozen BOOLEAN NOT NULL DEFAULT false,
       status TEXT NOT NULL DEFAULT 'active',
+      stripe_cardholder_id TEXT,
+      stripe_card_id TEXT,
+      cardholder_name TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    ALTER TABLE card_accounts ADD COLUMN IF NOT EXISTS stripe_cardholder_id TEXT;
+    ALTER TABLE card_accounts ADD COLUMN IF NOT EXISTS stripe_card_id TEXT;
+    ALTER TABLE card_accounts ADD COLUMN IF NOT EXISTS cardholder_name TEXT;
     CREATE TABLE IF NOT EXISTS card_deposits (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       wallet_address TEXT NOT NULL,
@@ -70,9 +95,60 @@ export async function ensureCardsTables(): Promise<void> {
   `);
 }
 
+// ── Stripe: create cardholder + card ─────────────────────────────────────────
+async function provisionStripeCard(
+  stripe: Stripe,
+  name: string,
+  walletAddress: string
+): Promise<{ cardholderId: string; cardId: string }> {
+  const cardholder = await stripe.issuing.cardholders.create({
+    name: name || `MChain User ${walletAddress.slice(2, 8).toUpperCase()}`,
+    type: "individual",
+    billing: {
+      address: {
+        line1: "123 Main Street",
+        city: "New York",
+        state: "NY",
+        postal_code: "10001",
+        country: "US",
+      },
+    },
+    status: "active",
+  });
+
+  const card = await stripe.issuing.cards.create({
+    cardholder: cardholder.id,
+    currency: "usd",
+    type: "virtual",
+    status: "active",
+  });
+
+  return { cardholderId: cardholder.id, cardId: card.id };
+}
+
+// ── Stripe: sync spending limit to current USDT balance ──────────────────────
+async function syncStripeSpendingLimit(
+  stripe: Stripe,
+  cardId: string,
+  balanceUsdt: number
+): Promise<void> {
+  const amountCents = Math.floor(balanceUsdt * 100);
+  if (amountCents <= 0) {
+    await stripe.issuing.cards.update(cardId, {
+      spending_controls: { spending_limits: [] },
+    });
+    return;
+  }
+  await stripe.issuing.cards.update(cardId, {
+    spending_controls: {
+      spending_limits: [{ amount: amountCents, interval: "all_time" }],
+    },
+  });
+}
+
 // ── POST /cards/init ─────────────────────────────────────────────────────────
 router.post("/cards/init", async (req, res): Promise<void> => {
-  const { walletAddress } = req.body as { walletAddress?: string };
+  const { walletAddress, name } = req.body as { walletAddress?: string; name?: string };
   if (!walletAddress || typeof walletAddress !== "string") {
     res.status(400).json({ error: "walletAddress required" });
     return;
@@ -87,12 +163,29 @@ router.post("/cards/init", async (req, res): Promise<void> => {
       res.json({ account: existing.rows[0] });
       return;
     }
+
     const depositAddress = getUserDepositAddress(addr);
+    const displayName = name?.trim() || `MChain ${addr.slice(2, 8).toUpperCase()}`;
+
+    // Provision Stripe cardholder + card if key is configured
+    let cardholderId: string | null = null;
+    let cardId: string | null = null;
+    try {
+      const stripe = await getStripeClient();
+      if (stripe) {
+        const provisioned = await provisionStripeCard(stripe, displayName, addr);
+        cardholderId = provisioned.cardholderId;
+        cardId = provisioned.cardId;
+      }
+    } catch (err) {
+      console.warn("Stripe provisioning failed:", err instanceof Error ? err.message : err);
+    }
+
     const result = await pool.query(
-      `INSERT INTO card_accounts (wallet_address, deposit_address)
-       VALUES ($1, $2)
+      `INSERT INTO card_accounts (wallet_address, deposit_address, stripe_cardholder_id, stripe_card_id, cardholder_name)
+       VALUES ($1, $2, $3, $4, $5)
        RETURNING *`,
-      [addr, depositAddress.toLowerCase()]
+      [addr, depositAddress.toLowerCase(), cardholderId, cardId, displayName]
     );
     res.json({ account: result.rows[0] });
   } catch {
@@ -131,6 +224,52 @@ router.get("/cards/deposits/:walletAddress", async (req, res): Promise<void> => 
   }
 });
 
+// ── GET /cards/stripe-details/:walletAddress ─────────────────────────────────
+// Returns real card number, CVC, expiry for secure display in app.
+// Works in test mode; live mode requires PCI DSS SAQ-D compliance.
+router.get("/cards/stripe-details/:walletAddress", async (req, res): Promise<void> => {
+  const addr = (req.params["walletAddress"] ?? "").toLowerCase();
+  if (!addr) { res.status(400).json({ error: "walletAddress required" }); return; }
+  try {
+    const accountRes = await pool.query(
+      "SELECT stripe_card_id FROM card_accounts WHERE wallet_address = $1",
+      [addr]
+    );
+    if (accountRes.rows.length === 0) {
+      res.status(404).json({ error: "Card account not found" });
+      return;
+    }
+    const cardId: string | null = accountRes.rows[0].stripe_card_id as string | null;
+    if (!cardId) {
+      res.status(404).json({ error: "No Stripe card issued yet — add your Stripe key in admin settings" });
+      return;
+    }
+
+    const stripe = await getStripeClient();
+    if (!stripe) {
+      res.status(503).json({ error: "Stripe key not configured" });
+      return;
+    }
+
+    const card = await stripe.issuing.cards.retrieve(cardId, {
+      expand: ["number", "cvc"],
+    });
+
+    res.json({
+      number: (card as unknown as { number?: string }).number ?? null,
+      cvc: (card as unknown as { cvc?: string }).cvc ?? null,
+      exp_month: card.exp_month,
+      exp_year: card.exp_year,
+      last4: card.last4,
+      brand: card.brand,
+      status: card.status,
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Unknown error";
+    res.status(500).json({ error: `Failed to fetch card details: ${msg}` });
+  }
+});
+
 // ── POST /cards/verify-deposit ───────────────────────────────────────────────
 router.post("/cards/verify-deposit", async (req, res): Promise<void> => {
   const { walletAddress } = req.body as { walletAddress?: string };
@@ -149,10 +288,13 @@ router.post("/cards/verify-deposit", async (req, res): Promise<void> => {
       res.status(404).json({ error: "Card account not found" });
       return;
     }
-    const account = accountResult.rows[0] as { deposit_address: string };
+    const account = accountResult.rows[0] as {
+      deposit_address: string;
+      stripe_card_id: string | null;
+      balance_usdt: string;
+    };
     const depositAddress = account.deposit_address as Hex;
 
-    // Check USDT contract is configured
     let usdtContract: Hex;
     try {
       usdtContract = getUsdtContract();
@@ -162,12 +304,9 @@ router.post("/cards/verify-deposit", async (req, res): Promise<void> => {
     }
 
     const client = getPublicClient();
-
-    // Get latest block to set a reasonable scan window
     const latestBlock = await client.getBlockNumber();
     const fromBlock = latestBlock > 500_000n ? latestBlock - 500_000n : 0n;
 
-    // Query Transfer events where `to` = depositAddress
     const logs = await client.getLogs({
       address: usdtContract,
       event: TRANSFER_EVENT,
@@ -181,7 +320,6 @@ router.post("/cards/verify-deposit", async (req, res): Promise<void> => {
       return;
     }
 
-    // Find which tx hashes we haven't credited yet
     const hashes = logs.map((l) => l.transactionHash).filter(Boolean);
     const existingResult = await pool.query(
       `SELECT tx_hash FROM card_deposits WHERE tx_hash = ANY($1)`,
@@ -215,20 +353,37 @@ router.post("/cards/verify-deposit", async (req, res): Promise<void> => {
       totalCredited += amountUsdt;
     }
 
+    let newBalance = parseFloat(account.balance_usdt);
     if (totalCredited > 0) {
-      await pool.query(
+      const updatedAccount = await pool.query(
         `UPDATE card_accounts
          SET balance_usdt = balance_usdt + $1, updated_at = NOW()
-         WHERE wallet_address = $2`,
+         WHERE wallet_address = $2
+         RETURNING balance_usdt, stripe_card_id`,
         [totalCredited.toFixed(6), addr]
       );
+
+      newBalance = parseFloat(updatedAccount.rows[0].balance_usdt as string);
+      const stripeCardId: string | null = updatedAccount.rows[0].stripe_card_id as string | null;
+
+      // Push new spending limit to Stripe
+      if (stripeCardId) {
+        try {
+          const stripe = await getStripeClient();
+          if (stripe) {
+            await syncStripeSpendingLimit(stripe, stripeCardId, newBalance);
+          }
+        } catch (stripeErr) {
+          console.warn("Stripe limit sync failed:", stripeErr instanceof Error ? stripeErr.message : stripeErr);
+        }
+      }
     }
 
     res.json({
       credited: totalCredited,
       newDeposits: newLogs.length,
       message: totalCredited > 0
-        ? `${totalCredited.toFixed(2)} USDT credited to your card`
+        ? `${totalCredited.toFixed(2)} USDT credited — card limit set to $${newBalance.toFixed(2)}`
         : "All deposits already credited",
     });
   } catch (err) {
@@ -249,11 +404,31 @@ router.post("/cards/freeze", async (req, res): Promise<void> => {
       `UPDATE card_accounts
        SET frozen = NOT frozen, updated_at = NOW()
        WHERE wallet_address = $1
-       RETURNING frozen`,
+       RETURNING frozen, stripe_card_id`,
       [addr]
     );
     if (result.rows.length === 0) { res.status(404).json({ error: "Account not found" }); return; }
-    res.json({ frozen: result.rows[0].frozen });
+
+    const { frozen, stripe_card_id: stripeCardId } = result.rows[0] as {
+      frozen: boolean;
+      stripe_card_id: string | null;
+    };
+
+    // Mirror freeze/unfreeze on the Stripe card
+    if (stripeCardId) {
+      try {
+        const stripe = await getStripeClient();
+        if (stripe) {
+          await stripe.issuing.cards.update(stripeCardId, {
+            status: frozen ? "inactive" : "active",
+          });
+        }
+      } catch (stripeErr) {
+        console.warn("Stripe freeze sync failed:", stripeErr instanceof Error ? stripeErr.message : stripeErr);
+      }
+    }
+
+    res.json({ frozen });
   } catch {
     res.status(500).json({ error: "Failed to update freeze status" });
   }

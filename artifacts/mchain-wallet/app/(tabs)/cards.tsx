@@ -4,8 +4,10 @@ import { useWallet } from "@/context/WalletContext";
 import {
   CardAccount,
   CardDeposit,
+  StripeCardDetails,
   getCardAccount,
   getCardDeposits,
+  getStripeCardDetails,
   initCardAccount,
   verifyCardDeposit,
   toggleCardFreeze,
@@ -147,6 +149,9 @@ export default function CardsScreen() {
   const [verifyMsg, setVerifyMsg] = useState<{ type: "success" | "error" | "info"; text: string } | null>(null);
   const [copied, setCopied] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [stripeDetails, setStripeDetails] = useState<StripeCardDetails | null>(null);
+  const [loadingCardDetails, setLoadingCardDetails] = useState(false);
+  const [showCardDetails, setShowCardDetails] = useState(false);
 
   const verifyAnim = useRef(new Animated.Value(0)).current;
   const msgAnim = useRef(new Animated.Value(0)).current;
@@ -234,6 +239,31 @@ export default function CardsScreen() {
       showMsg("error", "Verification failed. Please try again.");
     } finally {
       setIsVerifying(false);
+    }
+  };
+
+  // ── Show / hide card details ──────────────────────────────────────────────
+  const handleToggleCardDetails = async () => {
+    if (showCardDetails) {
+      setShowCardDetails(false);
+      return;
+    }
+    if (stripeDetails) {
+      setShowCardDetails(true);
+      return;
+    }
+    if (!ethAddress || loadingCardDetails) return;
+    if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setLoadingCardDetails(true);
+    try {
+      const details = await getStripeCardDetails(ethAddress);
+      setStripeDetails(details);
+      setShowCardDetails(true);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to load card details";
+      showMsg("error", msg);
+    } finally {
+      setLoadingCardDetails(false);
     }
   };
 
@@ -634,10 +664,18 @@ export default function CardsScreen() {
                   color: "rgba(255,255,255,0.4)", letterSpacing: 1 }}>CARD NUMBER</Text>
                 <Text style={{ fontSize: 14, fontFamily: "Inter_600SemiBold",
                   color: "rgba(255,255,255,0.8)", letterSpacing: 2.5, marginTop: 3 }}>
-                  •••• •••• •••• ••••
+                  {showCardDetails && stripeDetails?.number
+                    ? stripeDetails.number.replace(/(\d{4})/g, "$1 ").trim()
+                    : showCardDetails && stripeDetails?.last4
+                    ? `•••• •••• •••• ${stripeDetails.last4}`
+                    : "•••• •••• •••• ••••"}
                 </Text>
                 <Text style={{ fontSize: 9, fontFamily: "Inter_400Regular",
-                  color: "rgba(255,255,255,0.35)", marginTop: 4 }}>VALID THRU  ••/••</Text>
+                  color: "rgba(255,255,255,0.35)", marginTop: 4 }}>
+                  {showCardDetails && stripeDetails
+                    ? `VALID THRU  ${String(stripeDetails.exp_month).padStart(2, "0")}/${String(stripeDetails.exp_year).slice(-2)}  CVV ${stripeDetails.cvc ?? "•••"}`
+                    : "VALID THRU  ••/••  CVV •••"}
+                </Text>
               </View>
               <View style={{ alignItems: "center", gap: 3 }}>
                 <View style={{ flexDirection: "row" }}>
@@ -672,6 +710,21 @@ export default function CardsScreen() {
           >
             <Icon name="arrow-down-circle-outline" size={22} color={colors.primary} />
             <Text style={s.actionBtnText}>Deposit</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[s.actionBtn, showCardDetails && { borderColor: colors.primary + "60", backgroundColor: colors.primary + "10" }]}
+            activeOpacity={0.7}
+            onPress={handleToggleCardDetails}
+            disabled={loadingCardDetails}
+          >
+            {loadingCardDetails
+              ? <ActivityIndicator size="small" color={colors.primary} />
+              : <Icon name={showCardDetails ? "eye-off-outline" : "eye-outline"} size={22}
+                  color={showCardDetails ? colors.primary : colors.foreground} />
+            }
+            <Text style={[s.actionBtnText, showCardDetails && { color: colors.primary }]}>
+              {showCardDetails ? "Hide" : "Details"}
+            </Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[s.actionBtn, account.frozen && { borderColor: "#EF444440", backgroundColor: "#EF444408" }]}
@@ -777,8 +830,8 @@ export default function CardsScreen() {
             <View style={s.warningBox}>
               <Icon name="warning-outline" size={16} color="#F59E0B" />
               <Text style={s.warningText}>
-                Only send <Text style={{ fontFamily: "Inter_700Bold" }}>USDT (BEP20)</Text> on the{" "}
-                <Text style={{ fontFamily: "Inter_700Bold" }}>BNB Smart Chain</Text>. Sending other tokens or networks will result in permanent loss.
+                Only send <Text style={{ fontFamily: "Inter_700Bold" }}>USDT</Text> on the{" "}
+                <Text style={{ fontFamily: "Inter_700Bold" }}>MChain Network</Text>. Sending other tokens or networks will result in permanent loss.
               </Text>
             </View>
 

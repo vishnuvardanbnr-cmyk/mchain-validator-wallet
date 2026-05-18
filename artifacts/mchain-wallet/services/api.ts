@@ -649,3 +649,25 @@ export async function toggleCardFreeze(ethAddress: string): Promise<{ frozen: bo
   if (!res.ok) throw new Error("Failed to toggle freeze");
   return res.json();
 }
+
+export interface StripeCardDetails {
+  number: string | null;
+  cvc: string | null;
+  exp_month: number;
+  exp_year: number;
+  last4: string;
+  brand: string;
+  status: string;
+}
+
+export async function getStripeCardDetails(ethAddress: string): Promise<StripeCardDetails> {
+  const base = getPublicApiBase();
+  const res = await fetch(`${base}/cards/stripe-details/${encodeURIComponent(ethAddress)}`, {
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error((data as { error?: string }).error ?? "Failed to fetch card details");
+  }
+  return res.json();
+}
