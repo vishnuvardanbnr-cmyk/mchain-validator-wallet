@@ -10,6 +10,15 @@ interface Candle {
   close: number;
 }
 
+export interface MartingaleStat {
+  grossPnl: number;
+  maxDrawdown: number;
+  maxStakeUsed: number;
+  longestLossStreak: number;
+  monthly: MonthlyStat[];
+  equity: EquityPoint[];
+}
+
 export interface AssetBacktestResult {
   asset: string;
   totalCandles: number;
@@ -26,6 +35,7 @@ export interface AssetBacktestResult {
   byConfidence: ConfStat[];
   monthly: MonthlyStat[];
   equity: EquityPoint[];
+  martingale: MartingaleStat;
 }
 
 interface HourStat   { hour: number; trades: number; wins: number; winRate: number; }
@@ -193,13 +203,15 @@ function computeSignal(prices: number[]): { direction: "UP" | "DOWN"; confidence
   return { direction, confidence };
 }
 
-// ── Per-asset backtest ────────────────────────────────────────────────────────
+// ── Per-asset backtest (standard + martingale in one pass) ────────────────────
 function runAssetBacktest(candles: Candle[], asset: string): AssetBacktestResult {
-  const STAKE        = 5;
+  const BASE_STAKE   = 5;
+  const MAX_STAKE    = 640;   // 5→10→20→40→80→160→320→640 (7 doublings max)
   const PAYOUT_RATIO = 1.85;
   const THRESHOLD    = 75;
   const WINDOW       = 200;
 
+  // Standard strategy state
   let signalsFired = 0, newsFiltered = 0, spikeFiltered = 0;
   let wins = 0, losses = 0, balance = 0, peak = 0, maxDrawdown = 0;
 
@@ -213,11 +225,22 @@ function runAssetBacktest(candles: Candle[], asset: string): AssetBacktestResult
   const monthMap: Record<string, { wins: number; losses: number; pnl: number }> = {};
   const equity:   EquityPoint[] = [];
 
+  // Martingale strategy state
+  let mgBalance      = 0;
+  let mgPeak         = 0;
+  let mgMaxDD        = 0;
+  let mgStake        = BASE_STAKE;
+  let mgStreak       = 0;
+  let mgMaxStreak    = 0;
+  let mgMaxStakeUsed = BASE_STAKE;
+  const mgMonthMap:  Record<string, { wins: number; losses: number; pnl: number }> = {};
+  const mgEquity:    EquityPoint[] = [];
+
   for (let i = 30; i < candles.length - 1; i++) {
     const c = candles[i];
 
-    if (isNewsTime(c.epoch))          { newsFiltered++;  continue; }
-    if (isVolatilitySpike(candles, i)){ spikeFiltered++; continue; }
+    if (isNewsTime(c.epoch))           { newsFiltered++;  continue; }
+    if (isVolatilitySpike(candles, i)) { spikeFiltered++; continue; }
 
     const window = candles.slice(Math.max(0, i - WINDOW), i + 1).map(x => x.close);
     const sig = computeSignal(window);
@@ -226,9 +249,10 @@ function runAssetBacktest(candles: Candle[], asset: string): AssetBacktestResult
     signalsFired++;
     const next = candles[i + 1];
     const won  = sig.direction === "UP" ? next.close > next.open : next.close < next.open;
-    const pnl  = won ? STAKE * (PAYOUT_RATIO - 1) : -STAKE;
 
-    balance += pnl;
+    // ── Standard ───────────────────────────────────────────────────────────────
+    const stdPnl = won ? BASE_STAKE * (PAYOUT_RATIO - 1) : -BASE_STAKE;
+    balance += stdPnl;
     if (won) wins++; else losses++;
 
     if (balance > peak) peak = balance;
@@ -242,17 +266,41 @@ function runAssetBacktest(candles: Candle[], asset: string): AssetBacktestResult
     const ck = sig.confidence >= 90 ? "90+" : sig.confidence >= 85 ? "85–89" : sig.confidence >= 80 ? "80–84" : "75–79";
     if (won) confMap[ck].wins++; else confMap[ck].losses++;
 
-    const d = new Date(c.epoch * 1000);
-    const mk = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+    const dObj = new Date(c.epoch * 1000);
+    const mk   = `${dObj.getUTCFullYear()}-${String(dObj.getUTCMonth() + 1).padStart(2, "0")}`;
     if (!monthMap[mk]) monthMap[mk] = { wins: 0, losses: 0, pnl: 0 };
-    monthMap[mk].pnl += pnl;
+    monthMap[mk].pnl += stdPnl;
     if (won) monthMap[mk].wins++; else monthMap[mk].losses++;
 
     const total = wins + losses;
     if (total % 10 === 0) equity.push({ epoch: c.epoch, balance: Math.round(balance * 100) / 100 });
+
+    // ── Martingale ─────────────────────────────────────────────────────────────
+    if (mgStake > mgMaxStakeUsed) mgMaxStakeUsed = mgStake;
+    const mgPnl = won ? mgStake * (PAYOUT_RATIO - 1) : -mgStake;
+    mgBalance += mgPnl;
+
+    if (!mgMonthMap[mk]) mgMonthMap[mk] = { wins: 0, losses: 0, pnl: 0 };
+    mgMonthMap[mk].pnl += mgPnl;
+    if (won) mgMonthMap[mk].wins++; else mgMonthMap[mk].losses++;
+
+    if (won) {
+      mgStake  = BASE_STAKE;
+      mgStreak = 0;
+    } else {
+      mgStreak++;
+      if (mgStreak > mgMaxStreak) mgMaxStreak = mgStreak;
+      mgStake = Math.min(mgStake * 2, MAX_STAKE);
+    }
+
+    if (mgBalance > mgPeak) mgPeak = mgBalance;
+    const mgDD = mgPeak - mgBalance;
+    if (mgDD > mgMaxDD) mgMaxDD = mgDD;
+
+    if (total % 10 === 0) mgEquity.push({ epoch: c.epoch, balance: Math.round(mgBalance * 100) / 100 });
   }
 
-  const total = wins + losses;
+  const totalTrades = wins + losses;
 
   return {
     asset,
@@ -260,10 +308,10 @@ function runAssetBacktest(candles: Candle[], asset: string): AssetBacktestResult
     signalsFired,
     newsFiltered,
     spikeFiltered,
-    trades: total,
+    trades: totalTrades,
     wins,
     losses,
-    winRate: total > 0 ? Math.round(wins / total * 100) : 0,
+    winRate: totalTrades > 0 ? Math.round(wins / totalTrades * 100) : 0,
     grossPnl: Math.round(balance * 100) / 100,
     maxDrawdown: Math.round(maxDrawdown * 100) / 100,
     byHour: Object.entries(hourMap)
@@ -283,6 +331,19 @@ function runAssetBacktest(candles: Candle[], asset: string): AssetBacktestResult
         pnl: Math.round(v.pnl * 100) / 100,
       })),
     equity,
+    martingale: {
+      grossPnl:          Math.round(mgBalance * 100) / 100,
+      maxDrawdown:       Math.round(mgMaxDD * 100) / 100,
+      maxStakeUsed:      mgMaxStakeUsed,
+      longestLossStreak: mgMaxStreak,
+      monthly: Object.entries(mgMonthMap)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([month, v]) => ({
+          month, trades: v.wins + v.losses, wins: v.wins, losses: v.losses,
+          pnl: Math.round(v.pnl * 100) / 100,
+        })),
+      equity: mgEquity,
+    },
   };
 }
 
@@ -358,6 +419,12 @@ async function runBacktestJob(runId: string, months: number) {
     newsFiltered: assetResults.reduce((s, r) => s + r.newsFiltered, 0),
     spikeFiltered:assetResults.reduce((s, r) => s + r.spikeFiltered, 0),
     signalsFired: assetResults.reduce((s, r) => s + r.signalsFired, 0),
+    martingale: {
+      grossPnl:          Math.round(assetResults.reduce((s, r) => s + r.martingale.grossPnl, 0) * 100) / 100,
+      maxDrawdown:       Math.max(...assetResults.map(r => r.martingale.maxDrawdown)),
+      maxStakeUsed:      Math.max(...assetResults.map(r => r.martingale.maxStakeUsed)),
+      longestLossStreak: Math.max(...assetResults.map(r => r.martingale.longestLossStreak)),
+    },
   };
   const combinedWinRate = combined.trades > 0
     ? Math.round(combined.wins / combined.trades * 100) : 0;
