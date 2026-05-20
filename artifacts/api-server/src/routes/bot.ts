@@ -5,6 +5,7 @@ import {
   loadLatestModel, computeMLSignal,
   storeFeedbackPending, resolveFeedback,
 } from "../lib/ml-signal.js";
+import { notifyTickSkipped } from "../lib/telegram.js";
 
 const router = Router();
 
@@ -259,15 +260,40 @@ export function startBotLoop() {
   botStartedAt  = new Date();
 
   async function tick() {
-    try {
-      const asset = Math.random() < 0.5 ? "GOLD" : "EURUSD";
+    const tickTime = new Date().toUTCString().replace(/.*(\d{2}:\d{2}:\d{2}).*/, "$1") + " UTC";
 
-      // ── Try ML signal first (if model is loaded and has enough candles) ───────
-      const mlModel  = mlModels[asset];
-      const candles  = mlCandleHist[asset] ?? [];
+    // Helper — send skip notification (fire-and-forget, never crashes loop)
+    const skip = (reason: string, detail: string, asset: string, candles: number) => {
+      if (isTelegramConfigured()) {
+        void notifyTickSkipped({
+          asset, reason, detail, candles,
+          mlLoaded: !!mlModels[asset],
+          time: tickTime,
+        });
+      }
+    };
+
+    try {
+      const asset   = Math.random() < 0.5 ? "GOLD" : "EURUSD";
+      const mlModel = mlModels[asset];
+      const candles = mlCandleHist[asset] ?? [];
       let signal: Signal | null = null;
 
-      if (mlModel && candles.length >= 65) {
+      // ── Step 1: ML signal ────────────────────────────────────────────────────
+      if (!mlModel) {
+        // Model not loaded yet — fall through to enhanced signal
+        skip(
+          "ML model not loaded",
+          `Model loads on startup and refreshes hourly — trying enhanced signal instead…`,
+          asset, candles.length
+        );
+      } else if (candles.length < 65) {
+        skip(
+          "Not enough candles yet",
+          `Need 65 candles to run ML inference, have ${candles.length}. Building history…`,
+          asset, candles.length
+        );
+      } else {
         const mlSig = computeMLSignal(candles, mlModel.weights, mlModel.bias, mlModel.threshold);
         if (mlSig) {
           signal = {
@@ -276,18 +302,17 @@ export function startBotLoop() {
             emaFast: 0, emaSlow: 0, rsiValue: 0, bbPos: 0,
             reason: `ML model (prob ${(mlSig.probability * 100).toFixed(1)}%, threshold ${(mlModel.threshold * 100).toFixed(0)}%)`,
           };
-          // ── Capture this signal for feedback loop ─────────────────────────────
-          // Stored before trade so tradeId resolves correctly even on error
-          const entryPrice = candles[candles.length - 1].close;
-          const capturedSig = mlSig;
+
+          // ── Feedback loop capture ──────────────────────────────────────────
+          const entryPrice   = candles[candles.length - 1].close;
+          const capturedSig  = mlSig;
           const capturedAsset = asset;
-          // We need tradeId — store after placement below
+
           void (async () => {
             try {
               const tradeId = await placeBotTrade(signal!, BOT_ADDRESS, 1);
               await storeSignal(signal!, tradeId);
 
-              // Telegram notification
               if (isTelegramConfigured()) {
                 void notifyTradeOpened({
                   asset:      signal!.asset,
@@ -303,15 +328,14 @@ export function startBotLoop() {
 
               await executeCopyTrades(signal!);
 
-              // Store feedback — resolve after 5 min using candle direction
               const fbId = await storeFeedbackPending({
                 asset: capturedAsset, tradeId,
-                features: capturedSig.features,
-                direction: capturedSig.direction,
+                features:    capturedSig.features,
+                direction:   capturedSig.direction,
                 probability: capturedSig.probability,
               });
               setTimeout(() => {
-                const latest = (mlCandleHist[capturedAsset] ?? []);
+                const latest = mlCandleHist[capturedAsset] ?? [];
                 if (latest.length === 0) return;
                 const exitPrice = latest[latest.length - 1].close;
                 const wentUp    = exitPrice > entryPrice;
@@ -319,26 +343,62 @@ export function startBotLoop() {
                   (capturedSig.direction === "UP"   &&  wentUp) ||
                   (capturedSig.direction === "DOWN"  && !wentUp);
                 void resolveFeedback(fbId, correct ? 1 : 0);
-              }, 310_000); // 5 min 10 s — one 5-min candle after entry
+              }, 310_000);
             } catch { /* continue loop */ }
           })();
+
           lastSignal = { ...signal, ts: Date.now() };
-          return; // skip the normal trade placement below
+          return; // trade placed via ML — done for this tick
+
+        } else {
+          // Model abstained — probability was in the uncertain zone
+          const prob = (() => {
+            // re-compute for display only (cheap, same candles)
+            try {
+              const raw = mlModel.weights.reduce(
+                (s, w, i) => s + w * (candles[candles.length - 1 - i < 0 ? 0 : candles.length - 1] as unknown as number),
+                mlModel.bias
+              );
+              return 1 / (1 + Math.exp(-raw));
+            } catch { return null; }
+          })();
+          const probStr = prob !== null ? `${(prob * 100).toFixed(1)}%` : "unknown";
+          skip(
+            "ML model abstained — uncertain zone",
+            `Probability ${probStr} is between ${((1 - mlModel.threshold) * 100).toFixed(0)}%–${(mlModel.threshold * 100).toFixed(0)}% — model not confident enough, trying enhanced signal…`,
+            asset, candles.length
+          );
         }
       }
 
-      // ── Fall back to manual enhanced signal if ML model not ready ─────────────
+      // ── Step 2: Enhanced fallback signal ─────────────────────────────────────
       if (!signal) {
         signal = generateSignal(asset);
-        if (!signal || signal.confidence < 85) return;
+
+        if (!signal) {
+          skip(
+            "Enhanced signal: no pattern found",
+            "EMA/RSI/BB indicators did not align on any direction this tick.",
+            asset, candles.length
+          );
+          return;
+        }
+
+        if (signal.confidence < 85) {
+          skip(
+            `Enhanced signal too weak (${signal.confidence}%)`,
+            `Need ≥85% confidence. Got ${signal.confidence}% — ${signal.reason.split(" · ").slice(0, 2).join(", ")}`,
+            asset, candles.length
+          );
+          return;
+        }
       }
 
+      // ── Trade placed via enhanced signal ─────────────────────────────────────
       lastSignal = { ...signal, ts: Date.now() };
-
       const tradeId = await placeBotTrade(signal, BOT_ADDRESS, 1);
       await storeSignal(signal, tradeId);
 
-      // Telegram notification — trade opened
       if (isTelegramConfigured()) {
         void notifyTradeOpened({
           asset:      signal.asset,
@@ -353,7 +413,16 @@ export function startBotLoop() {
       }
 
       await executeCopyTrades(signal);
-    } catch { /* continue loop */ }
+    } catch (err) {
+      // Notify about unexpected errors too so nothing is silent
+      if (isTelegramConfigured()) {
+        void notifyTickSkipped({
+          asset: "UNKNOWN", candles: 0, mlLoaded: false, time: tickTime,
+          reason: "Unexpected error",
+          detail: String(err).slice(0, 120),
+        });
+      }
+    }
   }
 
   void tick();

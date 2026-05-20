@@ -105,6 +105,27 @@ export async function notifyTradeResolved(params: {
   await send(lines.join("\n"));
 }
 
+export async function notifyTickSkipped(params: {
+  asset:    string;
+  reason:   string;
+  detail:   string;
+  candles:  number;
+  mlLoaded: boolean;
+  time:     string;
+}): Promise<void> {
+  const asset = params.asset === "GOLD" ? "🥇 GOLD" : "💶 EUR/USD";
+  const lines = [
+    `<b>🤖 AlphaBot — No Trade</b>  <code>${params.time}</code>`,
+    ``,
+    `📌 Asset scanned: <b>${asset}</b>`,
+    `⛔ Reason: <b>${params.reason}</b>`,
+    `   ${params.detail}`,
+    ``,
+    `📊 Candles: <b>${params.candles}</b>  |  Model: <b>${params.mlLoaded ? "✅ loaded" : "⏳ not loaded yet"}</b>`,
+  ];
+  await send(lines.join("\n"));
+}
+
 export async function notifySessionSummary(params: {
   wins:       number;
   losses:     number;
