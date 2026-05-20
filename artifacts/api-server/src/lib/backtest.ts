@@ -115,12 +115,19 @@ function isVolatilitySpike(candles: Candle[], i: number): boolean {
 // ── Deriv WS helpers ──────────────────────────────────────────────────────────
 // ticks_history uses the old public Deriv WS (ws.derivws.com) with a numeric
 // app_id — completely separate from the newer REST trading API.
-const DERIV_LEGACY_WS = "wss://ws.derivws.com/websockets/v3?app_id=1089";
+// Use DERIV_APP_ID from env if set; fall back to the public demo id 1089.
+const DERIV_APP_ID   = process.env.DERIV_APP_ID ?? "1089";
+const DERIV_LEGACY_WS = `wss://ws.derivws.com/websockets/v3?app_id=${DERIV_APP_ID}`;
 
 function fetchCandlePage(symbol: string, endEpoch: number): Promise<Candle[]> {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(DERIV_LEGACY_WS);
-    const timer = setTimeout(() => { ws.terminate(); reject(new Error("WS timeout")); }, 35000);
+    const timer = setTimeout(() => {
+      ws.terminate();
+      const err = new Error(`WS timeout fetching ${symbol} at epoch ${endEpoch}`);
+      console.error("[backtest] fetchCandlePage timeout:", err.message);
+      reject(err);
+    }, 35000);
 
     ws.on("open", () => {
       ws.send(JSON.stringify({
@@ -138,10 +145,15 @@ function fetchCandlePage(symbol: string, endEpoch: number): Promise<Candle[]> {
       ws.terminate();
       try {
         const msg = JSON.parse(data.toString()) as {
-          error?: { message: string };
+          error?: { code?: string; message: string };
           candles?: Array<{ epoch: number; open: string; high: string; low: string; close: string }>;
         };
-        if (msg.error) { reject(new Error(msg.error.message)); return; }
+        if (msg.error) {
+          const err = new Error(`Deriv error [${msg.error.code ?? "?"}]: ${msg.error.message}`);
+          console.error("[backtest] fetchCandlePage Deriv error:", err.message, "symbol:", symbol, "endEpoch:", endEpoch);
+          reject(err);
+          return;
+        }
         const candles: Candle[] = (msg.candles ?? []).map(c => ({
           epoch: c.epoch,
           open:  parseFloat(c.open),
@@ -149,11 +161,19 @@ function fetchCandlePage(symbol: string, endEpoch: number): Promise<Candle[]> {
           low:   parseFloat(c.low),
           close: parseFloat(c.close),
         }));
+        console.log(`[backtest] fetchCandlePage ${symbol}: received ${candles.length} candles, endEpoch=${endEpoch}`);
         resolve(candles);
-      } catch (e) { reject(e); }
+      } catch (e) {
+        console.error("[backtest] fetchCandlePage parse error:", e);
+        reject(e);
+      }
     });
 
-    ws.on("error", e => { clearTimeout(timer); reject(e); });
+    ws.on("error", e => {
+      clearTimeout(timer);
+      console.error("[backtest] fetchCandlePage WS error:", e.message, "symbol:", symbol);
+      reject(e);
+    });
   });
 }
 
@@ -182,7 +202,15 @@ async function fetchAllCandles(symbol: string, months: number): Promise<Candle[]
   const pages: Candle[][] = [];
 
   for (let iter = 0; iter < MAX_ITER; iter++) {
-    const page = await fetchCandlePage(symbol, endEpoch);
+    let page: Candle[];
+    try {
+      page = await fetchCandlePage(symbol, endEpoch);
+    } catch (e) {
+      // WrongResponse means Deriv has no more data for this symbol at this epoch
+      // (common for EURUSD going beyond ~18 months). Keep whatever we collected.
+      console.log(`[backtest] fetchAllCandles ${symbol}: stopping at iter ${iter} — ${String(e).substring(0, 120)}`);
+      break;
+    }
     if (page.length === 0) break;
     const newCandles = cacheCovers
       ? page.filter(c => c.epoch > latestCached)
@@ -757,6 +785,20 @@ async function runBacktestJob(runId: string, months: number) {
     fetchAllCandles("frxXAUUSD", months).then(c => [c, null] as const).catch(e => [[] as Candle[], String(e)] as const),
     fetchAllCandles("frxEURUSD", months).then(c => [c, null] as const).catch(e => [[] as Candle[], String(e)] as const),
   ]);
+
+  if (goldErr)   console.error("[backtest] GOLD fetch failed:", goldErr);
+  if (eurusdErr) console.error("[backtest] EURUSD fetch failed:", eurusdErr);
+
+  // Fail fast — if both fetches returned 0 candles, nothing to train on
+  if (goldCandles.length === 0 && eurusdCandles.length === 0) {
+    const errMsg = [goldErr, eurusdErr].filter(Boolean).join(" | ") || "Deriv returned 0 candles for both assets";
+    console.error("[backtest] Aborting — 0 candles received. Error:", errMsg);
+    await pool.query(
+      "UPDATE backtest_runs SET status='error', progress=30, message=$2, finished_at=NOW() WHERE id=$1",
+      [runId, `Candle fetch failed: ${errMsg}`]
+    );
+    return;
+  }
 
   if (goldErr)   await updateProgress(runId, 30, `GOLD fetch error: ${goldErr}`);
   if (eurusdErr) await updateProgress(runId, 30, `EURUSD fetch error: ${eurusdErr}`);
