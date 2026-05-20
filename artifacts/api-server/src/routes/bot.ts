@@ -209,9 +209,11 @@ export function startBotLoop() {
 
   async function tick() {
     try {
-      const asset  = Math.random() < 0.7 ? "V100" : "V50";
+      // Only trade real market assets — GOLD and EURUSD have genuine trends
+      // that technical analysis can exploit. V100/V50 are synthetic RNG indices.
+      const asset  = Math.random() < 0.5 ? "GOLD" : "EURUSD";
       const signal = generateSignal(asset);
-      if (!signal || signal.confidence < 65) return;
+      if (!signal || signal.confidence < 75) return;
 
       lastSignal = { ...signal, ts: Date.now() };
 
