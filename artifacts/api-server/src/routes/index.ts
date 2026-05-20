@@ -12,6 +12,7 @@ import monitorRouter from "./monitor";
 import cardsRouter, { ensureCardsTables } from "./cards";
 import tradingRouter, { ensureTradingTables } from "./trading";
 import botRouter, { ensureBotTables, startBotLoop, startPricePoll } from "./bot";
+import backtestRouter, { ensureBacktestTable } from "./backtest";
 
 const router: IRouter = Router();
 
@@ -28,10 +29,11 @@ router.use(monitorRouter);
 router.use(cardsRouter);
 router.use(tradingRouter);
 router.use(botRouter);
+router.use(backtestRouter);
 
 export {
   ensureDappsTable, ensureTokensTable, ensurePricesTable,
-  ensureCardsTables, ensureTradingTables, ensureBotTables,
+  ensureCardsTables, ensureTradingTables, ensureBotTables, ensureBacktestTable,
   startBotLoop, startPricePoll,
 };
 export default router;

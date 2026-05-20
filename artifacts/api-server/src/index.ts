@@ -2,7 +2,7 @@ import app from "./app";
 import { logger } from "./lib/logger";
 import {
   ensureDappsTable, ensureTokensTable, ensurePricesTable,
-  ensureCardsTables, ensureTradingTables, ensureBotTables,
+  ensureCardsTables, ensureTradingTables, ensureBotTables, ensureBacktestTable,
   startBotLoop, startPricePoll,
 } from "./routes";
 import { startOrderSweep } from "./lib/orderSweep";
@@ -34,6 +34,7 @@ async function start() {
     ensureCardsTables(),
     ensureTradingTables(),
     ensureBotTables(),
+    ensureBacktestTable(),
   ]);
   logger.info("Database tables ready");
 

@@ -96,6 +96,15 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="bot-backtest"
+        options={{
+          title: "Backtest",
+          tabBarIcon: ({ color, focused }) => (
+            <Icon name={focused ? "bar-chart" : "bar-chart-outline"} size={22} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="p2p"
         options={{
           title: "P2P",
