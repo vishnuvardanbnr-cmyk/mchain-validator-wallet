@@ -107,7 +107,7 @@ export function extractFeatures(candles: Candle[], idx: number): number[] | null
   const t = Math.tanh;
   const f = (v: number) => isFinite(v) ? v : 0;
 
-  const d    = new Date(c.epoch * 1000);
+  const d   = new Date(c.epoch * 1000);
   const hour = d.getUTCHours();
   const dow  = d.getUTCDay();
 
@@ -143,13 +143,13 @@ export function mlPredict(features: number[], weights: number[], bias: number): 
   return sigmoid(z);
 }
 
-export function trainModel(
+export async function trainModel(
   trainX: number[][],
   trainY: number[],
   testX: number[][],
   testY: number[],
   asset: string,
-): MLModelWeights {
+): Promise<MLModelWeights> {
   const D = NUM_FEATURES;
   const N = trainX.length;
   if (N < 100) {
@@ -175,6 +175,9 @@ export function trainModel(
   const indices = Array.from({ length: N }, (_, i) => i);
 
   for (let epoch = 0; epoch < EPOCHS; epoch++) {
+    // Yield to event loop every 25 epochs so PM2 health checks stay alive
+    if (epoch % 25 === 0) await new Promise(resolve => setImmediate(resolve));
+
     // Learning rate decay
     const lr = LR_INIT / (1 + epoch * 0.01);
 

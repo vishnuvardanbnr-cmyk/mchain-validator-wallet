@@ -516,7 +516,7 @@ async function runAssetBacktest(candles: Candle[], asset: string): Promise<Asset
   const trainX   = [...baseTrainX, ...feedback.X];
   const trainY   = [...baseTrainY, ...feedback.Y];
 
-  const mlModel = trainModel(trainX, trainY, testX, testY, asset);
+  const mlModel = await trainModel(trainX, trainY, testX, testY, asset);
 
   // Save to DB (fire-and-forget — don't block the return)
   saveModel(mlModel).catch(() => {/* non-blocking */});
@@ -718,7 +718,7 @@ export async function historicalPretrain(
   const trainX     = [...baseTrainX, ...feedback.X];
   const trainY     = [...baseTrainY, ...feedback.Y];
 
-  const model = trainModel(trainX, trainY, testX, testY, asset);
+  const model = await trainModel(trainX, trainY, testX, testY, asset);
   await saveModel(model);
 
   return {
