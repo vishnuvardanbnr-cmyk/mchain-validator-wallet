@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { pool } from "@workspace/db";
+import WebSocket from "ws";
 import { notifyTradeOpened, isTelegramConfigured } from "../lib/telegram";
 import {
   loadLatestModel, computeMLSignal,
@@ -117,6 +118,60 @@ async function refreshMLModels() {
 // Load on startup (and refresh every hour)
 void refreshMLModels();
 setInterval(() => { void refreshMLModels(); }, 60 * 60 * 1000);
+
+// ── Candle pre-loader ──────────────────────────────────────────────────────────
+// Fetches the last 100 real 5-min candles from Deriv on startup so the ML model
+// can fire immediately instead of waiting ~16 min for pseudo-candles to build up.
+const DERIV_LEGACY_WS = "wss://ws.derivws.com/websockets/v3?app_id=1089";
+const DERIV_SYMBOL: Record<string, string> = { GOLD: "frxXAUUSD", EURUSD: "frxEURUSD" };
+
+function preloadCandleHistory(asset: string): Promise<void> {
+  return new Promise((resolve) => {
+    const symbol = DERIV_SYMBOL[asset];
+    if (!symbol) { resolve(); return; }
+    let done = false;
+    const finish = () => { if (!done) { done = true; resolve(); } };
+
+    const ws = new WebSocket(DERIV_LEGACY_WS);
+    const timer = setTimeout(() => { ws.terminate(); finish(); }, 30_000);
+
+    ws.on("open", () => {
+      ws.send(JSON.stringify({
+        ticks_history: symbol,
+        style:         "candles",
+        granularity:   300,   // 5-min candles
+        count:         100,
+        end:           "latest",
+        req_id:        1,
+      }));
+    });
+
+    ws.on("message", (data) => {
+      clearTimeout(timer);
+      ws.terminate();
+      try {
+        const msg = JSON.parse(data.toString()) as {
+          candles?: Array<{ epoch: number; open: string; high: string; low: string; close: string }>;
+        };
+        if (msg.candles && msg.candles.length > 0) {
+          mlCandleHist[asset] = msg.candles.map(c => ({
+            epoch: c.epoch,
+            open:  parseFloat(c.open),
+            high:  parseFloat(c.high),
+            low:   parseFloat(c.low),
+            close: parseFloat(c.close),
+          }));
+        }
+      } catch { /* ignore parse errors */ }
+      finish();
+    });
+
+    ws.on("error", () => { clearTimeout(timer); finish(); });
+  });
+}
+
+// Preload both assets in parallel on startup
+void Promise.all([preloadCandleHistory("GOLD"), preloadCandleHistory("EURUSD")]);
 
 export function recordPrice(asset: string, price: number) {
   if (!priceHistory[asset]) priceHistory[asset] = [];
@@ -262,164 +317,109 @@ export function startBotLoop() {
   async function tick() {
     const tickTime = new Date().toUTCString().replace(/.*(\d{2}:\d{2}:\d{2}).*/, "$1") + " UTC";
 
-    // Helper — send skip notification (fire-and-forget, never crashes loop)
-    const skip = (reason: string, detail: string, asset: string, candles: number) => {
-      if (isTelegramConfigured()) {
-        void notifyTickSkipped({
-          asset, reason, detail, candles,
-          mlLoaded: !!mlModels[asset],
-          time: tickTime,
-        });
-      }
-    };
-
     try {
       const asset   = Math.random() < 0.5 ? "GOLD" : "EURUSD";
       const mlModel = mlModels[asset];
       const candles = mlCandleHist[asset] ?? [];
+
+      // ── Accumulate skip reasons — only ONE notification ever sent per tick ────
+      let mlStatus   = "";   // why ML didn't fire (empty = ML fired a trade)
       let signal: Signal | null = null;
 
       // ── Step 1: ML signal ────────────────────────────────────────────────────
       if (!mlModel) {
-        // Model not loaded yet — fall through to enhanced signal
-        skip(
-          "ML model not loaded",
-          `Model loads on startup and refreshes hourly — trying enhanced signal instead…`,
-          asset, candles.length
-        );
+        mlStatus = "ML model not loaded (refreshes hourly)";
       } else if (candles.length < 65) {
-        skip(
-          "Not enough candles yet",
-          `Need 65 candles to run ML inference, have ${candles.length}. Building history…`,
-          asset, candles.length
-        );
+        mlStatus = `ML needs ${65 - candles.length} more candles (${candles.length}/65)`;
       } else {
         const mlSig = computeMLSignal(candles, mlModel.weights, mlModel.bias, mlModel.threshold);
         if (mlSig) {
+          // ── ML fired — place trade + notify + feedback, then done ─────────────
           signal = {
             asset, direction: mlSig.direction, confidence: mlSig.confidence,
             duration: mlSig.confidence >= 82 ? "30s" : "1m",
             emaFast: 0, emaSlow: 0, rsiValue: 0, bbPos: 0,
             reason: `ML model (prob ${(mlSig.probability * 100).toFixed(1)}%, threshold ${(mlModel.threshold * 100).toFixed(0)}%)`,
           };
-
-          // ── Feedback loop capture ──────────────────────────────────────────
-          const entryPrice   = candles[candles.length - 1].close;
-          const capturedSig  = mlSig;
+          const entryPrice    = candles[candles.length - 1].close;
+          const capturedSig   = mlSig;
           const capturedAsset = asset;
-
           void (async () => {
             try {
               const tradeId = await placeBotTrade(signal!, BOT_ADDRESS, 1);
               await storeSignal(signal!, tradeId);
-
               if (isTelegramConfigured()) {
                 void notifyTradeOpened({
-                  asset:      signal!.asset,
-                  direction:  signal!.direction,
-                  amount:     1,
-                  duration:   signal!.duration,
-                  entryPrice: null,
-                  confidence: signal!.confidence,
-                  reason:     signal!.reason,
-                  tradeId,
+                  asset: signal!.asset, direction: signal!.direction,
+                  amount: 1, duration: signal!.duration, entryPrice: null,
+                  confidence: signal!.confidence, reason: signal!.reason, tradeId,
                 });
               }
-
               await executeCopyTrades(signal!);
-
               const fbId = await storeFeedbackPending({
                 asset: capturedAsset, tradeId,
-                features:    capturedSig.features,
-                direction:   capturedSig.direction,
+                features: capturedSig.features, direction: capturedSig.direction,
                 probability: capturedSig.probability,
               });
               setTimeout(() => {
                 const latest = mlCandleHist[capturedAsset] ?? [];
-                if (latest.length === 0) return;
+                if (!latest.length) return;
                 const exitPrice = latest[latest.length - 1].close;
-                const wentUp    = exitPrice > entryPrice;
-                const correct   =
-                  (capturedSig.direction === "UP"   &&  wentUp) ||
-                  (capturedSig.direction === "DOWN"  && !wentUp);
+                const correct   = (capturedSig.direction === "UP" ? exitPrice > entryPrice : exitPrice < entryPrice);
                 void resolveFeedback(fbId, correct ? 1 : 0);
               }, 310_000);
-            } catch { /* continue loop */ }
+            } catch { /* non-fatal */ }
           })();
-
           lastSignal = { ...signal, ts: Date.now() };
-          return; // trade placed via ML — done for this tick
-
+          return; // ← trade placed, no skip notification needed
         } else {
-          // Model abstained — probability was in the uncertain zone
-          const prob = (() => {
-            // re-compute for display only (cheap, same candles)
-            try {
-              const raw = mlModel.weights.reduce(
-                (s, w, i) => s + w * (candles[candles.length - 1 - i < 0 ? 0 : candles.length - 1] as unknown as number),
-                mlModel.bias
-              );
-              return 1 / (1 + Math.exp(-raw));
-            } catch { return null; }
-          })();
-          const probStr = prob !== null ? `${(prob * 100).toFixed(1)}%` : "unknown";
-          skip(
-            "ML model abstained — uncertain zone",
-            `Probability ${probStr} is between ${((1 - mlModel.threshold) * 100).toFixed(0)}%–${(mlModel.threshold * 100).toFixed(0)}% — model not confident enough, trying enhanced signal…`,
-            asset, candles.length
-          );
+          // Abstained — probability landed in the uncertain middle zone
+          mlStatus = `ML abstained — prob in uncertain zone (threshold ±${(mlModel.threshold * 100).toFixed(0)}%)`;
         }
       }
 
       // ── Step 2: Enhanced fallback signal ─────────────────────────────────────
-      if (!signal) {
-        signal = generateSignal(asset);
+      signal = generateSignal(asset);
+      const enhStatus = !signal
+        ? "Enhanced: no EMA/RSI/BB alignment"
+        : signal.confidence < 85
+          ? `Enhanced: confidence ${signal.confidence}% < 85% threshold`
+          : "";    // empty = enhanced fired
 
-        if (!signal) {
-          skip(
-            "Enhanced signal: no pattern found",
-            "EMA/RSI/BB indicators did not align on any direction this tick.",
-            asset, candles.length
-          );
-          return;
+      if (enhStatus) {
+        // Neither ML nor enhanced fired → send ONE combined skip message
+        if (isTelegramConfigured()) {
+          void notifyTickSkipped({
+            asset,
+            reason:   enhStatus,
+            detail:   mlStatus || "ML checked but did not fire",
+            candles:  candles.length,
+            mlLoaded: !!mlModel,
+            time:     tickTime,
+          });
         }
-
-        if (signal.confidence < 85) {
-          skip(
-            `Enhanced signal too weak (${signal.confidence}%)`,
-            `Need ≥85% confidence. Got ${signal.confidence}% — ${signal.reason.split(" · ").slice(0, 2).join(", ")}`,
-            asset, candles.length
-          );
-          return;
-        }
+        return;
       }
 
       // ── Trade placed via enhanced signal ─────────────────────────────────────
-      lastSignal = { ...signal, ts: Date.now() };
-      const tradeId = await placeBotTrade(signal, BOT_ADDRESS, 1);
-      await storeSignal(signal, tradeId);
-
+      lastSignal = { ...signal!, ts: Date.now() };
+      const tradeId = await placeBotTrade(signal!, BOT_ADDRESS, 1);
+      await storeSignal(signal!, tradeId);
       if (isTelegramConfigured()) {
         void notifyTradeOpened({
-          asset:      signal.asset,
-          direction:  signal.direction,
-          amount:     1,
-          duration:   signal.duration,
-          entryPrice: null,
-          confidence: signal.confidence,
-          reason:     signal.reason,
-          tradeId,
+          asset: signal!.asset, direction: signal!.direction,
+          amount: 1, duration: signal!.duration, entryPrice: null,
+          confidence: signal!.confidence, reason: signal!.reason, tradeId,
         });
       }
+      await executeCopyTrades(signal!);
 
-      await executeCopyTrades(signal);
     } catch (err) {
-      // Notify about unexpected errors too so nothing is silent
       if (isTelegramConfigured()) {
         void notifyTickSkipped({
           asset: "UNKNOWN", candles: 0, mlLoaded: false, time: tickTime,
           reason: "Unexpected error",
-          detail: String(err).slice(0, 120),
+          detail: String(err).slice(0, 200),
         });
       }
     }
