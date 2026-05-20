@@ -1,759 +1,946 @@
 import { Icon } from "@/components/Icon";
-import { useColors } from "@/hooks/useColors";
 import { useWallet } from "@/context/WalletContext";
 import { getPublicApiBase } from "@/services/api";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
+import { useFocusEffect } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Animated,
-  Easing,
   Platform,
   ScrollView,
-  StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
   View,
+  useWindowDimensions,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useFocusEffect } from "expo-router";
+import Svg, {
+  Circle,
+  Defs,
+  Line as SvgLine,
+  LinearGradient as SvgGrad,
+  Path,
+  Stop,
+  Text as SvgText,
+} from "react-native-svg";
 
-// ── Types ─────────────────────────────────────────────────────────────────────
-type Asset   = "V100" | "V50" | "GOLD" | "EURUSD";
-type Dir     = "UP" | "DOWN";
+// ── Design tokens (always dark) ───────────────────────────────────────────────
+const D = {
+  bg:       "#0B0E17",
+  card:     "#141824",
+  card2:    "#1A2030",
+  border:   "#1E2535",
+  text:     "#E6EDF3",
+  muted:    "#5A6478",
+  dim:      "#303848",
+  green:    "#02C076",
+  red:      "#F6465D",
+  yellow:   "#F0B90B",
+  blue:     "#3B82F6",
+  purple:   "#8B5CF6",
+  cyan:     "#06B6D4",
+};
+
+// ── Asset config ──────────────────────────────────────────────────────────────
+type Asset    = "V100" | "V50" | "GOLD" | "EURUSD";
+type Dir      = "UP" | "DOWN";
 type Duration = "1m" | "5m" | "15m" | "1h";
-type Screen  = "trade" | "confirm" | "active" | "result";
+type Screen   = "trade" | "active" | "result";
 
+const ASSETS: Asset[]  = ["V100", "V50", "GOLD", "EURUSD"];
+
+const ASSET_TAG: Record<Asset, string>   = { V100: "VOL100", V50: "VOL50", GOLD: "XAU/USD", EURUSD: "EUR/USD" };
+const ASSET_LABEL: Record<Asset, string> = { V100: "Volatility 100 Index", V50: "Volatility 50 Index", GOLD: "Gold / USD", EURUSD: "EUR / USD" };
+const ASSET_COLOR: Record<Asset, string> = { V100: D.purple, V50: D.cyan, GOLD: D.yellow, EURUSD: D.blue };
+
+const DURATIONS: Duration[] = ["1m", "5m", "15m", "1h"];
+const DURATION_LABEL: Record<Duration, string> = { "1m": "1 Min", "5m": "5 Min", "15m": "15 Min", "1h": "1 Hour" };
+const DURATION_MS: Record<Duration, number>    = { "1m": 60000, "5m": 300000, "15m": 900000, "1h": 3600000 };
+
+// ── Interfaces ────────────────────────────────────────────────────────────────
+interface Candle { epoch: number; open: number; high: number; low: number; close: number }
 interface Prices  { V100: number; V50: number; GOLD: number; EURUSD: number }
-interface Proposal {
-  proposalId: string; payout: number; askPrice: number;
-  spotPrice: number; longCode: string;
-}
-interface Trade {
-  tradeId: string; asset: Asset; direction: Dir; amount: number;
-  payout: number; entryPrice: number; expiresAt: string; status: string;
-}
+interface Proposal { proposalId: string; payout: number; askPrice: number; spotPrice: number; longCode: string }
+interface Trade    { tradeId: string; asset: Asset; direction: Dir; amount: number; payout: number; entryPrice: number; expiresAt: string; status: string }
 interface TradeResult {
-  id: string; asset: string; direction: string; amount_usdt: number;
+  id: string; asset: string; direction: string; duration: string; amount_usdt: number;
   payout_usdt: number; entry_price: number; exit_price: number | null;
   status: string; opened_at: string; resolved_at: string | null;
 }
 
-const ASSETS: Asset[] = ["V100", "V50", "GOLD", "EURUSD"];
-const DURATIONS: Duration[] = ["1m", "5m", "15m", "1h"];
-const DURATION_LABEL: Record<Duration, string> = { "1m": "1 Min", "5m": "5 Min", "15m": "15 Min", "1h": "1 Hour" };
-
-const ASSET_ICON: Record<Asset, string>  = { V100: "V₁₀₀", V50: "V₅₀", GOLD: "Au", EURUSD: "€/$" };
-const ASSET_LABEL: Record<Asset, string> = { V100: "Vol 100", V50: "Vol 50", GOLD: "Gold", EURUSD: "EUR/USD" };
-const ASSET_COLOR: Record<Asset, string> = { V100: "#8B5CF6", V50: "#06B6D4", GOLD: "#EAB308", EURUSD: "#3B82F6" };
-
-function formatPrice(price: number): string {
-  if (price >= 1000) return price.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  return price.toFixed(4);
+// ── Price formatting ──────────────────────────────────────────────────────────
+function fmt(p: number): string {
+  if (!p) return "—";
+  if (p >= 10000) return p.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  if (p >= 100)   return p.toFixed(3);
+  return p.toFixed(5);
 }
 
-function formatCountdown(expiresAt: string): string {
+function fmtCd(expiresAt: string): string {
   const diff = Math.max(0, new Date(expiresAt).getTime() - Date.now());
   const s = Math.floor(diff / 1000);
-  const m = Math.floor(s / 60);
-  return `${m}:${String(s % 60).padStart(2, "0")}`;
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
+
+// ── SVG Price Chart ───────────────────────────────────────────────────────────
+interface ChartProps {
+  prices: number[];
+  width: number;
+  height: number;
+  color: string;
+  entryPrice?: number | null;
+}
+
+function PriceChart({ prices, width, height, color, entryPrice }: ChartProps) {
+  if (prices.length < 2) {
+    return (
+      <View style={{ width, height, alignItems: "center", justifyContent: "center", backgroundColor: D.bg }}>
+        <ActivityIndicator color={color} />
+        <Text style={{ color: D.muted, fontSize: 11, marginTop: 8, fontFamily: "Inter_400Regular" }}>
+          Loading chart…
+        </Text>
+      </View>
+    );
+  }
+
+  const pH = 56;  // right padding for price labels
+  const pL = 6;   // left padding
+  const pV = 10;  // vertical padding
+  const w  = width  - pH - pL;
+  const h  = height - pV * 2;
+
+  const min = Math.min(...prices);
+  const max = Math.max(...prices);
+  const range = max - min || min * 0.001 || 1;
+  const pad   = range * 0.12;
+  const yMin  = min - pad;
+  const yMax  = max + pad;
+  const yRange = yMax - yMin;
+
+  const toX = (i: number) => pL + (i / (prices.length - 1)) * w;
+  const toY = (p: number) => pV + h - ((p - yMin) / yRange) * h;
+
+  const pts = prices.map((p, i) =>
+    `${i === 0 ? "M" : "L"}${toX(i).toFixed(1)},${toY(p).toFixed(1)}`
+  ).join(" ");
+
+  const lastX = toX(prices.length - 1);
+  const lastY = toY(prices[prices.length - 1]);
+  const area  = `${pts} L${lastX.toFixed(1)},${(pV + h).toFixed(1)} L${pL},${(pV + h).toFixed(1)} Z`;
+
+  const entryY = (entryPrice != null)
+    ? Math.min(pV + h, Math.max(pV, toY(entryPrice)))
+    : null;
+
+  const priceUp = prices[prices.length - 1] >= prices[0];
+
+  const gridPrices = [max, (max + min) / 2, min];
+
+  return (
+    <Svg width={width} height={height}>
+      <Defs>
+        <SvgGrad id="chartFill" x1="0" y1="0" x2="0" y2="1">
+          <Stop offset="0%"    stopColor={color} stopOpacity="0.28" />
+          <Stop offset="60%"   stopColor={color} stopOpacity="0.06" />
+          <Stop offset="100%"  stopColor={color} stopOpacity="0" />
+        </SvgGrad>
+      </Defs>
+
+      {/* Horizontal grid lines */}
+      {gridPrices.map((gp, i) => (
+        <SvgLine
+          key={i}
+          x1={pL} y1={toY(gp)} x2={width - pH + 2} y2={toY(gp)}
+          stroke={D.border} strokeWidth="1"
+        />
+      ))}
+
+      {/* Area fill */}
+      <Path d={area} fill="url(#chartFill)" />
+
+      {/* Main price line */}
+      <Path d={pts} stroke={color} strokeWidth="2" fill="none"
+        strokeLinejoin="round" strokeLinecap="round" />
+
+      {/* Entry price dashed line */}
+      {entryY !== null && (
+        <>
+          <SvgLine
+            x1={pL} y1={entryY!} x2={width - pH + 2} y2={entryY!}
+            stroke={D.yellow} strokeWidth="1.5" strokeDasharray="6,4" opacity="0.9"
+          />
+          <SvgText
+            x={width - pH + 6} y={entryY! + 4}
+            fontSize="9" fill={D.yellow} fontFamily="monospace"
+          >
+            entry
+          </SvgText>
+        </>
+      )}
+
+      {/* Price labels on right axis */}
+      {gridPrices.map((gp, i) => (
+        <SvgText
+          key={i}
+          x={width - pH + 6} y={toY(gp) + 4}
+          fontSize="9.5" fill={D.muted} fontFamily="monospace"
+        >
+          {fmt(gp)}
+        </SvgText>
+      ))}
+
+      {/* Current price label */}
+      <SvgText
+        x={width - pH + 6} y={lastY + 4}
+        fontSize="9.5" fill={color} fontFamily="monospace" fontWeight="bold"
+      >
+        {fmt(prices[prices.length - 1])}
+      </SvgText>
+
+      {/* Pulse rings at current price */}
+      <Circle cx={lastX} cy={lastY} r="12" fill={color} opacity="0.08" />
+      <Circle cx={lastX} cy={lastY} r="6"  fill={color} opacity="0.2" />
+      <Circle cx={lastX} cy={lastY} r="3"  fill={color} />
+
+      {/* Vertical dotted line at current price */}
+      <SvgLine
+        x1={lastX} y1={pV} x2={lastX} y2={pV + h}
+        stroke={color} strokeWidth="1" strokeDasharray="3,4" opacity="0.25"
+      />
+    </Svg>
+  );
 }
 
 // ── API helpers ───────────────────────────────────────────────────────────────
-async function fetchPrices(): Promise<Prices> {
-  const r = await fetch(`${getPublicApiBase()}/trading/prices`);
-  if (!r.ok) throw new Error("Price fetch failed");
-  return r.json() as Promise<Prices>;
+async function apiCandles(asset: Asset): Promise<number[]> {
+  const r = await fetch(`${getPublicApiBase()}/trading/candles/${asset}?count=200&granularity=60`);
+  if (!r.ok) return [];
+  const c: Candle[] = await r.json();
+  return c.map(x => x.close);
 }
 
-async function fetchProposal(asset: Asset, direction: Dir, amount: number, duration: Duration): Promise<Proposal> {
+async function apiPrices(): Promise<Prices> {
+  const r = await fetch(`${getPublicApiBase()}/trading/prices`);
+  if (!r.ok) throw new Error("Prices unavailable");
+  return r.json();
+}
+
+async function apiProposal(asset: Asset, dir: Dir, amount: number, dur: Duration): Promise<Proposal> {
   const r = await fetch(`${getPublicApiBase()}/trading/proposal`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ asset, direction, amount, duration }),
+    body: JSON.stringify({ asset, direction: dir, amount, duration: dur }),
   });
-  const data = await r.json() as Proposal & { error?: string };
-  if (!r.ok) throw new Error(data.error ?? "Proposal failed");
-  return data;
+  const d = await r.json() as Proposal & { error?: string };
+  if (!r.ok) throw new Error(d.error ?? "Quote failed");
+  return d;
 }
 
-async function openTrade(params: {
-  walletAddress: string; asset: Asset; direction: Dir;
-  amount: number; duration: Duration;
-}): Promise<Trade> {
+async function apiOpenTrade(p: { walletAddress: string; asset: Asset; direction: Dir; amount: number; duration: Duration }): Promise<Trade> {
   const r = await fetch(`${getPublicApiBase()}/trading/open`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(params),
+    body: JSON.stringify(p),
   });
-  const data = await r.json() as Trade & { error?: string };
-  if (!r.ok) throw new Error(data.error ?? "Trade failed");
-  return data;
+  const d = await r.json() as Trade & { error?: string };
+  if (!r.ok) throw new Error(d.error ?? "Trade failed");
+  return d;
 }
 
-async function fetchTradeStatus(tradeId: string): Promise<TradeResult> {
+async function apiTradeStatus(tradeId: string): Promise<TradeResult> {
   const r = await fetch(`${getPublicApiBase()}/trading/trade/${tradeId}`);
-  if (!r.ok) throw new Error("Status fetch failed");
-  return r.json() as Promise<TradeResult>;
+  if (!r.ok) throw new Error("Status unavailable");
+  return r.json();
 }
 
-async function fetchBalance(address: string): Promise<number> {
+async function apiBalance(address: string): Promise<number> {
   const r = await fetch(`${getPublicApiBase()}/trading/balance/${address}`);
   if (!r.ok) return 0;
-  const d = await r.json() as { balance: number };
-  return d.balance ?? 0;
+  return ((await r.json()) as { balance: number }).balance ?? 0;
 }
 
-async function fetchHistory(address: string): Promise<TradeResult[]> {
+async function apiHistory(address: string): Promise<TradeResult[]> {
   const r = await fetch(`${getPublicApiBase()}/trading/history/${address}`);
   if (!r.ok) return [];
-  return r.json() as Promise<TradeResult[]>;
+  return r.json();
 }
 
 // ── Main Screen ───────────────────────────────────────────────────────────────
 export default function TradeScreen() {
-  const colors    = useColors();
-  const insets    = useSafeAreaInsets();
-  const { mxcAddress, ethAddress } = useWallet();
-  const qc        = useQueryClient();
+  const { width: W }  = useWindowDimensions();
+  const insets        = useSafeAreaInsets();
+  const { ethAddress, mxcAddress } = useWallet();
+  const qc            = useQueryClient();
+  const address       = (ethAddress ?? mxcAddress ?? "").toLowerCase();
 
-  const [screen,   setScreen]   = useState<Screen>("trade");
-  const [asset,    setAsset]    = useState<Asset>("V100");
-  const [dir,      setDir]      = useState<Dir>("UP");
-  const [duration, setDuration] = useState<Duration>("1m");
-  const [amount,   setAmount]   = useState("1");
-  const [proposal, setProposal] = useState<Proposal | null>(null);
+  const [asset,       setAsset]       = useState<Asset>("V100");
+  const [dir,         setDir]         = useState<Dir>("UP");
+  const [duration,    setDuration]    = useState<Duration>("1m");
+  const [amount,      setAmount]      = useState("1");
+  const [screen,      setScreen]      = useState<Screen>("trade");
   const [activeTrade, setActiveTrade] = useState<Trade | null>(null);
-  const [result,   setResult]   = useState<TradeResult | null>(null);
-  const [err,      setErr]      = useState("");
-  const [countdown, setCountdown] = useState("");
+  const [result,      setResult]      = useState<TradeResult | null>(null);
+  const [err,         setErr]         = useState("");
+  const [countdown,   setCountdown]   = useState("");
   const [showHistory, setShowHistory] = useState(false);
+  const [chartData,   setChartData]   = useState<Record<Asset, number[]>>({ V100: [], V50: [], GOLD: [], EURUSD: [] });
 
-  const address = ethAddress?.toLowerCase() ?? mxcAddress?.toLowerCase() ?? "";
+  const priceFlash    = useRef(new Animated.Value(1)).current;
+  const prevPriceRef  = useRef<Partial<Prices>>({});
+  const loadedRef     = useRef<Set<Asset>>(new Set());
 
-  const resultScale = useRef(new Animated.Value(0)).current;
-  const priceFlash  = useRef(new Animated.Value(1)).current;
+  const CHART_H = 230;
+  const activeAsset = screen === "active" && activeTrade ? activeTrade.asset : asset;
+  const chartColor  = screen === "active" && activeTrade
+    ? (activeTrade.direction === "UP" ? D.green : D.red)
+    : ASSET_COLOR[asset];
 
-  useFocusEffect(useCallback(() => { qc.invalidateQueries({ queryKey: ["trade_prices"] }); }, [qc]));
+  // Load candle history
+  useEffect(() => {
+    if (loadedRef.current.has(asset)) return;
+    loadedRef.current.add(asset);
+    apiCandles(asset).then(prices => {
+      if (prices.length > 0) setChartData(prev => ({ ...prev, [asset]: prices }));
+    }).catch(() => {});
+  }, [asset]);
 
-  // Live prices — refresh every 5 s
-  const { data: prices, isError: pricesErr } = useQuery<Prices>({
-    queryKey: ["trade_prices"],
-    queryFn:  fetchPrices,
-    refetchInterval: 5000,
-    staleTime: 4000,
+  useFocusEffect(useCallback(() => {
+    qc.invalidateQueries({ queryKey: ["t_prices"] });
+  }, [qc]));
+
+  // Live prices (2 s)
+  const { data: prices } = useQuery<Prices>({
+    queryKey: ["t_prices"],
+    queryFn:  apiPrices,
+    refetchInterval: 2000,
+    staleTime:       1500,
   });
 
-  // Trading balance
+  // Append live price to chart
+  useEffect(() => {
+    if (!prices) return;
+    const cur  = prices[asset];
+    const prev = prevPriceRef.current[asset];
+    if (prev !== undefined && prev !== cur) {
+      Animated.sequence([
+        Animated.timing(priceFlash, { toValue: 0.15, duration: 60, useNativeDriver: true }),
+        Animated.timing(priceFlash, { toValue: 1,    duration: 220, useNativeDriver: true }),
+      ]).start();
+    }
+    prevPriceRef.current = { ...prevPriceRef.current, [asset]: cur };
+    setChartData(prev => ({ ...prev, [asset]: [...prev[asset], cur].slice(-300) }));
+  }, [prices?.[asset]]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const { data: balance = 0, refetch: refetchBalance } = useQuery<number>({
-    queryKey: ["trade_balance", address],
-    queryFn:  () => fetchBalance(address),
+    queryKey: ["t_balance", address],
+    queryFn:  () => apiBalance(address),
     enabled:  !!address,
-    staleTime: 10000,
+    staleTime: 15000,
   });
 
-  // Trade history
   const { data: history = [] } = useQuery<TradeResult[]>({
-    queryKey: ["trade_history", address],
-    queryFn:  () => fetchHistory(address),
+    queryKey: ["t_history", address],
+    queryFn:  () => apiHistory(address),
     enabled:  !!address && showHistory,
     staleTime: 30000,
   });
 
-  // Countdown timer for active trade
+  // Countdown
   useEffect(() => {
     if (screen !== "active" || !activeTrade) return;
-    const tick = setInterval(() => setCountdown(formatCountdown(activeTrade.expiresAt)), 500);
-    return () => clearInterval(tick);
+    const t = setInterval(() => setCountdown(fmtCd(activeTrade.expiresAt)), 400);
+    return () => clearInterval(t);
   }, [screen, activeTrade]);
 
-  // Poll trade status when active
+  // Poll trade status
   const { data: liveStatus } = useQuery<TradeResult>({
-    queryKey: ["trade_status", activeTrade?.tradeId],
-    queryFn:  () => fetchTradeStatus(activeTrade!.tradeId),
+    queryKey: ["t_status", activeTrade?.tradeId],
+    queryFn:  () => apiTradeStatus(activeTrade!.tradeId),
     enabled:  screen === "active" && !!activeTrade,
-    refetchInterval: 4000,
-    staleTime: 3000,
+    refetchInterval: 3500,
+    staleTime:       3000,
   });
 
   useEffect(() => {
-    if (!liveStatus) return;
-    if (liveStatus.status !== "open") {
-      setResult(liveStatus);
-      setScreen("result");
-      Animated.spring(resultScale, { toValue: 1, useNativeDriver: true, tension: 80, friction: 6 }).start();
-      if (Platform.OS !== "web") {
-        liveStatus.status === "won"
-          ? Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success)
-          : Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      }
-      void refetchBalance();
-      qc.invalidateQueries({ queryKey: ["trade_history", address] });
+    if (!liveStatus || liveStatus.status === "open") return;
+    setResult(liveStatus);
+    setScreen("result");
+    void refetchBalance();
+    qc.invalidateQueries({ queryKey: ["t_history", address] });
+    if (Platform.OS !== "web") {
+      if (liveStatus.status === "won") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      else Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     }
   }, [liveStatus]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Flash price on change
-  const prevPriceRef = useRef<number | null>(null);
-  useEffect(() => {
-    if (!prices) return;
-    const cur = prices[asset];
-    if (prevPriceRef.current !== null && prevPriceRef.current !== cur) {
-      Animated.sequence([
-        Animated.timing(priceFlash, { toValue: 0.3, duration: 80, useNativeDriver: true }),
-        Animated.timing(priceFlash, { toValue: 1, duration: 200, useNativeDriver: true }),
-      ]).start();
-    }
-    prevPriceRef.current = cur;
-  }, [prices, asset]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Proposal mutation
-  const proposalMut = useMutation({
-    mutationFn: () => {
-      const amt = parseFloat(amount);
-      if (!amt || amt < 0.35) throw new Error("Minimum amount is $0.35");
-      if (amt > balance) throw new Error("Insufficient USDT balance");
-      return fetchProposal(asset, dir, amt, duration);
-    },
-    onSuccess: (p) => { setProposal(p); setScreen("confirm"); setErr(""); },
-    onError:   (e) => setErr(e instanceof Error ? e.message : "Failed to get quote"),
-  });
-
-  // Open trade mutation
   const tradeMut = useMutation({
     mutationFn: () => {
-      if (!address) throw new Error("Not ready");
-      return openTrade({
-        walletAddress: address, asset, direction: dir,
-        amount: parseFloat(amount), duration,
-      });
+      if (!address) throw new Error("No wallet connected");
+      const amt = parseFloat(amount);
+      if (!amt || amt < 0.35) throw new Error("Minimum stake is $0.35");
+      if (amt > balance) throw new Error("Insufficient USDT balance");
+      return apiOpenTrade({ walletAddress: address, asset, direction: dir, amount: amt, duration });
     },
     onSuccess: (t) => {
-      setActiveTrade(t);
-      setScreen("active");
-      setCountdown(formatCountdown(t.expiresAt));
-      setErr("");
-      if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      setActiveTrade(t); setScreen("active");
+      setCountdown(fmtCd(t.expiresAt)); setErr("");
+      if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
     },
-    onError: (e) => { setErr(e instanceof Error ? e.message : "Trade failed"); setScreen("trade"); },
+    onError: (e) => setErr(e instanceof Error ? e.message : "Trade failed"),
   });
 
   function reset() {
-    setScreen("trade"); setProposal(null); setActiveTrade(null);
-    setResult(null); setErr(""); resultScale.setValue(0);
+    setScreen("trade"); setActiveTrade(null); setResult(null);
+    setErr(""); setAmount("1");
   }
 
-  const s = StyleSheet.create({
-    container:   { flex: 1, backgroundColor: colors.background },
-    header:      {
-      paddingTop: insets.top + (Platform.OS === "web" ? 67 : 12),
-      paddingHorizontal: 20, paddingBottom: 14,
-      flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-    },
-    title:       { fontSize: 22, fontFamily: "Inter_700Bold", color: colors.foreground },
-    balancePill: {
-      flexDirection: "row", alignItems: "center", gap: 5,
-      paddingHorizontal: 12, paddingVertical: 6,
-      backgroundColor: colors.card, borderRadius: 20,
-      borderWidth: 1, borderColor: colors.border,
-    },
-    balanceText: { fontSize: 12, fontFamily: "Inter_600SemiBold", color: "#10B981" },
-    scroll:      { paddingHorizontal: 20, paddingBottom: 120 },
-    card:        {
-      backgroundColor: colors.card, borderRadius: 20,
-      borderWidth: 1, borderColor: colors.border,
-      padding: 18, marginBottom: 14,
-    },
-    sectionLabel: { fontSize: 10, fontFamily: "Inter_700Bold", color: colors.mutedForeground, letterSpacing: 1.5, marginBottom: 10 },
-    assetRow:    { flexDirection: "row", gap: 8 },
-    assetBtn:    {
-      flex: 1, alignItems: "center", paddingVertical: 14, borderRadius: 14,
-      borderWidth: 1.5, borderColor: colors.border, backgroundColor: colors.background, gap: 4,
-    },
-    assetBtnActive: { borderColor: colors.primary, backgroundColor: colors.primary + "10" },
-    assetEmoji:  { fontSize: 18, fontFamily: "Inter_700Bold" },
-    assetName:   { fontSize: 11, fontFamily: "Inter_600SemiBold", color: colors.mutedForeground },
-    assetPrice:  { fontSize: 10, fontFamily: "Inter_400Regular", color: colors.mutedForeground },
-    priceRow:    { flexDirection: "row", alignItems: "baseline", justifyContent: "center", gap: 8, marginBottom: 6 },
-    bigPrice:    { fontSize: 32, fontFamily: "Inter_700Bold", color: colors.foreground },
-    priceUnit:   { fontSize: 14, fontFamily: "Inter_400Regular", color: colors.mutedForeground },
-    dirRow:      { flexDirection: "row", gap: 10, marginBottom: 14 },
-    dirBtn:      {
-      flex: 1, paddingVertical: 18, borderRadius: 16, alignItems: "center",
-      borderWidth: 2, borderColor: colors.border, gap: 6, backgroundColor: colors.background,
-    },
-    dirBtnUp:    { borderColor: "#10B981", backgroundColor: "#10B98112" },
-    dirBtnDown:  { borderColor: "#EF4444", backgroundColor: "#EF444412" },
-    dirIcon:     { fontSize: 22 },
-    dirLabel:    { fontSize: 15, fontFamily: "Inter_700Bold", color: colors.mutedForeground },
-    dirLabelUp:  { color: "#10B981" },
-    dirLabelDown:{ color: "#EF4444" },
-    durRow:      { flexDirection: "row", gap: 8 },
-    durBtn:      {
-      flex: 1, paddingVertical: 10, borderRadius: 10, alignItems: "center",
-      borderWidth: 1, borderColor: colors.border, backgroundColor: colors.background,
-    },
-    durBtnActive:{ borderColor: colors.primary, backgroundColor: colors.primary + "15" },
-    durText:     { fontSize: 12, fontFamily: "Inter_600SemiBold", color: colors.mutedForeground },
-    durTextActive:{ color: colors.primary },
-    amtRow:      { flexDirection: "row", alignItems: "center", backgroundColor: colors.background, borderRadius: 14, borderWidth: 1.5, borderColor: colors.border, overflow: "hidden" },
-    amtInput:    { flex: 1, paddingHorizontal: 16, paddingVertical: 14, fontSize: 22, fontFamily: "Inter_700Bold", color: colors.foreground },
-    amtSuffix:   { paddingHorizontal: 14, fontSize: 14, fontFamily: "Inter_600SemiBold", color: colors.mutedForeground },
-    payoutRow:   { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 12 },
-    payoutLabel: { fontSize: 12, fontFamily: "Inter_400Regular", color: colors.mutedForeground },
-    payoutValue: { fontSize: 13, fontFamily: "Inter_700Bold", color: "#10B981" },
-    errBox:      { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: "#EF444412", borderRadius: 10, borderWidth: 1, borderColor: "#EF444430", padding: 12, marginBottom: 14 },
-    errText:     { fontSize: 13, fontFamily: "Inter_400Regular", color: "#EF4444", flex: 1 },
-    primaryBtn:  { borderRadius: 16, overflow: "hidden", marginBottom: 8 },
-    primaryGrad: { paddingVertical: 17, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 8 },
-    primaryTxt:  { fontSize: 16, fontFamily: "Inter_700Bold", color: "#FFF", letterSpacing: 0.2 },
-    ghostBtn:    { paddingVertical: 12, alignItems: "center" },
-    ghostTxt:    { fontSize: 14, fontFamily: "Inter_500Medium", color: colors.mutedForeground },
-    confirmRow:  { flexDirection: "row", justifyContent: "space-between", paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: colors.border },
-    confirmLabel:{ fontSize: 13, fontFamily: "Inter_400Regular", color: colors.mutedForeground },
-    confirmVal:  { fontSize: 13, fontFamily: "Inter_600SemiBold", color: colors.foreground },
-    activeCenter:{ alignItems: "center", paddingVertical: 24 },
-    countdownBig:{ fontSize: 52, fontFamily: "Inter_700Bold", color: colors.foreground, letterSpacing: -2 },
-    countdownSub:{ fontSize: 13, fontFamily: "Inter_400Regular", color: colors.mutedForeground, marginTop: 4 },
-    livePriceRow:{ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, marginTop: 16 },
-    liveLabel:   { fontSize: 12, fontFamily: "Inter_400Regular", color: colors.mutedForeground },
-    livePrice:   { fontSize: 18, fontFamily: "Inter_700Bold", color: colors.foreground },
-    progressBar: { height: 4, backgroundColor: colors.border, borderRadius: 2, overflow: "hidden", marginVertical: 16 },
-    progressFill:{ height: 4, backgroundColor: colors.primary, borderRadius: 2 },
-    tradeSummaryRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: 8 },
-    tradeSummaryLabel: { fontSize: 12, fontFamily: "Inter_400Regular", color: colors.mutedForeground },
-    tradeSummaryVal:   { fontSize: 12, fontFamily: "Inter_600SemiBold", color: colors.foreground },
-    resultIcon:  { width: 88, height: 88, borderRadius: 44, alignItems: "center", justifyContent: "center", marginBottom: 20, alignSelf: "center" },
-    resultTitle: { fontSize: 28, fontFamily: "Inter_700Bold", textAlign: "center", marginBottom: 8 },
-    resultAmt:   { fontSize: 16, fontFamily: "Inter_400Regular", textAlign: "center", color: colors.mutedForeground, marginBottom: 24 },
-    historyRow:  { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: colors.border },
-    historyAsset:{ fontSize: 14, fontFamily: "Inter_600SemiBold", color: colors.foreground },
-    historyAmt:  { fontSize: 13, fontFamily: "Inter_700Bold" },
-    historyMeta: { fontSize: 11, fontFamily: "Inter_400Regular", color: colors.mutedForeground },
-    noBalanceBanner: {
-      flexDirection: "row", alignItems: "flex-start", gap: 10,
-      backgroundColor: "#F59E0B10", borderRadius: 14, borderWidth: 1,
-      borderColor: "#F59E0B30", padding: 14, marginBottom: 14,
-    },
-  });
+  const curPrice   = prices?.[asset] ?? 0;
+  const chartPts   = chartData[activeAsset] ?? [];
+  const change     = chartPts.length > 1
+    ? ((chartPts[chartPts.length - 1] - chartPts[0]) / chartPts[0]) * 100
+    : 0;
+  const hi         = chartPts.length ? Math.max(...chartPts) : 0;
+  const lo         = chartPts.length ? Math.min(...chartPts) : 0;
+  const amt        = parseFloat(amount || "0") || 0;
+  const estPayout  = amt * 1.87;
+  const entryPrice = screen === "active" ? (activeTrade?.entryPrice ?? null) : null;
 
-  const currentPrice = prices?.[asset] ?? 0;
-  const estPayout    = proposal?.payout ?? (parseFloat(amount || "0") * 1.87);
-
-  // ── Screens ────────────────────────────────────────────────────────────────
+  // ── RESULT SCREEN ───────────────────────────────────────────────────────────
   if (screen === "result" && result) {
     const won  = result.status === "won";
     const draw = result.status === "draw";
+    const profit = won ? result.payout_usdt - result.amount_usdt : 0;
     return (
-      <View style={s.container}>
-        <View style={s.header}>
-          <Text style={s.title}>Trade</Text>
-          <View style={s.balancePill}>
-            <Icon name="wallet-outline" size={12} color="#10B981" />
-            <Text style={s.balanceText}>${balance.toFixed(2)} USDT</Text>
+      <View style={{ flex: 1, backgroundColor: D.bg }}>
+        <View style={{
+          paddingTop: insets.top + (Platform.OS === "web" ? 67 : 14),
+          paddingHorizontal: 20, paddingBottom: 14, flexDirection: "row",
+          alignItems: "center", justifyContent: "space-between",
+          borderBottomWidth: 1, borderBottomColor: D.border,
+        }}>
+          <Text style={{ fontSize: 18, fontFamily: "Inter_700Bold", color: D.text }}>Trade Result</Text>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 6,
+            backgroundColor: D.card, paddingHorizontal: 10, paddingVertical: 5,
+            borderRadius: 20, borderWidth: 1, borderColor: D.border }}>
+            <Icon name="wallet-outline" size={12} color={D.green} />
+            <Text style={{ fontSize: 12, fontFamily: "Inter_600SemiBold", color: D.green }}>
+              ${balance.toFixed(2)}
+            </Text>
           </View>
         </View>
-        <ScrollView contentContainerStyle={[s.scroll, { paddingTop: 20, alignItems: "center" }]}>
-          <Animated.View style={{ transform: [{ scale: resultScale }], width: "100%" }}>
-            <View style={[s.resultIcon, {
-              backgroundColor: won ? "#10B98118" : draw ? "#F59E0B18" : "#EF444418",
-              borderWidth: 1,
-              borderColor: won ? "#10B98140" : draw ? "#F59E0B40" : "#EF444440",
-            }]}>
-              <Text style={{ fontSize: 40 }}>{won ? "🏆" : draw ? "🤝" : "😞"}</Text>
-            </View>
-            <Text style={[s.resultTitle, { color: won ? "#10B981" : draw ? "#F59E0B" : "#EF4444" }]}>
-              {won ? "You Won!" : draw ? "Draw" : "You Lost"}
-            </Text>
-            <Text style={s.resultAmt}>
-              {won
-                ? `+$${(result.payout_usdt - result.amount_usdt).toFixed(2)} profit`
-                : draw
-                ? `$${result.amount_usdt.toFixed(2)} refunded`
-                : `-$${result.amount_usdt.toFixed(2)}`}
-            </Text>
 
-            <View style={s.card}>
-              {[
-                ["Asset",       result.asset],
-                ["Direction",   result.direction],
-                ["Staked",      `$${result.amount_usdt.toFixed(2)}`],
-                ["Entry Price", result.entry_price ? `$${formatPrice(result.entry_price)}` : "—"],
-                ["Exit Price",  result.exit_price  ? `$${formatPrice(result.exit_price)}`  : "—"],
-                ["Payout",      won ? `$${result.payout_usdt.toFixed(2)}` : "$0.00"],
-              ].map(([label, val]) => (
-                <View key={label} style={s.confirmRow}>
-                  <Text style={s.confirmLabel}>{label}</Text>
-                  <Text style={[s.confirmVal, label === "Payout" && won ? { color: "#10B981" } : {}]}>{val}</Text>
-                </View>
-              ))}
-            </View>
+        <ScrollView contentContainerStyle={{ padding: 24, alignItems: "center" }}>
+          <View style={{ width: 110, height: 110, borderRadius: 55,
+            backgroundColor: won ? D.green + "15" : draw ? D.yellow + "15" : D.red + "15",
+            borderWidth: 2, borderColor: won ? D.green + "60" : draw ? D.yellow + "60" : D.red + "60",
+            alignItems: "center", justifyContent: "center", marginBottom: 22 }}>
+            <Text style={{ fontSize: 50 }}>{won ? "🏆" : draw ? "🤝" : "😞"}</Text>
+          </View>
 
-            <TouchableOpacity style={s.primaryBtn} onPress={reset} activeOpacity={0.85}>
-              <LinearGradient colors={["#0EA5E9", "#0284C7"]} style={s.primaryGrad}>
-                <Icon name="refresh-outline" size={18} color="#FFF" />
-                <Text style={s.primaryTxt}>Trade Again</Text>
-              </LinearGradient>
-            </TouchableOpacity>
-          </Animated.View>
+          <Text style={{ fontSize: 34, fontFamily: "Inter_700Bold",
+            color: won ? D.green : draw ? D.yellow : D.red, letterSpacing: -1, marginBottom: 6 }}>
+            {won ? "You Won!" : draw ? "Draw" : "You Lost"}
+          </Text>
+
+          {won && (
+            <View style={{ paddingHorizontal: 20, paddingVertical: 8, borderRadius: 10,
+              backgroundColor: D.green + "20", borderWidth: 1, borderColor: D.green + "40", marginBottom: 24 }}>
+              <Text style={{ fontSize: 20, fontFamily: "Inter_700Bold", color: D.green }}>
+                +${profit.toFixed(2)} profit
+              </Text>
+            </View>
+          )}
+          {!won && (
+            <Text style={{ fontSize: 15, fontFamily: "Inter_400Regular", color: D.muted, marginBottom: 24 }}>
+              {draw ? "Your stake has been refunded" : `You lost $${result.amount_usdt.toFixed(2)}`}
+            </Text>
+          )}
+
+          <View style={{ width: "100%", backgroundColor: D.card, borderRadius: 18,
+            borderWidth: 1, borderColor: D.border, padding: 6, marginBottom: 24 }}>
+            {[
+              ["Asset",       result.asset],
+              ["Direction",   result.direction === "UP" ? "▲ UP" : "▼ DOWN"],
+              ["Staked",      `$${result.amount_usdt.toFixed(2)} USDT`],
+              ["Payout",      won ? `$${result.payout_usdt.toFixed(2)} USDT` : "$0.00"],
+              ["Entry Price", result.entry_price ? fmt(result.entry_price) : "—"],
+              ["Exit Price",  result.exit_price  ? fmt(result.exit_price)  : "—"],
+            ].map(([label, val], i, arr) => (
+              <View key={label} style={{
+                flexDirection: "row", justifyContent: "space-between", alignItems: "center",
+                paddingVertical: 13, paddingHorizontal: 14,
+                borderBottomWidth: i < arr.length - 1 ? 1 : 0, borderBottomColor: D.border,
+              }}>
+                <Text style={{ fontSize: 13, fontFamily: "Inter_400Regular", color: D.muted }}>{label}</Text>
+                <Text style={{ fontSize: 13, fontFamily: "Inter_600SemiBold",
+                  color: label === "Payout" && won ? D.green
+                       : label === "Direction" && result.direction === "UP" ? D.green
+                       : label === "Direction" ? D.red
+                       : D.text }}>
+                  {val}
+                </Text>
+              </View>
+            ))}
+          </View>
+
+          <TouchableOpacity style={{ width: "100%", borderRadius: 16, overflow: "hidden" }}
+            onPress={reset} activeOpacity={0.85}>
+            <LinearGradient colors={["#2563EB", "#1D4ED8"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+              style={{ paddingVertical: 18, alignItems: "center", flexDirection: "row",
+                justifyContent: "center", gap: 8 }}>
+              <Icon name="refresh-outline" size={18} color="#FFF" />
+              <Text style={{ fontSize: 16, fontFamily: "Inter_700Bold", color: "#FFF" }}>Trade Again</Text>
+            </LinearGradient>
+          </TouchableOpacity>
+
+          <View style={{ height: insets.bottom + 24 }} />
         </ScrollView>
       </View>
     );
   }
 
-  if (screen === "active" && activeTrade) {
-    const total  = new Date(activeTrade.expiresAt).getTime() - new Date(activeTrade.expiresAt).getTime() + 1;
-    const remain = Math.max(0, new Date(activeTrade.expiresAt).getTime() - Date.now());
-    const durationMs = (() => {
-      const map: Record<string, number> = { "1m": 60000, "5m": 300000, "15m": 900000, "1h": 3600000 };
-      return map[duration] ?? 60000;
-    })();
-    const progress = Math.max(0, Math.min(1, 1 - remain / durationMs));
+  // ── MAIN / ACTIVE SCREEN ───────────────────────────────────────────────────
+  return (
+    <View style={{ flex: 1, backgroundColor: D.bg }}>
 
-    return (
-      <View style={s.container}>
-        <View style={s.header}>
-          <Text style={s.title}>Trade Active</Text>
-          <View style={s.balancePill}>
-            <Icon name="wallet-outline" size={12} color="#10B981" />
-            <Text style={s.balanceText}>${balance.toFixed(2)} USDT</Text>
+      {/* Header */}
+      <View style={{
+        paddingTop: insets.top + (Platform.OS === "web" ? 67 : 14),
+        paddingHorizontal: 16, paddingBottom: 12,
+        flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+        borderBottomWidth: 1, borderBottomColor: D.border,
+      }}>
+        <Text style={{ fontSize: 20, fontFamily: "Inter_700Bold", color: D.text, letterSpacing: -0.5 }}>
+          Trade
+        </Text>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+          <TouchableOpacity onPress={() => setShowHistory(v => !v)}
+            style={{ padding: 6, borderRadius: 10,
+              backgroundColor: showHistory ? D.yellow + "20" : "transparent" }}>
+            <Icon name="time-outline" size={20} color={showHistory ? D.yellow : D.muted} />
+          </TouchableOpacity>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 5,
+            backgroundColor: D.card, paddingHorizontal: 10, paddingVertical: 6,
+            borderRadius: 20, borderWidth: 1, borderColor: D.border }}>
+            <Icon name="wallet-outline" size={12} color={D.green} />
+            <Text style={{ fontSize: 12, fontFamily: "Inter_600SemiBold", color: D.green }}>
+              ${balance.toFixed(2)} USDT
+            </Text>
           </View>
         </View>
-        <ScrollView contentContainerStyle={[s.scroll, { paddingTop: 8 }]}>
-          <View style={s.card}>
-            <View style={s.activeCenter}>
-              <Text style={[s.sectionLabel, { textAlign: "center", marginBottom: 4 }]}>TIME REMAINING</Text>
-              <Text style={s.countdownBig}>{countdown || "…"}</Text>
-              <Text style={s.countdownSub}>Resolving at expiry</Text>
-            </View>
+      </View>
 
-            <View style={s.progressBar}>
-              <View style={[s.progressFill, { width: `${progress * 100}%` }]} />
-            </View>
+      <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
 
-            <View style={s.livePriceRow}>
-              <Text style={s.liveLabel}>Live {activeTrade.asset}</Text>
-              <Animated.Text style={[s.livePrice, { opacity: priceFlash }]}>
-                ${currentPrice ? formatPrice(currentPrice) : "—"}
-              </Animated.Text>
-              {currentPrice && activeTrade.entryPrice && (
-                <Text style={{ fontSize: 13, fontFamily: "Inter_600SemiBold",
-                  color: currentPrice > activeTrade.entryPrice ? "#10B981" : "#EF4444" }}>
-                  {currentPrice > activeTrade.entryPrice ? "▲" : "▼"}
+        {/* Asset tabs */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false}
+          style={{ borderBottomWidth: 1, borderBottomColor: D.border }}
+          contentContainerStyle={{ paddingHorizontal: 8 }}>
+          {ASSETS.map(a => {
+            const active = a === (screen === "active" ? activeAsset : asset);
+            return (
+              <TouchableOpacity key={a}
+                style={{ paddingHorizontal: 16, paddingVertical: 13, marginHorizontal: 2,
+                  borderBottomWidth: 2.5,
+                  borderBottomColor: active ? ASSET_COLOR[a] : "transparent" }}
+                onPress={() => {
+                  if (screen !== "active") {
+                    setAsset(a);
+                    if (!loadedRef.current.has(a)) {
+                      loadedRef.current.add(a);
+                      apiCandles(a).then(pts => {
+                        if (pts.length) setChartData(prev => ({ ...prev, [a]: pts }));
+                      }).catch(() => {});
+                    }
+                  }
+                }}>
+                <Text style={{ fontSize: 13, fontFamily: active ? "Inter_700Bold" : "Inter_500Medium",
+                  color: active ? D.text : D.muted }}>
+                  {ASSET_TAG[a]}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+
+        {/* Price display */}
+        <View style={{ paddingHorizontal: 16, paddingTop: 14, paddingBottom: 10,
+          flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between" }}>
+          <View>
+            <Animated.Text style={{ fontSize: 34, fontFamily: "Inter_700Bold", letterSpacing: -1.5,
+              color: change >= 0 ? D.green : D.red, opacity: priceFlash }}>
+              {curPrice ? fmt(curPrice) : "—"}
+            </Animated.Text>
+            <Text style={{ fontSize: 12, fontFamily: "Inter_400Regular", color: D.muted, marginTop: 2 }}>
+              {ASSET_LABEL[screen === "active" && activeTrade ? activeTrade.asset : asset]}
+            </Text>
+          </View>
+
+          <View style={{ alignItems: "flex-end", gap: 4 }}>
+            {change !== 0 && (
+              <View style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8,
+                backgroundColor: change >= 0 ? D.green + "18" : D.red + "18" }}>
+                <Text style={{ fontSize: 13, fontFamily: "Inter_700Bold",
+                  color: change >= 0 ? D.green : D.red }}>
+                  {change >= 0 ? "▲" : "▼"} {Math.abs(change).toFixed(2)}%
+                </Text>
+              </View>
+            )}
+            <View style={{ flexDirection: "row", gap: 12 }}>
+              {hi > 0 && (
+                <Text style={{ fontSize: 11, fontFamily: "Inter_500Medium", color: D.muted }}>
+                  H: <Text style={{ color: D.green }}>{fmt(hi)}</Text>
+                </Text>
+              )}
+              {lo > 0 && (
+                <Text style={{ fontSize: 11, fontFamily: "Inter_500Medium", color: D.muted }}>
+                  L: <Text style={{ color: D.red }}>{fmt(lo)}</Text>
                 </Text>
               )}
             </View>
           </View>
-
-          <View style={s.card}>
-            {[
-              ["Direction", activeTrade.direction === "UP" ? "▲ UP" : "▼ DOWN"],
-              ["Staked",    `$${activeTrade.amount.toFixed(2)} USDT`],
-              ["If Win",    `$${activeTrade.payout.toFixed(2)} USDT`],
-              ["Entry",     `$${formatPrice(activeTrade.entryPrice)}`],
-            ].map(([label, val]) => (
-              <View key={label} style={s.tradeSummaryRow}>
-                <Text style={s.tradeSummaryLabel}>{label}</Text>
-                <Text style={[s.tradeSummaryVal,
-                  label === "Direction" && activeTrade.direction === "UP"  ? { color: "#10B981" } :
-                  label === "Direction" && activeTrade.direction === "DOWN" ? { color: "#EF4444" } :
-                  label === "If Win" ? { color: "#10B981" } : {}
-                ]}>{val}</Text>
-              </View>
-            ))}
-            <View style={{ alignItems: "center", marginTop: 8 }}>
-              <ActivityIndicator color={colors.primary} />
-              <Text style={[s.countdownSub, { marginTop: 6 }]}>Waiting for result…</Text>
-            </View>
-          </View>
-        </ScrollView>
-      </View>
-    );
-  }
-
-  if (screen === "confirm" && proposal) {
-    return (
-      <View style={s.container}>
-        <View style={s.header}>
-          <TouchableOpacity onPress={() => setScreen("trade")}>
-            <Icon name="arrow-back" size={22} color={colors.foreground} />
-          </TouchableOpacity>
-          <Text style={s.title}>Confirm Trade</Text>
-          <View style={{ width: 22 }} />
         </View>
-        <ScrollView contentContainerStyle={[s.scroll, { paddingTop: 8 }]}>
-          <View style={s.card}>
-            {[
-              ["Asset",     asset],
-              ["Direction", dir === "UP" ? "▲ UP" : "▼ DOWN"],
-              ["Amount",    `$${parseFloat(amount).toFixed(2)} USDT`],
-              ["Duration",  DURATION_LABEL[duration]],
-              ["Entry Price", `$${formatPrice(proposal.spotPrice)}`],
-              ["Payout if Win", `$${proposal.payout.toFixed(2)} USDT`],
-              ["Net Profit",    `+$${(proposal.payout - parseFloat(amount)).toFixed(2)}`],
-            ].map(([label, val]) => (
-              <View key={label} style={s.confirmRow}>
-                <Text style={s.confirmLabel}>{label}</Text>
-                <Text style={[s.confirmVal,
-                  label === "Direction" && dir === "UP"   ? { color: "#10B981" } :
-                  label === "Direction" && dir === "DOWN" ? { color: "#EF4444" } :
-                  label === "Payout if Win" || label === "Net Profit" ? { color: "#10B981" } : {}
-                ]}>{val}</Text>
+
+        {/* Chart */}
+        <View style={{ backgroundColor: D.bg }}>
+          <PriceChart
+            prices={chartPts}
+            width={W}
+            height={CHART_H}
+            color={chartColor}
+            entryPrice={entryPrice}
+          />
+        </View>
+
+        {/* Chart period label */}
+        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center",
+          paddingHorizontal: 16, paddingVertical: 8,
+          borderTopWidth: 1, borderTopColor: D.border }}>
+          <Text style={{ fontSize: 10, fontFamily: "Inter_500Medium", color: D.muted }}>
+            {chartPts.length > 0 ? `${chartPts.length} data points` : ""}
+          </Text>
+          <Text style={{ fontSize: 10, fontFamily: "Inter_500Medium", color: D.muted }}>
+            1-min candles · live
+          </Text>
+        </View>
+
+        {/* ── ACTIVE TRADE PANEL ── */}
+        {screen === "active" && activeTrade && (
+          <View style={{ margin: 16, borderRadius: 18,
+            borderWidth: 1, borderColor: D.border, overflow: "hidden" }}>
+            <LinearGradient colors={[D.card, D.card2]}
+              style={{ padding: 18 }}>
+              <Text style={{ fontSize: 10, fontFamily: "Inter_700Bold", color: D.muted,
+                letterSpacing: 1.8, marginBottom: 14 }}>
+                TRADE IN PROGRESS
+              </Text>
+
+              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }}>
+                <View>
+                  <Text style={{ fontSize: 11, fontFamily: "Inter_400Regular", color: D.muted, marginBottom: 4 }}>
+                    Time Remaining
+                  </Text>
+                  <Text style={{ fontSize: 46, fontFamily: "Inter_700Bold", color: D.text, letterSpacing: -2 }}>
+                    {countdown || "—"}
+                  </Text>
+                </View>
+
+                <View style={{ alignItems: "flex-end", gap: 10 }}>
+                  <View style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 12,
+                    backgroundColor: activeTrade.direction === "UP" ? D.green + "20" : D.red + "20",
+                    borderWidth: 1,
+                    borderColor: activeTrade.direction === "UP" ? D.green + "50" : D.red + "50" }}>
+                    <Text style={{ fontSize: 16, fontFamily: "Inter_700Bold",
+                      color: activeTrade.direction === "UP" ? D.green : D.red }}>
+                      {activeTrade.direction === "UP" ? "▲ UP" : "▼ DOWN"}
+                    </Text>
+                  </View>
+
+                  <View>
+                    <Text style={{ fontSize: 11, fontFamily: "Inter_400Regular", color: D.muted, textAlign: "right" }}>
+                      Entry Price
+                    </Text>
+                    <Text style={{ fontSize: 15, fontFamily: "Inter_700Bold", color: D.yellow, textAlign: "right" }}>
+                      {fmt(activeTrade.entryPrice)}
+                    </Text>
+                  </View>
+                </View>
               </View>
-            ))}
-          </View>
 
-          {err ? (
-            <View style={s.errBox}>
-              <Icon name="alert-circle-outline" size={16} color="#EF4444" />
-              <Text style={s.errText}>{err}</Text>
-            </View>
-          ) : null}
+              <View style={{ flexDirection: "row", marginTop: 16, gap: 1 }}>
+                {[
+                  { label: "Staked", value: `$${activeTrade.amount.toFixed(2)}`, color: D.text },
+                  { label: "Win Amount", value: `$${activeTrade.payout.toFixed(2)}`, color: D.green },
+                  { label: "Duration", value: activeTrade.expiresAt ? duration : "—", color: D.text },
+                ].map(({ label, value, color }) => (
+                  <View key={label} style={{ flex: 1, alignItems: "center", padding: 10,
+                    backgroundColor: D.dim + "80", borderRadius: 10, marginHorizontal: 3 }}>
+                    <Text style={{ fontSize: 10, fontFamily: "Inter_400Regular", color: D.muted, marginBottom: 4 }}>
+                      {label}
+                    </Text>
+                    <Text style={{ fontSize: 14, fontFamily: "Inter_700Bold", color }}>{value}</Text>
+                  </View>
+                ))}
+              </View>
 
-          <TouchableOpacity
-            style={[s.primaryBtn, tradeMut.isPending && { opacity: 0.7 }]}
-            disabled={tradeMut.isPending}
-            onPress={() => tradeMut.mutate()}
-            activeOpacity={0.85}
-          >
-            <LinearGradient
-              colors={dir === "UP" ? ["#059669", "#10B981"] : ["#DC2626", "#EF4444"]}
-              style={s.primaryGrad}
-            >
-              {tradeMut.isPending
-                ? <ActivityIndicator color="#FFF" />
-                : <>
-                    <Text style={{ fontSize: 20 }}>{dir === "UP" ? "▲" : "▼"}</Text>
-                    <Text style={s.primaryTxt}>Place Trade — {dir}</Text>
-                  </>}
+              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "center",
+                marginTop: 14, gap: 8 }}>
+                <ActivityIndicator color={activeTrade.direction === "UP" ? D.green : D.red} size="small" />
+                <Text style={{ fontSize: 12, fontFamily: "Inter_400Regular", color: D.muted }}>
+                  Waiting for result…
+                </Text>
+              </View>
             </LinearGradient>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={s.ghostBtn} onPress={() => setScreen("trade")}>
-            <Text style={s.ghostTxt}>← Back</Text>
-          </TouchableOpacity>
-        </ScrollView>
-      </View>
-    );
-  }
-
-  // ── Main trade form ────────────────────────────────────────────────────────
-  return (
-    <View style={s.container}>
-      <View style={s.header}>
-        <Text style={s.title}>Trade</Text>
-        <View style={s.balancePill}>
-          <Icon name="wallet-outline" size={12} color="#10B981" />
-          <Text style={s.balanceText}>${balance.toFixed(2)} USDT</Text>
-        </View>
-      </View>
-
-      <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
-
-        {/* No balance banner */}
-        {balance < 0.35 && (
-          <View style={s.noBalanceBanner}>
-            <Icon name="information-circle-outline" size={18} color="#F59E0B" />
-            <Text style={{ fontSize: 13, fontFamily: "Inter_400Regular", color: "#F59E0B", flex: 1, lineHeight: 20 }}>
-              You need USDT to trade. Deposit via the Card section to get started.
-            </Text>
           </View>
         )}
 
-        {/* Asset selector */}
-        <View style={s.card}>
-          <Text style={s.sectionLabel}>SELECT ASSET</Text>
-          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-            {ASSETS.map(a => (
-              <TouchableOpacity
-                key={a}
-                style={[s.assetBtn, { width: "47%" }, asset === a && s.assetBtnActive]}
-                onPress={() => { setAsset(a); if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
-                activeOpacity={0.75}
-              >
-                <Text style={[s.assetEmoji, { color: ASSET_COLOR[a], fontSize: 14, letterSpacing: -0.5 }]}>{ASSET_ICON[a]}</Text>
-                <Text style={[s.assetName, asset === a && { color: colors.primary }]}>{ASSET_LABEL[a]}</Text>
-                {prices && <Text style={s.assetPrice}>${formatPrice(prices[a])}</Text>}
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
+        {/* ── TRADE CONTROLS ── */}
+        {screen === "trade" && (
+          <View style={{ padding: 16, gap: 12 }}>
 
-        {/* Live price */}
-        <View style={[s.card, { alignItems: "center" }]}>
-          <Text style={s.sectionLabel}>LIVE PRICE</Text>
-          {pricesErr
-            ? <Text style={{ color: "#EF4444", fontSize: 13 }}>Price unavailable</Text>
-            : (
-              <View style={s.priceRow}>
-                <Animated.Text style={[s.bigPrice, { opacity: priceFlash, color: ASSET_COLOR[asset] }]}>
-                  ${currentPrice ? formatPrice(currentPrice) : "—"}
-                </Animated.Text>
-                <Text style={s.priceUnit}>USD</Text>
+            {/* No balance banner */}
+            {balance < 0.35 && (
+              <View style={{ flexDirection: "row", gap: 10, alignItems: "center",
+                backgroundColor: D.yellow + "12", borderRadius: 12, borderWidth: 1,
+                borderColor: D.yellow + "30", padding: 12 }}>
+                <Icon name="information-circle-outline" size={16} color={D.yellow} />
+                <Text style={{ flex: 1, fontSize: 12, fontFamily: "Inter_400Regular",
+                  color: D.yellow, lineHeight: 18 }}>
+                  Deposit USDT via the Card tab to start trading.
+                </Text>
               </View>
             )}
-        </View>
 
-        {/* Direction */}
-        <View style={s.card}>
-          <Text style={s.sectionLabel}>PREDICTION</Text>
-          <View style={s.dirRow}>
-            <TouchableOpacity
-              style={[s.dirBtn, dir === "UP" && s.dirBtnUp]}
-              onPress={() => { setDir("UP"); if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
-              activeOpacity={0.8}
-            >
-              <Text style={s.dirIcon}>▲</Text>
-              <Text style={[s.dirLabel, dir === "UP" && s.dirLabelUp]}>UP</Text>
-              <Text style={{ fontSize: 10, fontFamily: "Inter_400Regular", color: dir === "UP" ? "#10B981" : colors.mutedForeground }}>
-                Price rises
+            {/* Direction */}
+            <View style={{ flexDirection: "row", gap: 10 }}>
+              {(["UP", "DOWN"] as Dir[]).map(d => {
+                const isUp   = d === "UP";
+                const active = dir === d;
+                const clr    = isUp ? D.green : D.red;
+                return (
+                  <TouchableOpacity key={d}
+                    style={{ flex: 1, paddingVertical: 22, borderRadius: 16,
+                      alignItems: "center", gap: 5,
+                      borderWidth: active ? 2 : 1,
+                      borderColor: active ? clr : D.border,
+                      backgroundColor: active ? clr + "18" : D.card }}
+                    onPress={() => {
+                      setDir(d);
+                      if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    }}>
+                    <Text style={{ fontSize: 24 }}>{isUp ? "▲" : "▼"}</Text>
+                    <Text style={{ fontSize: 15, fontFamily: "Inter_700Bold",
+                      color: active ? clr : D.muted }}>
+                      {isUp ? "UP" : "DOWN"}
+                    </Text>
+                    <Text style={{ fontSize: 10, fontFamily: "Inter_400Regular",
+                      color: active ? clr + "CC" : D.muted }}>
+                      {isUp ? "Price rises" : "Price falls"}
+                    </Text>
+                    {active && (
+                      <View style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6,
+                        backgroundColor: clr + "25" }}>
+                        <Text style={{ fontSize: 10, fontFamily: "Inter_600SemiBold", color: clr }}>
+                          +87% payout
+                        </Text>
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            {/* Duration */}
+            <View style={{ backgroundColor: D.card, borderRadius: 16, borderWidth: 1,
+              borderColor: D.border, padding: 14 }}>
+              <Text style={{ fontSize: 10, fontFamily: "Inter_700Bold", color: D.muted,
+                letterSpacing: 1.8, marginBottom: 12 }}>
+                DURATION
               </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[s.dirBtn, dir === "DOWN" && s.dirBtnDown]}
-              onPress={() => { setDir("DOWN"); if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
-              activeOpacity={0.8}
-            >
-              <Text style={s.dirIcon}>▼</Text>
-              <Text style={[s.dirLabel, dir === "DOWN" && s.dirLabelDown]}>DOWN</Text>
-              <Text style={{ fontSize: 10, fontFamily: "Inter_400Regular", color: dir === "DOWN" ? "#EF4444" : colors.mutedForeground }}>
-                Price falls
+              <View style={{ flexDirection: "row", gap: 8 }}>
+                {DURATIONS.map(d => {
+                  const active = duration === d;
+                  return (
+                    <TouchableOpacity key={d}
+                      style={{ flex: 1, paddingVertical: 11, borderRadius: 10, alignItems: "center",
+                        backgroundColor: active ? D.blue + "25" : D.bg,
+                        borderWidth: 1, borderColor: active ? D.blue : D.border }}
+                      onPress={() => setDuration(d)}>
+                      <Text style={{ fontSize: 12, fontFamily: active ? "Inter_700Bold" : "Inter_500Medium",
+                        color: active ? D.blue : D.muted }}>
+                        {DURATION_LABEL[d]}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+
+            {/* Stake amount */}
+            <View style={{ backgroundColor: D.card, borderRadius: 16, borderWidth: 1,
+              borderColor: D.border, padding: 14 }}>
+              <Text style={{ fontSize: 10, fontFamily: "Inter_700Bold", color: D.muted,
+                letterSpacing: 1.8, marginBottom: 12 }}>
+                STAKE AMOUNT
               </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
 
-        {/* Duration */}
-        <View style={s.card}>
-          <Text style={s.sectionLabel}>DURATION</Text>
-          <View style={s.durRow}>
-            {DURATIONS.map(d => (
-              <TouchableOpacity
-                key={d}
-                style={[s.durBtn, duration === d && s.durBtnActive]}
-                onPress={() => setDuration(d)}
-                activeOpacity={0.75}
-              >
-                <Text style={[s.durText, duration === d && s.durTextActive]}>{DURATION_LABEL[d]}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
+              <View style={{ flexDirection: "row", alignItems: "center",
+                backgroundColor: D.bg, borderRadius: 12, borderWidth: 1.5,
+                borderColor: D.border, overflow: "hidden", marginBottom: 10 }}>
+                <Text style={{ paddingHorizontal: 14, fontSize: 18, fontFamily: "Inter_600SemiBold",
+                  color: D.green }}>$</Text>
+                <TextInput
+                  style={{ flex: 1, paddingVertical: 14, fontSize: 28, fontFamily: "Inter_700Bold",
+                    color: D.text }}
+                  value={amount}
+                  onChangeText={setAmount}
+                  keyboardType="decimal-pad"
+                  placeholderTextColor={D.muted}
+                  placeholder="0.00"
+                />
+                <Text style={{ paddingHorizontal: 14, fontSize: 13, fontFamily: "Inter_600SemiBold",
+                  color: D.muted }}>USDT</Text>
+              </View>
 
-        {/* Amount */}
-        <View style={s.card}>
-          <Text style={s.sectionLabel}>STAKE AMOUNT</Text>
-          <View style={s.amtRow}>
-            <TextInput
-              style={s.amtInput}
-              value={amount}
-              onChangeText={setAmount}
-              keyboardType="decimal-pad"
-              placeholder="1.00"
-              placeholderTextColor={colors.mutedForeground}
-            />
-            <Text style={s.amtSuffix}>USDT</Text>
-          </View>
-          <View style={s.payoutRow}>
-            <Text style={s.payoutLabel}>Estimated payout if correct</Text>
-            <Text style={s.payoutValue}>${estPayout.toFixed(2)} USDT</Text>
-          </View>
-          <View style={[s.payoutRow, { marginTop: 2 }]}>
-            <Text style={s.payoutLabel}>Profit</Text>
-            <Text style={s.payoutValue}>+${Math.max(0, estPayout - parseFloat(amount || "0")).toFixed(2)}</Text>
-          </View>
-        </View>
+              <View style={{ flexDirection: "row", gap: 7, marginBottom: 12 }}>
+                {["1", "5", "10", "25"].map(v => {
+                  const active = amount === v;
+                  return (
+                    <TouchableOpacity key={v} onPress={() => setAmount(v)}
+                      style={{ flex: 1, paddingVertical: 8, borderRadius: 9, alignItems: "center",
+                        backgroundColor: active ? D.blue + "25" : D.bg,
+                        borderWidth: 1, borderColor: active ? D.blue : D.border }}>
+                      <Text style={{ fontSize: 12, fontFamily: "Inter_600SemiBold",
+                        color: active ? D.blue : D.muted }}>
+                        ${v}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
 
-        {/* Quick amounts */}
-        <View style={{ flexDirection: "row", gap: 8, marginBottom: 14 }}>
-          {["1", "5", "10", "25"].map(v => (
-            <TouchableOpacity
-              key={v}
-              onPress={() => setAmount(v)}
-              style={{
-                flex: 1, paddingVertical: 8, borderRadius: 10,
-                borderWidth: 1, borderColor: amount === v ? colors.primary : colors.border,
-                backgroundColor: amount === v ? colors.primary + "12" : colors.card,
-                alignItems: "center",
-              }}
-            >
-              <Text style={{ fontSize: 12, fontFamily: "Inter_600SemiBold", color: amount === v ? colors.primary : colors.mutedForeground }}>
-                ${v}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
+              <View style={{ borderTopWidth: 1, borderTopColor: D.border, paddingTop: 12, gap: 6 }}>
+                <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                  <Text style={{ fontSize: 12, fontFamily: "Inter_400Regular", color: D.muted }}>
+                    Payout if correct
+                  </Text>
+                  <Text style={{ fontSize: 13, fontFamily: "Inter_700Bold", color: D.green }}>
+                    ${estPayout.toFixed(2)} USDT
+                  </Text>
+                </View>
+                <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                  <Text style={{ fontSize: 12, fontFamily: "Inter_400Regular", color: D.muted }}>
+                    Net profit
+                  </Text>
+                  <Text style={{ fontSize: 12, fontFamily: "Inter_600SemiBold", color: D.green }}>
+                    +${Math.max(0, estPayout - amt).toFixed(2)} (+87%)
+                  </Text>
+                </View>
+              </View>
+            </View>
 
-        {err ? (
-          <View style={s.errBox}>
-            <Icon name="alert-circle-outline" size={16} color="#EF4444" />
-            <Text style={s.errText}>{err}</Text>
-          </View>
-        ) : null}
-
-        {/* Predict button */}
-        <TouchableOpacity
-          style={[s.primaryBtn, (proposalMut.isPending || balance < 0.35) && { opacity: 0.5 }]}
-          disabled={proposalMut.isPending || balance < 0.35}
-          onPress={() => proposalMut.mutate()}
-          activeOpacity={0.85}
-        >
-          <LinearGradient
-            colors={dir === "UP" ? ["#059669", "#10B981"] : ["#DC2626", "#EF4444"]}
-            style={s.primaryGrad}
-          >
-            {proposalMut.isPending
-              ? <ActivityIndicator color="#FFF" />
-              : <>
-                  <Text style={{ fontSize: 18 }}>{dir === "UP" ? "▲" : "▼"}</Text>
-                  <Text style={s.primaryTxt}>Predict {dir} · {DURATION_LABEL[duration]}</Text>
-                </>}
-          </LinearGradient>
-        </TouchableOpacity>
-
-        <Text style={{ fontSize: 11, fontFamily: "Inter_400Regular", color: colors.mutedForeground, textAlign: "center", marginBottom: 20, lineHeight: 17 }}>
-          Trading involves risk. Only stake what you can afford to lose.
-        </Text>
-
-        {/* History toggle */}
-        <TouchableOpacity
-          style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}
-          onPress={() => setShowHistory(v => !v)}
-        >
-          <Text style={{ fontSize: 14, fontFamily: "Inter_600SemiBold", color: colors.foreground }}>Recent Trades</Text>
-          <Icon name={showHistory ? "chevron-up" : "chevron-down"} size={18} color={colors.mutedForeground} />
-        </TouchableOpacity>
-
-        {showHistory && (
-          <View style={s.card}>
-            {history.length === 0
-              ? <Text style={{ fontSize: 13, fontFamily: "Inter_400Regular", color: colors.mutedForeground, textAlign: "center", paddingVertical: 16 }}>
-                  No trades yet
+            {/* Error */}
+            {!!err && (
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8,
+                backgroundColor: D.red + "15", borderRadius: 12, borderWidth: 1,
+                borderColor: D.red + "40", padding: 12 }}>
+                <Icon name="alert-circle-outline" size={16} color={D.red} />
+                <Text style={{ flex: 1, fontSize: 12, fontFamily: "Inter_400Regular", color: D.red }}>
+                  {err}
                 </Text>
-              : history.map(h => (
-                <View key={h.id} style={s.historyRow}>
+              </View>
+            )}
+
+            {/* Place Trade CTA */}
+            <TouchableOpacity
+              style={{ borderRadius: 16, overflow: "hidden", marginTop: 2,
+                opacity: tradeMut.isPending ? 0.7 : 1 }}
+              disabled={tradeMut.isPending}
+              onPress={() => { setErr(""); tradeMut.mutate(); }}
+              activeOpacity={0.85}>
+              <LinearGradient
+                colors={dir === "UP" ? ["#047857", "#02C076"] : ["#9F1239", "#F6465D"]}
+                start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+                style={{ paddingVertical: 20, alignItems: "center", flexDirection: "row",
+                  justifyContent: "center", gap: 10 }}>
+                {tradeMut.isPending
+                  ? <ActivityIndicator color="#FFF" />
+                  : (
+                    <>
+                      <Text style={{ fontSize: 22 }}>{dir === "UP" ? "▲" : "▼"}</Text>
+                      <View>
+                        <Text style={{ fontSize: 17, fontFamily: "Inter_700Bold", color: "#FFF",
+                          letterSpacing: 0.3 }}>
+                          Place {dir} Trade
+                        </Text>
+                        <Text style={{ fontSize: 11, fontFamily: "Inter_400Regular",
+                          color: "#FFFFFF99", textAlign: "center" }}>
+                          Stake ${amt.toFixed(2)} · Win ${estPayout.toFixed(2)}
+                        </Text>
+                      </View>
+                    </>
+                  )}
+              </LinearGradient>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* History panel */}
+        {showHistory && (
+          <View style={{ margin: 16, backgroundColor: D.card, borderRadius: 18,
+            borderWidth: 1, borderColor: D.border, padding: 16 }}>
+            <Text style={{ fontSize: 14, fontFamily: "Inter_700Bold", color: D.text, marginBottom: 14 }}>
+              Recent Trades
+            </Text>
+            {history.length === 0 ? (
+              <Text style={{ color: D.muted, fontSize: 13, textAlign: "center",
+                fontFamily: "Inter_400Regular", paddingVertical: 20 }}>
+                No trades yet
+              </Text>
+            ) : (
+              history.map((t, i) => (
+                <View key={t.id} style={{ flexDirection: "row", alignItems: "center",
+                  paddingVertical: 12,
+                  borderBottomWidth: i < history.length - 1 ? 1 : 0, borderBottomColor: D.border }}>
+                  <View style={{ width: 36, height: 36, borderRadius: 10, alignItems: "center",
+                    justifyContent: "center", marginRight: 12,
+                    backgroundColor: t.status === "won" ? D.green + "20"
+                                   : t.status === "draw" ? D.yellow + "20" : D.red + "20" }}>
+                    <Text style={{ fontSize: 16 }}>
+                      {t.status === "won" ? "✓" : t.status === "draw" ? "=" : "✗"}
+                    </Text>
+                  </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={s.historyAsset}>{h.asset} · {h.direction}</Text>
-                    <Text style={s.historyMeta}>${h.amount_usdt.toFixed(2)} · {new Date(h.opened_at).toLocaleDateString()}</Text>
+                    <Text style={{ fontSize: 13, fontFamily: "Inter_600SemiBold", color: D.text }}>
+                      {t.asset} · {t.direction} · {t.duration ?? ""}
+                    </Text>
+                    <Text style={{ fontSize: 11, fontFamily: "Inter_400Regular", color: D.muted, marginTop: 2 }}>
+                      {new Date(t.opened_at).toLocaleString()}
+                    </Text>
                   </View>
                   <View style={{ alignItems: "flex-end" }}>
-                    <Text style={[s.historyAmt, {
-                      color: h.status === "won" ? "#10B981" : h.status === "lost" ? "#EF4444" : h.status === "open" ? "#F59E0B" : colors.mutedForeground
-                    }]}>
-                      {h.status === "won" ? `+$${(h.payout_usdt - h.amount_usdt).toFixed(2)}` :
-                       h.status === "lost" ? `-$${h.amount_usdt.toFixed(2)}` :
-                       h.status === "open" ? "Active" : "Draw"}
+                    <Text style={{ fontSize: 13, fontFamily: "Inter_700Bold",
+                      color: t.status === "won" ? D.green : t.status === "draw" ? D.yellow : D.red }}>
+                      {t.status === "won"  ? `+$${(t.payout_usdt - t.amount_usdt).toFixed(2)}`
+                       : t.status === "draw" ? "Draw"
+                       : `-$${t.amount_usdt.toFixed(2)}`}
                     </Text>
-                    <Text style={s.historyMeta}>{h.status.toUpperCase()}</Text>
+                    <Text style={{ fontSize: 10, fontFamily: "Inter_500Medium", marginTop: 2,
+                      color: t.status === "won" ? D.green : t.status === "draw" ? D.yellow : D.red }}>
+                      {t.status.toUpperCase()}
+                    </Text>
                   </View>
                 </View>
               ))
-            }
+            )}
           </View>
         )}
 
+        <View style={{ height: insets.bottom + 32 }} />
       </ScrollView>
     </View>
   );

@@ -224,6 +224,26 @@ async function creditCardBalance(walletAddress: string, amount: number): Promise
 
 // ── Routes ────────────────────────────────────────────────────────────────────
 
+// GET /trading/candles/:asset — historical OHLC for chart
+router.get("/trading/candles/:asset", async (req, res) => {
+  const symbol = ASSET_SYMBOLS[req.params.asset ?? ""];
+  if (!symbol) { res.status(400).json({ error: "Invalid asset" }); return; }
+  const granularity = Math.max(60, parseInt(String(req.query.granularity ?? "60")));
+  const count       = Math.min(500, Math.max(10, parseInt(String(req.query.count ?? "200"))));
+  try {
+    const msg = await derivPublicRequest({
+      ticks_history: symbol,
+      end:           "latest",
+      count,
+      granularity,
+      style:         "candles",
+    });
+    res.json(msg.candles ?? []);
+  } catch (err) {
+    res.status(502).json({ error: err instanceof Error ? err.message : "Candle fetch failed" });
+  }
+});
+
 // GET /trading/prices
 router.get("/trading/prices", async (_req, res) => {
   try {
