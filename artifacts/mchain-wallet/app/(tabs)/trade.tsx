@@ -1,6 +1,9 @@
 import { Icon } from "@/components/Icon";
+import { usePinContext } from "@/context/PinContext";
 import { useWallet } from "@/context/WalletContext";
-import { getPublicApiBase } from "@/services/api";
+import { api, getPublicApiBase, initCardAccount, verifyCardDeposit } from "@/services/api";
+import { buildErc20TransferData, signEvmTransaction } from "@/services/crypto";
+import { fetchTokenBalanceRaw } from "@/services/tokens";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
@@ -11,6 +14,7 @@ import {
   Animated,
   Platform,
   ScrollView,
+  StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
@@ -269,6 +273,360 @@ async function apiHistory(address: string): Promise<TradeResult[]> {
   return r.json();
 }
 
+// ── Deposit Modal ─────────────────────────────────────────────────────────────
+const USDT_CONTRACT = "0x07daf7bda0aaea88e910879b2cd6ec9ecdc87238";
+const USDT_DECIMALS = 6;
+type DepositStep = "input" | "broadcasting" | "confirming" | "verifying" | "success" | "error";
+
+interface DepositModalProps {
+  visible: boolean;
+  onClose: () => void;
+  address: string;
+  tradingBalance: number;
+  onSuccess: () => void;
+}
+
+function DepositModal({ visible, onClose, address, tradingBalance, onSuccess }: DepositModalProps) {
+  const { getPrivateKey }  = useWallet();
+  const { requestPin }     = usePinContext();
+  const slideAnim          = useRef(new Animated.Value(700)).current;
+  const overlayOpacity     = useRef(new Animated.Value(0)).current;
+  const [mounted, setMounted] = useState(false);
+
+  const [amount,     setAmount]     = useState("10");
+  const [step,       setStep]       = useState<DepositStep>("input");
+  const [statusMsg,  setStatusMsg]  = useState("");
+  const [newBalance, setNewBalance] = useState<number | null>(null);
+  const [depositErr, setDepositErr] = useState("");
+
+  const { data: walletBalRaw } = useQuery<bigint>({
+    queryKey: ["t_walletBal", address],
+    queryFn:  () => fetchTokenBalanceRaw(USDT_CONTRACT, address) as Promise<bigint>,
+    enabled:  !!address && visible,
+    staleTime: 10000,
+  });
+  const walletBal = walletBalRaw ? Number(walletBalRaw) / Math.pow(10, USDT_DECIMALS) : 0;
+
+  useEffect(() => {
+    if (visible) {
+      setMounted(true);
+      setStep("input"); setDepositErr(""); setStatusMsg(""); setNewBalance(null);
+      Animated.parallel([
+        Animated.spring(slideAnim,      { toValue: 0,   useNativeDriver: true, bounciness: 4 }),
+        Animated.timing(overlayOpacity, { toValue: 1,   duration: 250, useNativeDriver: true }),
+      ]).start();
+    } else {
+      Animated.parallel([
+        Animated.timing(slideAnim,      { toValue: 700, duration: 260, useNativeDriver: true }),
+        Animated.timing(overlayOpacity, { toValue: 0,   duration: 200, useNativeDriver: true }),
+      ]).start(() => setMounted(false));
+    }
+  }, [visible]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function performDeposit(privKey: string) {
+    try {
+      const amt = parseFloat(amount);
+      setStep("broadcasting");
+
+      setStatusMsg("Preparing transaction…");
+      const { account } = await initCardAccount(address);
+      const depositAddr  = account.deposit_address;
+
+      setStatusMsg("Signing transaction…");
+      const amountRaw = BigInt(Math.round(amt * Math.pow(10, USDT_DECIMALS)));
+      const nonce     = await api.getEvmNonce(address);
+      const data      = buildErc20TransferData(depositAddr, amountRaw);
+      const signedTx  = signEvmTransaction(
+        USDT_CONTRACT as `0x${string}`,
+        0n, nonce, privKey,
+        { gasLimit: 100_000n, data },
+      );
+
+      setStatusMsg("Broadcasting transaction…");
+      await api.sendRawTransaction(signedTx);
+
+      setStep("confirming");
+      setStatusMsg("Waiting for block confirmation…");
+      await new Promise(r => setTimeout(r, 9000));
+
+      setStep("verifying");
+      setStatusMsg("Crediting trading balance…");
+      for (let i = 0; i < 5; i++) {
+        try { await verifyCardDeposit(address); break; } catch { /* retry */ }
+        await new Promise(r => setTimeout(r, 4000));
+      }
+
+      const balRes = await fetch(`${getPublicApiBase()}/trading/balance/${address}`);
+      const balData = (await balRes.json()) as { balance: number };
+      setNewBalance(balData.balance ?? 0);
+
+      setStep("success");
+      if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      onSuccess();
+    } catch (err) {
+      setDepositErr(err instanceof Error ? err.message : "Deposit failed");
+      setStep("error");
+      if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    }
+  }
+
+  function handleDepositTap() {
+    const amt = parseFloat(amount);
+    if (!amt || amt < 0.01) { setDepositErr("Enter a valid amount"); return; }
+    if (amt > walletBal)    { setDepositErr(`Max available: ${walletBal.toFixed(2)} USDT`); return; }
+    setDepositErr("");
+    void requestPin({
+      title:    "Confirm Deposit",
+      subtitle: `Transfer $${amt.toFixed(2)} USDT from your wallet to your trading balance`,
+      onSuccess: async () => {
+        const pk = await getPrivateKey();
+        if (!pk) { setDepositErr("Could not retrieve private key"); setStep("error"); return; }
+        void performDeposit(pk);
+      },
+      onCancel: () => {},
+    });
+  }
+
+  if (!mounted) return null;
+
+  const canDismiss = step === "input" || step === "error";
+
+  return (
+    <View style={StyleSheet.absoluteFillObject} pointerEvents="box-none">
+      {/* Dim overlay */}
+      <Animated.View
+        style={[StyleSheet.absoluteFillObject, { backgroundColor: "#000", opacity: Animated.multiply(overlayOpacity, new Animated.Value(0.65)) }]}
+        pointerEvents={canDismiss ? "auto" : "none"}>
+        <TouchableOpacity style={{ flex: 1 }} onPress={canDismiss ? onClose : undefined} activeOpacity={1} />
+      </Animated.View>
+
+      {/* Bottom sheet */}
+      <Animated.View style={{ position: "absolute", left: 0, right: 0, bottom: 0,
+        transform: [{ translateY: slideAnim }] }}>
+        <View style={{ backgroundColor: D.card, borderTopLeftRadius: 24, borderTopRightRadius: 24,
+          borderTopWidth: 1, borderTopColor: D.border }}>
+
+          {/* Handle */}
+          <View style={{ alignItems: "center", paddingTop: 10, paddingBottom: 2 }}>
+            <View style={{ width: 38, height: 4, borderRadius: 2, backgroundColor: D.dim }} />
+          </View>
+
+          {/* Sheet header */}
+          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+            paddingHorizontal: 20, paddingVertical: 14,
+            borderBottomWidth: 1, borderBottomColor: D.border }}>
+            <Text style={{ fontSize: 17, fontFamily: "Inter_700Bold", color: D.text }}>
+              Deposit to Trading
+            </Text>
+            {canDismiss && (
+              <TouchableOpacity onPress={onClose}
+                style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: D.dim,
+                  alignItems: "center", justifyContent: "center" }}>
+                <Icon name="close" size={16} color={D.muted} />
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* ── INPUT / ERROR ── */}
+          {(step === "input" || step === "error") && (
+            <View style={{ padding: 20, gap: 14 }}>
+              {/* Balance cards */}
+              <View style={{ flexDirection: "row", gap: 10 }}>
+                {[
+                  { label: "WALLET BALANCE", value: `${walletBal.toFixed(2)}`, color: D.text },
+                  { label: "TRADING BALANCE", value: `$${tradingBalance.toFixed(2)}`, color: D.green },
+                ].map(({ label, value, color }) => (
+                  <View key={label} style={{ flex: 1, backgroundColor: D.bg, borderRadius: 12,
+                    borderWidth: 1, borderColor: D.border, padding: 12 }}>
+                    <Text style={{ fontSize: 9, fontFamily: "Inter_700Bold", color: D.muted,
+                      letterSpacing: 1.4, marginBottom: 5 }}>{label}</Text>
+                    <Text style={{ fontSize: 16, fontFamily: "Inter_700Bold", color }}>
+                      {value} <Text style={{ fontSize: 11, color: D.muted }}>USDT</Text>
+                    </Text>
+                  </View>
+                ))}
+              </View>
+
+              {/* Amount input */}
+              <View>
+                <Text style={{ fontSize: 10, fontFamily: "Inter_700Bold", color: D.muted,
+                  letterSpacing: 1.6, marginBottom: 10 }}>AMOUNT TO DEPOSIT</Text>
+                <View style={{ flexDirection: "row", alignItems: "center",
+                  backgroundColor: D.bg, borderRadius: 12, borderWidth: 1.5,
+                  borderColor: depositErr ? D.red : D.border, overflow: "hidden" }}>
+                  <Text style={{ paddingHorizontal: 16, fontSize: 20, fontFamily: "Inter_600SemiBold",
+                    color: D.green }}>$</Text>
+                  <TextInput
+                    style={{ flex: 1, paddingVertical: 14, fontSize: 28, fontFamily: "Inter_700Bold",
+                      color: D.text }}
+                    value={amount}
+                    onChangeText={v => { setAmount(v); setDepositErr(""); }}
+                    keyboardType="decimal-pad"
+                    placeholder="0.00"
+                    placeholderTextColor={D.muted}
+                    autoFocus={false}
+                  />
+                  <Text style={{ paddingHorizontal: 14, fontSize: 12, fontFamily: "Inter_600SemiBold",
+                    color: D.muted }}>USDT</Text>
+                </View>
+                <View style={{ flexDirection: "row", gap: 7, marginTop: 10 }}>
+                  {["5", "10", "25", "50"].map(v => {
+                    const active = amount === v;
+                    return (
+                      <TouchableOpacity key={v}
+                        onPress={() => { setAmount(v); setDepositErr(""); }}
+                        style={{ flex: 1, paddingVertical: 9, borderRadius: 9, alignItems: "center",
+                          backgroundColor: active ? D.blue + "25" : D.bg,
+                          borderWidth: 1, borderColor: active ? D.blue : D.border }}>
+                        <Text style={{ fontSize: 12, fontFamily: "Inter_600SemiBold",
+                          color: active ? D.blue : D.muted }}>${v}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+
+              {/* Transfer summary */}
+              <View style={{ backgroundColor: D.bg, borderRadius: 12, borderWidth: 1,
+                borderColor: D.border, padding: 14, gap: 10 }}>
+                {[
+                  { label: "From",    value: "Your Wallet",     icon: "wallet-outline" as const },
+                  { label: "To",      value: "Trading Balance", icon: "trending-up-outline" as const },
+                  { label: "Network", value: "MChain · ~8s",    icon: "flash-outline" as const },
+                ].map(({ label, value, icon }) => (
+                  <View key={label} style={{ flexDirection: "row", alignItems: "center",
+                    justifyContent: "space-between" }}>
+                    <Text style={{ fontSize: 12, fontFamily: "Inter_400Regular", color: D.muted }}>{label}</Text>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                      <Icon name={icon} size={13} color={D.muted} />
+                      <Text style={{ fontSize: 12, fontFamily: "Inter_600SemiBold", color: D.text }}>{value}</Text>
+                    </View>
+                  </View>
+                ))}
+              </View>
+
+              {/* Error */}
+              {!!depositErr && (
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 8,
+                  backgroundColor: D.red + "15", borderRadius: 10, borderWidth: 1,
+                  borderColor: D.red + "40", padding: 12 }}>
+                  <Icon name="alert-circle-outline" size={15} color={D.red} />
+                  <Text style={{ flex: 1, fontSize: 12, fontFamily: "Inter_400Regular", color: D.red }}>
+                    {depositErr}
+                  </Text>
+                </View>
+              )}
+
+              {/* CTA */}
+              <TouchableOpacity style={{ borderRadius: 14, overflow: "hidden" }}
+                onPress={handleDepositTap} activeOpacity={0.85}>
+                <LinearGradient
+                  colors={["#047857", "#02C076"]}
+                  start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+                  style={{ paddingVertical: 17, alignItems: "center", flexDirection: "row",
+                    justifyContent: "center", gap: 10 }}>
+                  <Icon name="lock-closed-outline" size={16} color="#FFF" />
+                  <Text style={{ fontSize: 16, fontFamily: "Inter_700Bold", color: "#FFF" }}>
+                    Deposit ${parseFloat(amount || "0").toFixed(2)} USDT
+                  </Text>
+                </LinearGradient>
+              </TouchableOpacity>
+              <View style={{ height: 10 }} />
+            </View>
+          )}
+
+          {/* ── PROCESSING ── */}
+          {(step === "broadcasting" || step === "confirming" || step === "verifying") && (
+            <View style={{ padding: 36, alignItems: "center", gap: 24 }}>
+              <View style={{ width: 80, height: 80, borderRadius: 40,
+                backgroundColor: D.blue + "18", borderWidth: 2, borderColor: D.blue + "40",
+                alignItems: "center", justifyContent: "center" }}>
+                <ActivityIndicator color={D.blue} size="large" />
+              </View>
+              <View style={{ alignItems: "center", gap: 6 }}>
+                <Text style={{ fontSize: 18, fontFamily: "Inter_700Bold", color: D.text }}>
+                  {step === "broadcasting" ? "Sending Transaction"
+                   : step === "confirming"  ? "Confirming on Chain"
+                   : "Crediting Balance"}
+                </Text>
+                <Text style={{ fontSize: 13, fontFamily: "Inter_400Regular", color: D.muted,
+                  textAlign: "center", lineHeight: 20 }}>
+                  {statusMsg}
+                </Text>
+              </View>
+              <View style={{ width: "100%", gap: 8 }}>
+                {([
+                  { label: "Transaction signed",     done: true },
+                  { label: "Broadcast to network",   done: step !== "broadcasting" },
+                  { label: "Block confirmed",         done: step === "verifying" },
+                  { label: "Balance credited",        done: false },
+                ] as { label: string; done: boolean }[]).map(({ label, done }, i) => (
+                  <View key={label} style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+                    <View style={{ width: 22, height: 22, borderRadius: 11,
+                      backgroundColor: done ? D.green + "25" : D.dim,
+                      borderWidth: 1.5, borderColor: done ? D.green : D.border,
+                      alignItems: "center", justifyContent: "center" }}>
+                      {done
+                        ? <Icon name="checkmark" size={12} color={D.green} />
+                        : <Text style={{ fontSize: 9, color: D.muted, fontFamily: "Inter_600SemiBold" }}>{i + 1}</Text>}
+                    </View>
+                    <Text style={{ fontSize: 13, fontFamily: done ? "Inter_600SemiBold" : "Inter_400Regular",
+                      color: done ? D.text : D.muted }}>
+                      {label}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+              <View style={{ height: 12 }} />
+            </View>
+          )}
+
+          {/* ── SUCCESS ── */}
+          {step === "success" && (
+            <View style={{ padding: 32, alignItems: "center", gap: 18 }}>
+              <View style={{ width: 84, height: 84, borderRadius: 42,
+                backgroundColor: D.green + "18", borderWidth: 2, borderColor: D.green + "50",
+                alignItems: "center", justifyContent: "center" }}>
+                <Icon name="checkmark-circle" size={48} color={D.green} />
+              </View>
+              <Text style={{ fontSize: 22, fontFamily: "Inter_700Bold", color: D.green }}>
+                Deposit Successful!
+              </Text>
+              <Text style={{ fontSize: 14, fontFamily: "Inter_400Regular", color: D.muted,
+                textAlign: "center" }}>
+                ${parseFloat(amount).toFixed(2)} USDT added to your trading balance
+              </Text>
+              {newBalance !== null && (
+                <View style={{ backgroundColor: D.bg, borderRadius: 14, borderWidth: 1,
+                  borderColor: D.border, padding: 16, width: "100%", alignItems: "center", gap: 4 }}>
+                  <Text style={{ fontSize: 10, fontFamily: "Inter_700Bold", color: D.muted,
+                    letterSpacing: 1.6 }}>NEW TRADING BALANCE</Text>
+                  <Text style={{ fontSize: 30, fontFamily: "Inter_700Bold", color: D.green,
+                    letterSpacing: -1 }}>
+                    ${newBalance.toFixed(2)} USDT
+                  </Text>
+                </View>
+              )}
+              <TouchableOpacity style={{ width: "100%", borderRadius: 14, overflow: "hidden" }}
+                onPress={onClose} activeOpacity={0.85}>
+                <LinearGradient colors={["#047857", "#02C076"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+                  style={{ paddingVertical: 16, alignItems: "center", flexDirection: "row",
+                    justifyContent: "center", gap: 8 }}>
+                  <Icon name="trending-up-outline" size={18} color="#FFF" />
+                  <Text style={{ fontSize: 15, fontFamily: "Inter_700Bold", color: "#FFF" }}>
+                    Start Trading
+                  </Text>
+                </LinearGradient>
+              </TouchableOpacity>
+              <View style={{ height: 10 }} />
+            </View>
+          )}
+        </View>
+      </Animated.View>
+    </View>
+  );
+}
+
 // ── Main Screen ───────────────────────────────────────────────────────────────
 export default function TradeScreen() {
   const { width: W }  = useWindowDimensions();
@@ -286,8 +644,9 @@ export default function TradeScreen() {
   const [result,      setResult]      = useState<TradeResult | null>(null);
   const [err,         setErr]         = useState("");
   const [countdown,   setCountdown]   = useState("");
-  const [showHistory, setShowHistory] = useState(false);
-  const [chartData,   setChartData]   = useState<Record<Asset, number[]>>({ V100: [], V50: [], GOLD: [], EURUSD: [] });
+  const [showHistory,  setShowHistory]  = useState(false);
+  const [showDeposit,  setShowDeposit]  = useState(false);
+  const [chartData,    setChartData]    = useState<Record<Asset, number[]>>({ V100: [], V50: [], GOLD: [], EURUSD: [] });
 
   const priceFlash    = useRef(new Animated.Value(1)).current;
   const prevPriceRef  = useRef<Partial<Prices>>({});
@@ -517,20 +876,36 @@ export default function TradeScreen() {
         <Text style={{ fontSize: 20, fontFamily: "Inter_700Bold", color: D.text, letterSpacing: -0.5 }}>
           Trade
         </Text>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
           <TouchableOpacity onPress={() => setShowHistory(v => !v)}
             style={{ padding: 6, borderRadius: 10,
               backgroundColor: showHistory ? D.yellow + "20" : "transparent" }}>
             <Icon name="time-outline" size={20} color={showHistory ? D.yellow : D.muted} />
           </TouchableOpacity>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 5,
-            backgroundColor: D.card, paddingHorizontal: 10, paddingVertical: 6,
-            borderRadius: 20, borderWidth: 1, borderColor: D.border }}>
+
+          {/* Deposit button */}
+          <TouchableOpacity
+            onPress={() => setShowDeposit(true)}
+            style={{ flexDirection: "row", alignItems: "center", gap: 5,
+              backgroundColor: D.green + "18", paddingHorizontal: 10, paddingVertical: 6,
+              borderRadius: 20, borderWidth: 1, borderColor: D.green + "40" }}>
+            <Icon name="add-circle-outline" size={14} color={D.green} />
+            <Text style={{ fontSize: 12, fontFamily: "Inter_600SemiBold", color: D.green }}>
+              Deposit
+            </Text>
+          </TouchableOpacity>
+
+          {/* Balance pill */}
+          <TouchableOpacity
+            onPress={() => setShowDeposit(true)}
+            style={{ flexDirection: "row", alignItems: "center", gap: 5,
+              backgroundColor: D.card, paddingHorizontal: 10, paddingVertical: 6,
+              borderRadius: 20, borderWidth: 1, borderColor: D.border }}>
             <Icon name="wallet-outline" size={12} color={D.green} />
             <Text style={{ fontSize: 12, fontFamily: "Inter_600SemiBold", color: D.green }}>
-              ${balance.toFixed(2)} USDT
+              ${balance.toFixed(2)}
             </Text>
-          </View>
+          </TouchableOpacity>
         </View>
       </View>
 
@@ -942,6 +1317,18 @@ export default function TradeScreen() {
 
         <View style={{ height: insets.bottom + 32 }} />
       </ScrollView>
+
+      {/* Deposit modal — rendered over the full screen */}
+      <DepositModal
+        visible={showDeposit}
+        onClose={() => setShowDeposit(false)}
+        address={address}
+        tradingBalance={balance}
+        onSuccess={() => {
+          void refetchBalance();
+          qc.invalidateQueries({ queryKey: ["t_balance", address] });
+        }}
+      />
     </View>
   );
 }
