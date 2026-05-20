@@ -120,7 +120,7 @@ void refreshMLModels();
 setInterval(() => { void refreshMLModels(); }, 60 * 60 * 1000);
 
 // ── Candle pre-loader ──────────────────────────────────────────────────────────
-// Fetches the last 150 real 1-min candles from Deriv on startup so the ML model
+// Fetches the last 150 real 5-min candles from Deriv on startup so the ML model
 // can fire immediately (extractFeatures needs idx >= 60, so 150 gives headroom).
 const DERIV_LEGACY_WS = "wss://ws.derivws.com/websockets/v3?app_id=1089";
 const DERIV_SYMBOL: Record<string, string> = { GOLD: "frxXAUUSD", EURUSD: "frxEURUSD" };
@@ -139,7 +139,7 @@ function preloadCandleHistory(asset: string): Promise<void> {
       ws.send(JSON.stringify({
         ticks_history: symbol,
         style:         "candles",
-        granularity:   60,    // 1-min candles — matches the binary options expiry
+        granularity:   300,   // 5-min candles — matches the binary options expiry
         count:         150,
         end:           "latest",
         req_id:        1,
@@ -249,7 +249,7 @@ export function generateSignal(asset = "V100"): Signal | null {
 
   return {
     asset, direction, confidence,
-    duration: confidence >= 82 ? "30s" : "1m",
+    duration: "5m",
     emaFast: fast, emaSlow: slow, rsiValue: rsiVal, bbPos,
     reason: reasons.join(" · "),
   };
@@ -337,7 +337,7 @@ export function startBotLoop() {
           // ── ML fired — place trade + notify + feedback, then done ─────────────
           signal = {
             asset, direction: mlSig.direction, confidence: mlSig.confidence,
-            duration: mlSig.confidence >= 82 ? "30s" : "1m",
+            duration: "5m",
             emaFast: 0, emaSlow: 0, rsiValue: 0, bbPos: 0,
             reason: `ML model (prob ${(mlSig.probability * 100).toFixed(1)}%, threshold ${(mlModel.threshold * 100).toFixed(0)}%)`,
           };
