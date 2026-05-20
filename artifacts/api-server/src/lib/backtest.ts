@@ -133,7 +133,7 @@ function fetchCandlePage(symbol: string, endEpoch: number): Promise<Candle[]> {
       ws.send(JSON.stringify({
         ticks_history: symbol,
         style: "candles",
-        granularity: 300,
+        granularity: 60,    // 1-min candles — matches binary options expiry
         count: 5000,
         end: endEpoch,
         req_id: 1,

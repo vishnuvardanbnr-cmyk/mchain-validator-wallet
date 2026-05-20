@@ -120,8 +120,8 @@ void refreshMLModels();
 setInterval(() => { void refreshMLModels(); }, 60 * 60 * 1000);
 
 // ── Candle pre-loader ──────────────────────────────────────────────────────────
-// Fetches the last 100 real 5-min candles from Deriv on startup so the ML model
-// can fire immediately instead of waiting ~16 min for pseudo-candles to build up.
+// Fetches the last 150 real 1-min candles from Deriv on startup so the ML model
+// can fire immediately (extractFeatures needs idx >= 60, so 150 gives headroom).
 const DERIV_LEGACY_WS = "wss://ws.derivws.com/websockets/v3?app_id=1089";
 const DERIV_SYMBOL: Record<string, string> = { GOLD: "frxXAUUSD", EURUSD: "frxEURUSD" };
 
@@ -139,8 +139,8 @@ function preloadCandleHistory(asset: string): Promise<void> {
       ws.send(JSON.stringify({
         ticks_history: symbol,
         style:         "candles",
-        granularity:   300,   // 5-min candles
-        count:         100,
+        granularity:   60,    // 1-min candles — matches the binary options expiry
+        count:         150,
         end:           "latest",
         req_id:        1,
       }));
