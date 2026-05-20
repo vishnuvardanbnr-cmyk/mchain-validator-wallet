@@ -5,7 +5,7 @@ import WebSocket from "ws";
 const router = Router();
 
 // ── Deriv config ──────────────────────────────────────────────────────────────
-const DERIV_WS_URL = "wss://ws.binaryws.com/websockets/v3";
+const DERIV_WS_URL = "wss://ws.derivws.com/websockets/v3";
 
 const ASSET_SYMBOLS: Record<string, string> = {
   BTC:  "cryBTCUSD",
