@@ -87,6 +87,15 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="bot-analytics"
+        options={{
+          title: "Bot",
+          tabBarIcon: ({ color, focused }) => (
+            <Icon name={focused ? "analytics" : "analytics-outline"} size={22} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="p2p"
         options={{
           title: "P2P",
