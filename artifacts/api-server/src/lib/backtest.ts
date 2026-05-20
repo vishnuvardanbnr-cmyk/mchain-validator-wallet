@@ -1,5 +1,9 @@
 import WebSocket from "ws";
 import { pool } from "@workspace/db";
+import {
+  extractFeatures, trainModel, saveModel,
+  mlPredict, NUM_FEATURES, MLModelWeights,
+} from "./ml-signal.js";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 interface Candle {
@@ -32,6 +36,23 @@ export interface EnhancedStat {
   equity: EquityPoint[];
 }
 
+export interface MLStat {
+  trades: number;
+  wins: number;
+  losses: number;
+  winRate: number;
+  grossPnl: number;
+  maxDrawdown: number;
+  trainAccuracy: number;   // % of training samples predicted correctly
+  testAccuracy: number;    // % of held-out test samples — real performance
+  trainSamples: number;
+  testTrades: number;      // trades taken from test set (above threshold)
+  threshold: number;       // probability threshold chosen by model
+  monthly: MonthlyStat[];
+  equity: EquityPoint[];
+  overfit: boolean;        // true if trainAcc >> testAcc (data-leakage warning)
+}
+
 export interface AssetBacktestResult {
   asset: string;
   totalCandles: number;
@@ -50,6 +71,8 @@ export interface AssetBacktestResult {
   equity: EquityPoint[];
   martingale: MartingaleStat;
   enhanced: EnhancedStat;
+  ml: MLStat;
+  mlModel: MLModelWeights;
 }
 
 interface HourStat   { hour: number; trades: number; wins: number; winRate: number; }
@@ -302,12 +325,27 @@ function runAssetBacktest(candles: Candle[], asset: string): AssetBacktestResult
   const enMonthMap: Record<string, { wins: number; losses: number; pnl: number }> = {};
   const enEquity:   EquityPoint[] = [];
 
+  // ── ML data collection (all candles, no signal filter) ───────────────────
+  // The model learns to predict next-candle direction from 16 features.
+  // We collect ALL valid (feature, label) pairs, then split 70/30 chronologically.
+  const mlX: number[][] = [];
+  const mlY: number[]   = [];
+  const mlEpochs: number[] = [];  // store candle epoch for later simulation
+
   for (let i = 55; i < candles.length - 1; i++) {
     const c    = candles[i];
     const next = candles[i + 1];
 
     if (isNewsTime(c.epoch))           { newsFiltered++;  continue; }
     if (isVolatilitySpike(candles, i)) { spikeFiltered++; continue; }
+
+    // ── Collect ML training data (every valid candle) ─────────────────────────
+    const feats = extractFeatures(candles, i);
+    if (feats) {
+      mlX.push(feats);
+      mlY.push(next.close > next.open ? 1 : 0);
+      mlEpochs.push(c.epoch);
+    }
 
     const window = candles.slice(Math.max(0, i - WINDOW), i + 1).map(x => x.close);
 
@@ -401,6 +439,74 @@ function runAssetBacktest(candles: Candle[], asset: string): AssetBacktestResult
   const totalTrades = wins + losses;
   const enTotal     = enWins + enLosses;
 
+  // ── ML: train on first 70%, simulate on last 30% (chronological split) ─────
+  const splitIdx  = Math.floor(mlX.length * 0.7);
+  const trainX    = mlX.slice(0, splitIdx);
+  const trainY    = mlY.slice(0, splitIdx);
+  const testX     = mlX.slice(splitIdx);
+  const testY     = mlY.slice(splitIdx);
+  const testEpochs= mlEpochs.slice(splitIdx);
+
+  const mlModel = trainModel(trainX, trainY, testX, testY, asset);
+
+  // Save to DB (fire-and-forget — don't block the return)
+  saveModel(mlModel).catch(() => {/* non-blocking */});
+
+  // Simulate ML trades on the held-out test set
+  let mlWins = 0, mlLosses = 0, mlBal = 0, mlPeak = 0, mlMaxDD = 0;
+  const mlMonthMap: Record<string, { wins: number; losses: number; pnl: number }> = {};
+  const mlEquity:   EquityPoint[] = [];
+
+  for (let ti = 0; ti < testX.length; ti++) {
+    const prob = mlPredict(testX[ti], mlModel.weights, mlModel.bias);
+    let direction: "UP" | "DOWN" | null = null;
+    if (prob > mlModel.threshold)         direction = "UP";
+    else if (prob < 1 - mlModel.threshold) direction = "DOWN";
+    if (!direction) continue;
+
+    const actualUp = testY[ti] === 1;
+    const won      = direction === "UP" ? actualUp : !actualUp;
+    const pnl      = won ? BASE_STAKE * (PAYOUT_RATIO - 1) : -BASE_STAKE;
+    mlBal += pnl;
+    if (won) mlWins++; else mlLosses++;
+    if (mlBal > mlPeak) mlPeak = mlBal;
+    const dd = mlPeak - mlBal;
+    if (dd > mlMaxDD) mlMaxDD = dd;
+
+    const ep   = testEpochs[ti];
+    const dObj = new Date(ep * 1000);
+    const mk   = `${dObj.getUTCFullYear()}-${String(dObj.getUTCMonth() + 1).padStart(2, "0")}`;
+    if (!mlMonthMap[mk]) mlMonthMap[mk] = { wins: 0, losses: 0, pnl: 0 };
+    mlMonthMap[mk].pnl += pnl;
+    if (won) mlMonthMap[mk].wins++; else mlMonthMap[mk].losses++;
+
+    const mlTotal = mlWins + mlLosses;
+    if (mlTotal % 10 === 0) mlEquity.push({ epoch: ep, balance: Math.round(mlBal * 100) / 100 });
+  }
+
+  const mlTotal = mlWins + mlLosses;
+  const mlStat: MLStat = {
+    trades:        mlTotal,
+    wins:          mlWins,
+    losses:        mlLosses,
+    winRate:       mlTotal > 0 ? Math.round(mlWins / mlTotal * 100) : 0,
+    grossPnl:      Math.round(mlBal * 100) / 100,
+    maxDrawdown:   Math.round(mlMaxDD * 100) / 100,
+    trainAccuracy: Math.round(mlModel.accuracy     * 10000) / 100,
+    testAccuracy:  Math.round(mlModel.testAccuracy * 10000) / 100,
+    trainSamples:  trainX.length,
+    testTrades:    mlTotal,
+    threshold:     mlModel.threshold,
+    monthly:       Object.entries(mlMonthMap)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([month, v]) => ({
+        month, trades: v.wins + v.losses, wins: v.wins, losses: v.losses,
+        pnl: Math.round(v.pnl * 100) / 100,
+      })),
+    equity:   mlEquity,
+    overfit:  mlModel.accuracy - mlModel.testAccuracy > 0.04,
+  };
+
   return {
     asset,
     totalCandles: candles.length,
@@ -460,6 +566,8 @@ function runAssetBacktest(candles: Candle[], asset: string): AssetBacktestResult
         })),
       equity: enEquity,
     },
+    ml:      mlStat,
+    mlModel: mlModel,
   };
 }
 
@@ -549,11 +657,27 @@ async function runBacktestJob(runId: string, months: number) {
       maxDrawdown:       Math.max(...assetResults.map(r => r.enhanced.maxDrawdown)),
       maxStakeUsed:      Math.max(...assetResults.map(r => r.enhanced.maxStakeUsed)),
       longestLossStreak: Math.max(...assetResults.map(r => r.enhanced.longestLossStreak)),
-      winRate:           0, // filled below
+      winRate:           0,
+    },
+    ml: {
+      trades:        assetResults.reduce((s, r) => s + r.ml.trades, 0),
+      wins:          assetResults.reduce((s, r) => s + r.ml.wins, 0),
+      losses:        assetResults.reduce((s, r) => s + r.ml.losses, 0),
+      grossPnl:      Math.round(assetResults.reduce((s, r) => s + r.ml.grossPnl, 0) * 100) / 100,
+      maxDrawdown:   Math.max(...assetResults.map(r => r.ml.maxDrawdown)),
+      trainAccuracy: Math.round(assetResults.reduce((s, r) => s + r.ml.trainAccuracy, 0) / assetResults.length * 10) / 10,
+      testAccuracy:  Math.round(assetResults.reduce((s, r) => s + r.ml.testAccuracy,  0) / assetResults.length * 10) / 10,
+      trainSamples:  assetResults.reduce((s, r) => s + r.ml.trainSamples, 0),
+      testTrades:    assetResults.reduce((s, r) => s + r.ml.testTrades, 0),
+      threshold:     Math.round(assetResults.reduce((s, r) => s + r.ml.threshold, 0) / assetResults.length * 100) / 100,
+      overfit:       assetResults.some(r => r.ml.overfit),
+      winRate:       0,
     },
   };
   combined.enhanced.winRate = combined.enhanced.trades > 0
     ? Math.round(combined.enhanced.wins / combined.enhanced.trades * 100) : 0;
+  combined.ml.winRate = combined.ml.trades > 0
+    ? Math.round(combined.ml.wins / combined.ml.trades * 100) : 0;
   const combinedWinRate = combined.trades > 0
     ? Math.round(combined.wins / combined.trades * 100) : 0;
 

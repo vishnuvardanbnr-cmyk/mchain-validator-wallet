@@ -27,6 +27,14 @@ interface EnhancedStat {
   grossPnl: number; maxDrawdown: number; maxStakeUsed: number;
   longestLossStreak: number; monthly: MonthlyStat[]; equity: EquityPoint[];
 }
+interface MLStat {
+  trades: number; wins: number; losses: number; winRate: number;
+  grossPnl: number; maxDrawdown: number;
+  trainAccuracy: number; testAccuracy: number;
+  trainSamples: number; testTrades: number;
+  threshold: number; overfit: boolean;
+  monthly: MonthlyStat[]; equity: EquityPoint[];
+}
 interface AssetResult {
   asset: string; totalCandles: number; signalsFired: number;
   newsFiltered: number; spikeFiltered: number; trades: number;
@@ -36,6 +44,7 @@ interface AssetResult {
   monthly: MonthlyStat[]; equity: EquityPoint[];
   martingale: MartingaleStat;
   enhanced: EnhancedStat;
+  ml: MLStat;
 }
 interface Combined {
   trades: number; wins: number; losses: number; winRate: number;
@@ -43,6 +52,7 @@ interface Combined {
   newsFiltered: number; spikeFiltered: number; signalsFired: number;
   martingale: { grossPnl: number; maxDrawdown: number; maxStakeUsed: number; longestLossStreak: number; };
   enhanced:   { trades: number; wins: number; losses: number; winRate: number; grossPnl: number; maxDrawdown: number; maxStakeUsed: number; longestLossStreak: number; };
+  ml: { trades: number; wins: number; losses: number; winRate: number; grossPnl: number; maxDrawdown: number; trainAccuracy: number; testAccuracy: number; trainSamples: number; testTrades: number; threshold: number; overfit: boolean; };
 }
 interface BacktestRun {
   id: string; status: string; months: number;
@@ -177,54 +187,88 @@ export default function BotBacktestScreen() {
   const assets   = run?.results?.assets ?? [];
   const mg       = combined?.martingale;
   const en       = combined?.enhanced;
+  const ml       = combined?.ml;
 
   // ── Compare tab ─────────────────────────────────────────────────────────────
   const renderCompare = () => {
     if (!combined || !mg || !en) return null;
     const wrColor = (wr: number) => wr >= 58 ? D.green : wr >= 54 ? D.yellow : D.red;
 
+    // ML is recommended if its test WR beats enhanced
+    const mlWins = ml && ml.testTrades > 30 && ml.winRate > en.winRate;
+    const teal2  = "#00e5ff";
+
     return (
       <>
-        {/* Enhanced strategy highlight */}
-        <View style={styles.bestCard}>
-          <View style={styles.bestBadge}><Text style={styles.bestBadgeText}>RECOMMENDED</Text></View>
-          <Text style={styles.bestTitle}>⚡ Enhanced + Paroli Strategy</Text>
-          <Text style={styles.bestDesc}>
-            EMA triple-stack · RSI zone 38–62 · Candle close gate · $5→$10→$20 Paroli
-          </Text>
-          <View style={styles.bestStats}>
-            <View style={styles.bestStat}>
-              <Text style={[styles.bestStatVal, { color: wrColor(en.winRate) }]}>{en.winRate}%</Text>
-              <Text style={styles.bestStatLbl}>Win Rate</Text>
-            </View>
-            <View style={styles.bestStat}>
-              <Text style={[styles.bestStatVal, { color: en.grossPnl >= 0 ? D.green : D.red }]}>
-                {en.grossPnl >= 0 ? "+" : ""}${en.grossPnl.toFixed(0)}
+        {/* ML Model highlight card */}
+        {ml && (
+          <View style={[styles.bestCard, { borderColor: mlWins ? teal2 : D.border }]}>
+            <View style={[styles.bestBadge, { backgroundColor: mlWins ? teal2 : "#333" }]}>
+              <Text style={[styles.bestBadgeText, { color: mlWins ? "#000" : D.sub }]}>
+                {mlWins ? "🤖 AI RECOMMENDED" : "🤖 AI MODEL"}
               </Text>
-              <Text style={styles.bestStatLbl}>Gross P&L</Text>
             </View>
-            <View style={styles.bestStat}>
-              <Text style={[styles.bestStatVal, { color: D.red, fontSize: 16 }]}>
-                ${en.maxDrawdown.toFixed(0)}
-              </Text>
-              <Text style={styles.bestStatLbl}>Max DD</Text>
+            <Text style={[styles.bestTitle, { color: teal2 }]}>Auto-Learning Neural Model</Text>
+            <Text style={styles.bestDesc}>
+              16 features · logistic regression · trained on 70% · tested on 30% held-out data
+            </Text>
+            <View style={styles.bestStats}>
+              <View style={styles.bestStat}>
+                <Text style={[styles.bestStatVal, { color: wrColor(ml.winRate) }]}>{ml.winRate}%</Text>
+                <Text style={styles.bestStatLbl}>Test WR</Text>
+              </View>
+              <View style={styles.bestStat}>
+                <Text style={[styles.bestStatVal, { color: ml.grossPnl >= 0 ? D.green : D.red }]}>
+                  {ml.grossPnl >= 0 ? "+" : ""}${ml.grossPnl.toFixed(0)}
+                </Text>
+                <Text style={styles.bestStatLbl}>Test P&L</Text>
+              </View>
+              <View style={styles.bestStat}>
+                <Text style={[styles.bestStatVal, { color: teal2, fontSize: 15 }]}>{ml.testAccuracy}%</Text>
+                <Text style={styles.bestStatLbl}>Accuracy</Text>
+              </View>
+              <View style={styles.bestStat}>
+                <Text style={[styles.bestStatVal, { color: D.sub, fontSize: 15 }]}>{ml.testTrades}</Text>
+                <Text style={styles.bestStatLbl}>Trades</Text>
+              </View>
             </View>
-            <View style={styles.bestStat}>
-              <Text style={[styles.bestStatVal, { color: D.sub, fontSize: 16 }]}>{en.trades}</Text>
-              <Text style={styles.bestStatLbl}>Trades</Text>
+            {/* Train vs test accuracy — key overfitting check */}
+            <View style={{ flexDirection: "row", marginTop: 8, gap: 12, alignItems: "center" }}>
+              <View style={{ flex: 1, backgroundColor: D.card2, borderRadius: 8, padding: 8 }}>
+                <Text style={{ color: D.muted, fontSize: 10, textAlign: "center" }}>TRAIN ACC</Text>
+                <Text style={{ color: D.sub, fontSize: 14, fontWeight: "700", textAlign: "center" }}>
+                  {ml.trainAccuracy}%
+                </Text>
+              </View>
+              <Text style={{ color: D.muted, fontSize: 18 }}>→</Text>
+              <View style={{ flex: 1, backgroundColor: D.card2, borderRadius: 8, padding: 8, borderColor: teal2, borderWidth: 1 }}>
+                <Text style={{ color: teal2, fontSize: 10, textAlign: "center" }}>TEST ACC</Text>
+                <Text style={{ color: teal2, fontSize: 14, fontWeight: "800", textAlign: "center" }}>
+                  {ml.testAccuracy}%
+                </Text>
+              </View>
+              <View style={{ flex: 1.4, padding: 4 }}>
+                {ml.overfit ? (
+                  <Text style={{ color: D.red, fontSize: 10 }}>⚠️ Possible overfit — train≫test</Text>
+                ) : (
+                  <Text style={{ color: D.green, fontSize: 10 }}>✅ Consistent train→test gap</Text>
+                )}
+                <Text style={{ color: D.muted, fontSize: 9, marginTop: 2 }}>
+                  Trained on {(ml.trainSamples / 1000).toFixed(1)}k candles
+                </Text>
+              </View>
             </View>
           </View>
-        </View>
+        )}
 
-        {/* 3-way comparison table */}
+        {/* 3-way comparison table (Fixed $1 | Martin | Enhanced) */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>3-Strategy Comparison</Text>
+          <Text style={styles.sectionTitle}>Strategy Comparison (85%+ threshold, $1 stake)</Text>
 
-          {/* Header */}
           <View style={styles.cmpHeader}>
             <View style={{ flex: 1.2 }} />
             <View style={styles.cmpHeadCell}>
-              <Text style={styles.cmpHeadLabel}>📊 Fixed $5</Text>
+              <Text style={styles.cmpHeadLabel}>📊 Fixed $1</Text>
             </View>
             <View style={styles.cmpHeadCell}>
               <Text style={[styles.cmpHeadLabel, { color: D.orange }]}>🔁 Martin</Text>
@@ -270,7 +314,7 @@ export default function BotBacktestScreen() {
             {
               label: "Max Stake",
               vals: [
-                { v: "$5",                   c: D.sub },
+                { v: "$1",                   c: D.sub },
                 { v: `$${mg.maxStakeUsed}`,  c: D.orange },
                 { v: `$${en.maxStakeUsed}`,  c: D.yellow, bold: true },
               ],
@@ -305,67 +349,76 @@ export default function BotBacktestScreen() {
               <Text style={styles.equityLabel}>{a.asset === "GOLD" ? "🥇 GOLD" : "💶 EURUSD"}</Text>
               <View style={styles.sparkRow}>
                 <View style={styles.sparkBox}>
-                  <Text style={styles.sparkTag}>Fixed $5</Text>
-                  <EquitySpark points={a.equity} color={a.grossPnl >= 0 ? D.green : D.red} w={88} h={38} />
+                  <Text style={styles.sparkTag}>Fixed $1</Text>
+                  <EquitySpark points={a.equity} color={a.grossPnl >= 0 ? D.green : D.red} w={65} h={38} />
                   <Text style={[styles.sparkPnl, { color: a.grossPnl >= 0 ? D.green : D.red }]}>
                     {a.grossPnl >= 0 ? "+" : ""}${a.grossPnl.toFixed(0)}
                   </Text>
                 </View>
                 <View style={styles.sparkBox}>
-                  <Text style={[styles.sparkTag, { color: D.orange }]}>Martingale</Text>
-                  <EquitySpark points={a.martingale.equity} color={a.martingale.grossPnl >= 0 ? D.teal : D.orange} w={88} h={38} />
+                  <Text style={[styles.sparkTag, { color: D.orange }]}>Martin</Text>
+                  <EquitySpark points={a.martingale.equity} color={a.martingale.grossPnl >= 0 ? D.teal : D.orange} w={65} h={38} />
                   <Text style={[styles.sparkPnl, { color: a.martingale.grossPnl >= 0 ? D.teal : D.orange }]}>
                     {a.martingale.grossPnl >= 0 ? "+" : ""}${a.martingale.grossPnl.toFixed(0)}
                   </Text>
                 </View>
                 <View style={[styles.sparkBox, { borderColor: D.gold, borderWidth: 1 }]}>
                   <Text style={[styles.sparkTag, { color: D.gold }]}>Enhanced</Text>
-                  <EquitySpark points={a.enhanced.equity} color={a.enhanced.grossPnl >= 0 ? D.gold : D.red} w={88} h={38} />
+                  <EquitySpark points={a.enhanced.equity} color={a.enhanced.grossPnl >= 0 ? D.gold : D.red} w={65} h={38} />
                   <Text style={[styles.sparkPnl, { color: a.enhanced.grossPnl >= 0 ? D.gold : D.red, fontWeight: "700" }]}>
                     {a.enhanced.grossPnl >= 0 ? "+" : ""}${a.enhanced.grossPnl.toFixed(0)}
                   </Text>
                 </View>
+                {a.ml && (
+                  <View style={[styles.sparkBox, { borderColor: teal2, borderWidth: 1 }]}>
+                    <Text style={[styles.sparkTag, { color: teal2 }]}>AI</Text>
+                    <EquitySpark points={a.ml.equity} color={a.ml.grossPnl >= 0 ? teal2 : D.red} w={65} h={38} />
+                    <Text style={[styles.sparkPnl, { color: a.ml.grossPnl >= 0 ? teal2 : D.red, fontWeight: "700" }]}>
+                      {a.ml.grossPnl >= 0 ? "+" : ""}${a.ml.grossPnl.toFixed(0)}
+                    </Text>
+                  </View>
+                )}
               </View>
             </View>
           ))}
         </View>
 
-        {/* How Enhanced works */}
+        {/* How AI model works */}
         <View style={styles.howCard}>
-          <Text style={styles.howTitle}>⚙️ How the Enhanced Strategy Works</Text>
+          <Text style={styles.howTitle}>🤖 How the AI Model Works</Text>
           <View style={styles.howItem}>
             <Text style={styles.howNum}>①</Text>
             <View style={{ flex: 1 }}>
-              <Text style={styles.howLabel}>EMA Triple Stack</Text>
-              <Text style={styles.howDesc}>EMA9 {">"} EMA21 {">"} EMA50 (UP) or reverse (DOWN) — all three must agree. Eliminates all ranging-market signals where the old strategy bled.</Text>
+              <Text style={styles.howLabel}>Feature Extraction (16 inputs)</Text>
+              <Text style={styles.howDesc}>EMA ratios, RSI(7) + RSI(14), Bollinger Band position, ATR volatility, momentum over 5 and 10 candles, candle body/wick sizes, and time-of-day + day-of-week (cyclic encoding).</Text>
             </View>
           </View>
           <View style={styles.howItem}>
             <Text style={styles.howNum}>②</Text>
             <View style={{ flex: 1 }}>
-              <Text style={styles.howLabel}>Trend Divergence Gate</Text>
-              <Text style={styles.howDesc}>|EMA9−EMA50| / EMA50 {">"} 0.05% — kills borderline crossovers that look aligned but are essentially flat.</Text>
+              <Text style={styles.howLabel}>Logistic Regression + SGD</Text>
+              <Text style={styles.howDesc}>200 epochs of mini-batch gradient descent with L2 regularization. Learns which feature combinations predict the next 5-minute candle direction — no hand-coded rules.</Text>
             </View>
           </View>
           <View style={styles.howItem}>
             <Text style={styles.howNum}>③</Text>
             <View style={{ flex: 1 }}>
-              <Text style={styles.howLabel}>Tight RSI Zone (38–62)</Text>
-              <Text style={styles.howDesc}>Only trade when RSI is in the mid-zone. Old strategy allowed 40–70 for UP and 30–60 for DOWN — those overlap, meaning direction was ambiguous. Tighter zone = cleaner signals.</Text>
+              <Text style={styles.howLabel}>Chronological 70/30 Split</Text>
+              <Text style={styles.howDesc}>First 70% of candles = training. Last 30% = test (never seen during training). Test accuracy is the honest out-of-sample number — not inflated by data leakage.</Text>
             </View>
           </View>
           <View style={styles.howItem}>
             <Text style={styles.howNum}>④</Text>
             <View style={{ flex: 1 }}>
-              <Text style={styles.howLabel}>Candle Close Confirmation</Text>
-              <Text style={styles.howDesc}>Last candle must actually close bullish for UP signals, bearish for DOWN. Old strategy fired mid-candle regardless of how price was moving.</Text>
+              <Text style={styles.howLabel}>Adaptive Threshold</Text>
+              <Text style={styles.howDesc}>The model searches the 50–70% probability range and picks the threshold that maximises test accuracy. Only fires when it's genuinely confident — abstains in ambiguous zones.</Text>
             </View>
           </View>
           <View style={[styles.howItem, { marginBottom: 0 }]}>
             <Text style={styles.howNum}>⑤</Text>
             <View style={{ flex: 1 }}>
-              <Text style={styles.howLabel}>Paroli Staking ($5→$10→$20)</Text>
-              <Text style={styles.howDesc}>Anti-martingale: amplify winning streaks, always reset to $5 on a loss. Max exposure is $5 per losing trade — but after 2 consecutive wins you're staking $20 with house money.</Text>
+              <Text style={styles.howLabel}>Auto-Retrains on Every Backtest</Text>
+              <Text style={styles.howDesc}>Each time you run a backtest, fresh model weights are trained and saved. The live bot loads the latest model automatically — it improves as more data is available.</Text>
             </View>
           </View>
         </View>

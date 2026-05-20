@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { pool } from "@workspace/db";
 import { notifyTradeOpened, isTelegramConfigured } from "../lib/telegram";
+import { loadLatestModel, computeMLSignal } from "../lib/ml-signal.js";
 
 const router = Router();
 
@@ -92,10 +93,51 @@ const priceHistory: Record<string, number[]> = {
   V100: [], V50: [], GOLD: [], EURUSD: [],
 };
 
+// ── ML candle builder ─────────────────────────────────────────────────────────
+// Groups tick prices into pseudo-candles (every TICKS_PER_CANDLE ticks).
+// Open = first tick, close = last, high = max, low = min, epoch = wall clock.
+const TICKS_PER_CANDLE = 5;
+interface PseudoCandle { epoch: number; open: number; high: number; low: number; close: number; }
+const candleBuffer:  Record<string, number[]>       = { GOLD: [], EURUSD: [] };
+const mlCandleHist:  Record<string, PseudoCandle[]> = { GOLD: [], EURUSD: [] };
+// Loaded model weights per asset (refreshed on each backtest save)
+const mlModels: Record<string, { weights: number[]; bias: number; threshold: number } | null> = {
+  GOLD: null, EURUSD: null,
+};
+
+async function refreshMLModels() {
+  for (const asset of ["GOLD", "EURUSD"]) {
+    try { mlModels[asset] = await loadLatestModel(asset); } catch { /* keep old */ }
+  }
+}
+// Load on startup (and refresh every hour)
+void refreshMLModels();
+setInterval(() => { void refreshMLModels(); }, 60 * 60 * 1000);
+
 export function recordPrice(asset: string, price: number) {
   if (!priceHistory[asset]) priceHistory[asset] = [];
   priceHistory[asset].push(price);
   if (priceHistory[asset].length > 300) priceHistory[asset].shift();
+
+  // Accumulate ticks for ML candle building
+  if (asset === "GOLD" || asset === "EURUSD") {
+    if (!candleBuffer[asset]) candleBuffer[asset] = [];
+    candleBuffer[asset].push(price);
+    if (candleBuffer[asset].length >= TICKS_PER_CANDLE) {
+      const buf = candleBuffer[asset];
+      const candle: PseudoCandle = {
+        epoch: Math.floor(Date.now() / 1000),
+        open:  buf[0],
+        high:  Math.max(...buf),
+        low:   Math.min(...buf),
+        close: buf[buf.length - 1],
+      };
+      if (!mlCandleHist[asset]) mlCandleHist[asset] = [];
+      mlCandleHist[asset].push(candle);
+      if (mlCandleHist[asset].length > 400) mlCandleHist[asset].shift();
+      candleBuffer[asset] = [];
+    }
+  }
 }
 
 export function getPriceHistoryLength(asset: string): number {
@@ -215,11 +257,30 @@ export function startBotLoop() {
 
   async function tick() {
     try {
-      // Only trade real market assets — GOLD and EURUSD have genuine trends
-      // that technical analysis can exploit. V100/V50 are synthetic RNG indices.
-      const asset  = Math.random() < 0.5 ? "GOLD" : "EURUSD";
-      const signal = generateSignal(asset);
-      if (!signal || signal.confidence < 85) return;
+      const asset = Math.random() < 0.5 ? "GOLD" : "EURUSD";
+
+      // ── Try ML signal first (if model is loaded and has enough candles) ───────
+      const mlModel  = mlModels[asset];
+      const candles  = mlCandleHist[asset] ?? [];
+      let signal: Signal | null = null;
+
+      if (mlModel && candles.length >= 65) {
+        const mlSig = computeMLSignal(candles, mlModel.weights, mlModel.bias, mlModel.threshold);
+        if (mlSig) {
+          signal = {
+            asset, direction: mlSig.direction, confidence: mlSig.confidence,
+            duration: mlSig.confidence >= 82 ? "30s" : "1m",
+            emaFast: 0, emaSlow: 0, rsiValue: 0, bbPos: 0,
+            reason: `ML model (prob ${(mlSig.probability * 100).toFixed(1)}%, threshold ${(mlModel.threshold * 100).toFixed(0)}%)`,
+          };
+        }
+      }
+
+      // ── Fall back to manual enhanced signal if ML model not ready ─────────────
+      if (!signal) {
+        signal = generateSignal(asset);
+        if (!signal || signal.confidence < 85) return;
+      }
 
       lastSignal = { ...signal, ts: Date.now() };
 
