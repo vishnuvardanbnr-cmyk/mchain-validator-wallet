@@ -218,16 +218,16 @@ function computeSignal(prices: number[]): { direction: "UP" | "DOWN"; confidence
   return { direction, confidence };
 }
 
-// ── Enhanced signal (EMA triple-stack + tight RSI + candle confirmation) ──────
-// Hard gates — ALL must pass or signal is skipped:
+// ── Enhanced signal (EMA triple-stack + tight RSI + BB pullback) ──────────────
+// Hard gates — ALL must pass:
 //   1. EMA9 > EMA21 > EMA50 (UP) or EMA9 < EMA21 < EMA50 (DOWN) — trend alignment
-//   2. |EMA9 − EMA50| / EMA50 > 0.05% — trend must be strong, not noise
-//   3. RSI 38–62 — avoid overbought/oversold traps
-//   4. Last candle closes in signal direction — candle-body confirmation
-// Paroli staking: $5 → $10 → $20 after consecutive wins, reset on any loss
+//   2. |EMA9 − EMA50| / EMA50 > 0.05% — trend must have real separation
+//   3. RSI 40–60 — deep neutral zone only (tighter than standard 38–62)
+//   4. BB pullback entry: UP → price below mid-band; DOWN → price above mid-band
+//      (enter on trend pullback to BB mid, not breakout continuation)
+// Paroli staking: $1 → $2 → $4, reset on any loss
 function computeEnhancedSignal(
   prices: number[],
-  lastCandleBullish: boolean,
 ): { direction: "UP" | "DOWN"; confidence: number } | null {
   if (prices.length < 55) return null;
 
@@ -242,31 +242,26 @@ function computeEnhancedSignal(
 
   const direction: "UP" | "DOWN" = stackUp ? "UP" : "DOWN";
 
-  // Gate 2: minimum trend divergence (eliminates borderline crossovers)
+  // Gate 2: minimum trend divergence
   const divergencePct = Math.abs(fast - slow) / slow * 100;
   if (divergencePct < 0.05) return null;
 
-  // Gate 3: tight RSI zone — no extremes
+  // Gate 3: tighter RSI neutral zone (40–60 only)
   const rsiVal = rsi(prices);
-  if (rsiVal < 38 || rsiVal > 62) return null;
+  if (rsiVal < 40 || rsiVal > 60) return null;
 
-  // Gate 4: last candle must close in signal direction
-  if (direction === "UP"   && !lastCandleBullish) return null;
-  if (direction === "DOWN" &&  lastCandleBullish) return null;
-
-  // Confidence — base 65 (already heavily filtered)
-  let confidence = 65;
-
-  // EMA spread strength
-  confidence += Math.min(18, divergencePct * 180);
-
-  // RSI sweet spot (50 ± 8)
-  if (rsiVal >= 42 && rsiVal <= 58) confidence += 10;
-
-  // BB support
+  // Gate 4: BB pullback — enter when price has pulled back toward mid-band
+  // (mean-reversion within trend — opposite of candle continuation)
   const bbPos = bollingerPosition(prices);
-  if (direction === "UP"   && bbPos < 0.5) confidence += 7;
-  if (direction === "DOWN" && bbPos > 0.5) confidence += 7;
+  if (direction === "UP"   && bbPos > 0.55) return null; // price too high — chasing
+  if (direction === "DOWN" && bbPos < 0.45) return null; // price too low — chasing
+
+  // Confidence — base 65 (heavily filtered by all 4 gates)
+  let confidence = 65;
+  confidence += Math.min(20, divergencePct * 200);          // EMA spread quality
+  if (rsiVal >= 44 && rsiVal <= 56) confidence += 10;       // RSI deep neutral bonus
+  if (direction === "UP"   && bbPos < 0.45) confidence += 8; // deep pullback bonus
+  if (direction === "DOWN" && bbPos > 0.55) confidence += 8;
 
   confidence = Math.min(95, Math.max(65, confidence));
   return { direction, confidence };
@@ -274,10 +269,10 @@ function computeEnhancedSignal(
 
 // ── Per-asset backtest (standard + martingale + enhanced/paroli in one pass) ──
 function runAssetBacktest(candles: Candle[], asset: string): AssetBacktestResult {
-  const BASE_STAKE   = 5;
-  const MAX_STAKE    = 640;
+  const BASE_STAKE   = 1;
+  const MAX_STAKE    = 128;  // 1→2→4→8→16→32→64→128 (7 doublings)
   const PAYOUT_RATIO = 1.85;
-  const THRESHOLD    = 75;
+  const THRESHOLD    = 85;   // 85%+ — selective quality trades only
   const WINDOW       = 200;
 
   // ── Standard state ─────────────────────────────────────────────────────────
@@ -300,10 +295,10 @@ function runAssetBacktest(candles: Candle[], asset: string): AssetBacktestResult
   const mgEquity:   EquityPoint[] = [];
 
   // ── Enhanced + Paroli state ────────────────────────────────────────────────
-  // Paroli: 3-step positive progression  $5 → $10 → $20, reset on loss or after step 3 win
-  const PAROLI_STEPS = [5, 10, 20];
+  // Paroli: 3-step positive progression  $1 → $2 → $4, reset on loss or after step 3 win
+  const PAROLI_STEPS = [1, 2, 4];
   let enWins = 0, enLosses = 0, enBalance = 0, enPeak = 0, enMaxDD = 0;
-  let enParoliStep = 0, enMaxStakeUsed = 5, enLossStreak = 0, enMaxLossStreak = 0;
+  let enParoliStep = 0, enMaxStakeUsed = 1, enLossStreak = 0, enMaxLossStreak = 0;
   const enMonthMap: Record<string, { wins: number; losses: number; pnl: number }> = {};
   const enEquity:   EquityPoint[] = [];
 
@@ -315,7 +310,6 @@ function runAssetBacktest(candles: Candle[], asset: string): AssetBacktestResult
     if (isVolatilitySpike(candles, i)) { spikeFiltered++; continue; }
 
     const window = candles.slice(Math.max(0, i - WINDOW), i + 1).map(x => x.close);
-    const lastBullish = c.close > c.open;
 
     // ── Standard signal ───────────────────────────────────────────────────────
     const sig = computeSignal(window);
@@ -369,8 +363,8 @@ function runAssetBacktest(candles: Candle[], asset: string): AssetBacktestResult
     }
 
     // ── Enhanced signal (independent gate — different filter) ─────────────────
-    const eSig = computeEnhancedSignal(window, lastBullish);
-    if (eSig) {
+    const eSig = computeEnhancedSignal(window);
+    if (eSig && eSig.confidence >= THRESHOLD) {
       const won   = eSig.direction === "UP" ? next.close > next.open : next.close < next.open;
       const stake = PAROLI_STEPS[Math.min(enParoliStep, PAROLI_STEPS.length - 1)];
       if (stake > enMaxStakeUsed) enMaxStakeUsed = stake;

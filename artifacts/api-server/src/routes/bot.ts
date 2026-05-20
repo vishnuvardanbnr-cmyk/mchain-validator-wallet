@@ -121,33 +121,30 @@ export function generateSignal(asset = "V100"): Signal | null {
   const divergencePct = Math.abs(fast - slow) / slow * 100;
   if (divergencePct < 0.05) return null;
 
-  // Gate 3: tight RSI zone — avoid chasing overbought/oversold
+  // Gate 3: deep RSI neutral zone only (40–60) — avoids overbought/oversold chasing
   const rsiVal = rsi(prices);
-  if (rsiVal < 38 || rsiVal > 62) return null;
+  if (rsiVal < 40 || rsiVal > 60) return null;
 
-  // Gate 4: candle close confirmation — last candle must close in signal direction
-  const cur  = prices[prices.length - 1];
-  const prev = prices[prices.length - 2];
-  const lastCandleBullish = cur > prev;
-  if (direction === "UP"   && !lastCandleBullish) return null;
-  if (direction === "DOWN" &&  lastCandleBullish) return null;
+  // Gate 4: BB pullback entry — price must be near mid-band (mean-reversion in trend)
+  const bbPos = bollingerPosition(prices);
+  if (direction === "UP"   && bbPos > 0.55) return null; // price too high — chasing
+  if (direction === "DOWN" && bbPos < 0.45) return null; // price too low — chasing
 
   // Confidence — base 65 (already heavily filtered by the 4 gates above)
-  const bbPos = bollingerPosition(prices);
   let confidence = 65;
-  confidence += Math.min(18, divergencePct * 180);
-  if (rsiVal >= 42 && rsiVal <= 58) confidence += 10;
-  if (direction === "UP"   && bbPos < 0.5) confidence += 7;
-  if (direction === "DOWN" && bbPos > 0.5) confidence += 7;
+  confidence += Math.min(20, divergencePct * 200);
+  if (rsiVal >= 44 && rsiVal <= 56) confidence += 10;
+  if (direction === "UP"   && bbPos < 0.45) confidence += 8;
+  if (direction === "DOWN" && bbPos > 0.55) confidence += 8;
   confidence = Math.min(95, Math.max(65, confidence));
 
   const reasons = [
     `EMA9(${fast.toFixed(4)}) ${direction === "UP" ? ">" : "<"} EMA21(${mid.toFixed(4)}) ${direction === "UP" ? ">" : "<"} EMA50(${slow.toFixed(4)})`,
     `Divergence ${divergencePct.toFixed(3)}%`,
-    `RSI ${rsiVal.toFixed(1)} (zone 38–62)`,
-    `Candle ${lastCandleBullish ? "bullish" : "bearish"} confirmed`,
+    `RSI ${rsiVal.toFixed(1)} (zone 40–60)`,
+    `BB pullback at ${(bbPos * 100).toFixed(0)}%`,
   ];
-  if (rsiVal >= 42 && rsiVal <= 58) reasons.push("RSI sweet-spot bonus");
+  if (rsiVal >= 44 && rsiVal <= 56) reasons.push("RSI deep neutral bonus");
 
   return {
     asset, direction, confidence,
@@ -222,11 +219,11 @@ export function startBotLoop() {
       // that technical analysis can exploit. V100/V50 are synthetic RNG indices.
       const asset  = Math.random() < 0.5 ? "GOLD" : "EURUSD";
       const signal = generateSignal(asset);
-      if (!signal || signal.confidence < 75) return;
+      if (!signal || signal.confidence < 85) return;
 
       lastSignal = { ...signal, ts: Date.now() };
 
-      const tradeId = await placeBotTrade(signal, BOT_ADDRESS, 5);
+      const tradeId = await placeBotTrade(signal, BOT_ADDRESS, 1);
       await storeSignal(signal, tradeId);
 
       // Telegram notification — trade opened
@@ -234,7 +231,7 @@ export function startBotLoop() {
         void notifyTradeOpened({
           asset:      signal.asset,
           direction:  signal.direction,
-          amount:     5,
+          amount:     1,
           duration:   signal.duration,
           entryPrice: null,
           confidence: signal.confidence,
