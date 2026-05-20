@@ -79,7 +79,7 @@ export interface Signal {
   asset:      string;
   direction:  "UP" | "DOWN";
   confidence: number;
-  duration:   "1m" | "5m";
+  duration:   "30s" | "1m";
   emaFast:    number;
   emaSlow:    number;
   rsiValue:   number;
@@ -142,7 +142,7 @@ export function generateSignal(asset = "V100"): Signal | null {
 
   return {
     asset, direction, confidence,
-    duration: confidence >= 80 ? "1m" : "5m",
+    duration: confidence >= 80 ? "30s" : "1m",
     emaFast: fast, emaSlow: slow, rsiValue: rsiVal, bbPos,
     reason: reasons.join(" · "),
   };

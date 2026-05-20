@@ -24,6 +24,7 @@ const ASSET_LABELS: Record<string, string> = {
 };
 
 const DURATION_UNIT: Record<string, string> = {
+  "30s": "s",
   "1m":  "m",
   "5m":  "m",
   "15m": "m",
@@ -31,6 +32,7 @@ const DURATION_UNIT: Record<string, string> = {
 };
 
 const DURATION_VALUE: Record<string, number> = {
+  "30s": 30,
   "1m":  1,
   "5m":  5,
   "15m": 15,
