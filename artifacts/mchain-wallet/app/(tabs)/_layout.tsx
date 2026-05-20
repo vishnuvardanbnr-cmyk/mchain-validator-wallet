@@ -69,6 +69,15 @@ export default function TabLayout() {
       />
       <Tabs.Screen name="earnings" options={{ href: null }} />
       <Tabs.Screen
+        name="trade"
+        options={{
+          title: "Trade",
+          tabBarIcon: ({ color, focused }) => (
+            <Icon name={focused ? "trending-up" : "trending-up-outline"} size={22} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="p2p"
         options={{
           title: "P2P",

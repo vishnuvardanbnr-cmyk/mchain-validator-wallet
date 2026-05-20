@@ -1,6 +1,6 @@
 import app from "./app";
 import { logger } from "./lib/logger";
-import { ensureDappsTable, ensureTokensTable, ensurePricesTable, ensureCardsTables } from "./routes";
+import { ensureDappsTable, ensureTokensTable, ensurePricesTable, ensureCardsTables, ensureTradingTables } from "./routes";
 import { startOrderSweep } from "./lib/orderSweep";
 
 const rawPort = process.env["PORT"];
@@ -27,6 +27,7 @@ async function start() {
     ensureTokensTable(),
     ensurePricesTable(),
     ensureCardsTables(),
+    ensureTradingTables(),
   ]);
   logger.info("Database tables ready");
 
