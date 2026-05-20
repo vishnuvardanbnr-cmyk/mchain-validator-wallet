@@ -104,46 +104,54 @@ export function getPriceHistoryLength(asset: string): number {
 
 export function generateSignal(asset = "V100"): Signal | null {
   const prices = priceHistory[asset];
-  if (prices.length < 30) return null;
+  if (prices.length < 55) return null;
 
-  const fast   = ema(prices, 9);
-  const slow   = ema(prices, 21);
+  const fast = ema(prices, 9);
+  const mid  = ema(prices, 21);
+  const slow = ema(prices, 50);
+
+  // Gate 1: strict EMA triple-stack alignment
+  const stackUp   = fast > mid && mid > slow;
+  const stackDown = fast < mid && mid < slow;
+  if (!stackUp && !stackDown) return null;
+
+  const direction: "UP" | "DOWN" = stackUp ? "UP" : "DOWN";
+
+  // Gate 2: minimum trend divergence — eliminates noise at crossover boundary
+  const divergencePct = Math.abs(fast - slow) / slow * 100;
+  if (divergencePct < 0.05) return null;
+
+  // Gate 3: tight RSI zone — avoid chasing overbought/oversold
   const rsiVal = rsi(prices);
-  const bbPos  = bollingerPosition(prices);
-  const cur    = prices[prices.length - 1];
-  const prev   = prices[prices.length - 2];
+  if (rsiVal < 38 || rsiVal > 62) return null;
 
-  const emaDiff  = (fast - slow) / slow * 100;
-  const trendUp  = fast > slow;
-  const momentum = (cur - prev) / prev * 100;
+  // Gate 4: candle close confirmation — last candle must close in signal direction
+  const cur  = prices[prices.length - 1];
+  const prev = prices[prices.length - 2];
+  const lastCandleBullish = cur > prev;
+  if (direction === "UP"   && !lastCandleBullish) return null;
+  if (direction === "DOWN" &&  lastCandleBullish) return null;
 
-  let confidence = 50;
-  let direction: "UP" | "DOWN";
-  const reasons: string[] = [];
+  // Confidence — base 65 (already heavily filtered by the 4 gates above)
+  const bbPos = bollingerPosition(prices);
+  let confidence = 65;
+  confidence += Math.min(18, divergencePct * 180);
+  if (rsiVal >= 42 && rsiVal <= 58) confidence += 10;
+  if (direction === "UP"   && bbPos < 0.5) confidence += 7;
+  if (direction === "DOWN" && bbPos > 0.5) confidence += 7;
+  confidence = Math.min(95, Math.max(65, confidence));
 
-  if (trendUp) {
-    direction = "UP";
-    confidence += Math.min(15, Math.abs(emaDiff) * 50);
-    reasons.push(`EMA9(${fast.toFixed(3)}) > EMA21(${slow.toFixed(3)})`);
-    if (rsiVal < 70 && rsiVal > 40) { confidence += 12; reasons.push(`RSI ${rsiVal.toFixed(1)} (neutral)`); }
-    if (bbPos < 0.6)  { confidence += 8; reasons.push("Price below BB midline"); }
-    if (momentum > 0) { confidence += 5; reasons.push("Positive momentum"); }
-    if (rsiVal > 75)  { confidence -= 20; reasons.push("RSI overbought — caution"); }
-  } else {
-    direction = "DOWN";
-    confidence += Math.min(15, Math.abs(emaDiff) * 50);
-    reasons.push(`EMA9(${fast.toFixed(3)}) < EMA21(${slow.toFixed(3)})`);
-    if (rsiVal > 30 && rsiVal < 60) { confidence += 12; reasons.push(`RSI ${rsiVal.toFixed(1)} (neutral)`); }
-    if (bbPos > 0.4)  { confidence += 8; reasons.push("Price above BB midline"); }
-    if (momentum < 0) { confidence += 5; reasons.push("Negative momentum"); }
-    if (rsiVal < 25)  { confidence -= 20; reasons.push("RSI oversold — caution"); }
-  }
-
-  confidence = Math.min(95, Math.max(10, confidence));
+  const reasons = [
+    `EMA9(${fast.toFixed(4)}) ${direction === "UP" ? ">" : "<"} EMA21(${mid.toFixed(4)}) ${direction === "UP" ? ">" : "<"} EMA50(${slow.toFixed(4)})`,
+    `Divergence ${divergencePct.toFixed(3)}%`,
+    `RSI ${rsiVal.toFixed(1)} (zone 38–62)`,
+    `Candle ${lastCandleBullish ? "bullish" : "bearish"} confirmed`,
+  ];
+  if (rsiVal >= 42 && rsiVal <= 58) reasons.push("RSI sweet-spot bonus");
 
   return {
     asset, direction, confidence,
-    duration: confidence >= 80 ? "30s" : "1m",
+    duration: confidence >= 82 ? "30s" : "1m",
     emaFast: fast, emaSlow: slow, rsiValue: rsiVal, bbPos,
     reason: reasons.join(" · "),
   };

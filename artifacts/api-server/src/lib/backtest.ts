@@ -19,6 +19,19 @@ export interface MartingaleStat {
   equity: EquityPoint[];
 }
 
+export interface EnhancedStat {
+  trades: number;
+  wins: number;
+  losses: number;
+  winRate: number;
+  grossPnl: number;
+  maxDrawdown: number;
+  maxStakeUsed: number;   // paroli max
+  longestLossStreak: number;
+  monthly: MonthlyStat[];
+  equity: EquityPoint[];
+}
+
 export interface AssetBacktestResult {
   asset: string;
   totalCandles: number;
@@ -36,6 +49,7 @@ export interface AssetBacktestResult {
   monthly: MonthlyStat[];
   equity: EquityPoint[];
   martingale: MartingaleStat;
+  enhanced: EnhancedStat;
 }
 
 interface HourStat   { hour: number; trades: number; wins: number; winRate: number; }
@@ -137,7 +151,7 @@ async function fetchAllCandles(symbol: string, months: number): Promise<Candle[]
   return all;
 }
 
-// ── Signal engine (mirrors bot.ts exactly) ────────────────────────────────────
+// ── Signal engine ─────────────────────────────────────────────────────────────
 function ema(prices: number[], period: number): number {
   if (prices.length < period) return prices[prices.length - 1] ?? 0;
   const k = 2 / (period + 1);
@@ -167,6 +181,7 @@ function bollingerPosition(prices: number[], period = 20): number {
   return Math.min(1, Math.max(0, (cur - (mean - 2 * sd)) / (4 * sd)));
 }
 
+// ── Legacy signal (Standard strategy — kept for comparison) ───────────────────
 function computeSignal(prices: number[]): { direction: "UP" | "DOWN"; confidence: number } | null {
   if (prices.length < 30) return null;
   const fast   = ema(prices, 9);
@@ -203,18 +218,71 @@ function computeSignal(prices: number[]): { direction: "UP" | "DOWN"; confidence
   return { direction, confidence };
 }
 
-// ── Per-asset backtest (standard + martingale in one pass) ────────────────────
+// ── Enhanced signal (EMA triple-stack + tight RSI + candle confirmation) ──────
+// Hard gates — ALL must pass or signal is skipped:
+//   1. EMA9 > EMA21 > EMA50 (UP) or EMA9 < EMA21 < EMA50 (DOWN) — trend alignment
+//   2. |EMA9 − EMA50| / EMA50 > 0.05% — trend must be strong, not noise
+//   3. RSI 38–62 — avoid overbought/oversold traps
+//   4. Last candle closes in signal direction — candle-body confirmation
+// Paroli staking: $5 → $10 → $20 after consecutive wins, reset on any loss
+function computeEnhancedSignal(
+  prices: number[],
+  lastCandleBullish: boolean,
+): { direction: "UP" | "DOWN"; confidence: number } | null {
+  if (prices.length < 55) return null;
+
+  const fast = ema(prices, 9);
+  const mid  = ema(prices, 21);
+  const slow = ema(prices, 50);
+
+  // Gate 1: strict triple-stack alignment
+  const stackUp   = fast > mid && mid > slow;
+  const stackDown = fast < mid && mid < slow;
+  if (!stackUp && !stackDown) return null;
+
+  const direction: "UP" | "DOWN" = stackUp ? "UP" : "DOWN";
+
+  // Gate 2: minimum trend divergence (eliminates borderline crossovers)
+  const divergencePct = Math.abs(fast - slow) / slow * 100;
+  if (divergencePct < 0.05) return null;
+
+  // Gate 3: tight RSI zone — no extremes
+  const rsiVal = rsi(prices);
+  if (rsiVal < 38 || rsiVal > 62) return null;
+
+  // Gate 4: last candle must close in signal direction
+  if (direction === "UP"   && !lastCandleBullish) return null;
+  if (direction === "DOWN" &&  lastCandleBullish) return null;
+
+  // Confidence — base 65 (already heavily filtered)
+  let confidence = 65;
+
+  // EMA spread strength
+  confidence += Math.min(18, divergencePct * 180);
+
+  // RSI sweet spot (50 ± 8)
+  if (rsiVal >= 42 && rsiVal <= 58) confidence += 10;
+
+  // BB support
+  const bbPos = bollingerPosition(prices);
+  if (direction === "UP"   && bbPos < 0.5) confidence += 7;
+  if (direction === "DOWN" && bbPos > 0.5) confidence += 7;
+
+  confidence = Math.min(95, Math.max(65, confidence));
+  return { direction, confidence };
+}
+
+// ── Per-asset backtest (standard + martingale + enhanced/paroli in one pass) ──
 function runAssetBacktest(candles: Candle[], asset: string): AssetBacktestResult {
   const BASE_STAKE   = 5;
-  const MAX_STAKE    = 640;   // 5→10→20→40→80→160→320→640 (7 doublings max)
+  const MAX_STAKE    = 640;
   const PAYOUT_RATIO = 1.85;
   const THRESHOLD    = 75;
   const WINDOW       = 200;
 
-  // Standard strategy state
+  // ── Standard state ─────────────────────────────────────────────────────────
   let signalsFired = 0, newsFiltered = 0, spikeFiltered = 0;
   let wins = 0, losses = 0, balance = 0, peak = 0, maxDrawdown = 0;
-
   const hourMap:  Record<number, { wins: number; losses: number }> = {};
   const confMap:  Record<string, { wins: number; losses: number }> = {
     "75–79": { wins: 0, losses: 0 },
@@ -225,82 +293,119 @@ function runAssetBacktest(candles: Candle[], asset: string): AssetBacktestResult
   const monthMap: Record<string, { wins: number; losses: number; pnl: number }> = {};
   const equity:   EquityPoint[] = [];
 
-  // Martingale strategy state
-  let mgBalance      = 0;
-  let mgPeak         = 0;
-  let mgMaxDD        = 0;
-  let mgStake        = BASE_STAKE;
-  let mgStreak       = 0;
-  let mgMaxStreak    = 0;
-  let mgMaxStakeUsed = BASE_STAKE;
-  const mgMonthMap:  Record<string, { wins: number; losses: number; pnl: number }> = {};
-  const mgEquity:    EquityPoint[] = [];
+  // ── Martingale state ───────────────────────────────────────────────────────
+  let mgBalance = 0, mgPeak = 0, mgMaxDD = 0;
+  let mgStake = BASE_STAKE, mgStreak = 0, mgMaxStreak = 0, mgMaxStakeUsed = BASE_STAKE;
+  const mgMonthMap: Record<string, { wins: number; losses: number; pnl: number }> = {};
+  const mgEquity:   EquityPoint[] = [];
 
-  for (let i = 30; i < candles.length - 1; i++) {
-    const c = candles[i];
+  // ── Enhanced + Paroli state ────────────────────────────────────────────────
+  // Paroli: 3-step positive progression  $5 → $10 → $20, reset on loss or after step 3 win
+  const PAROLI_STEPS = [5, 10, 20];
+  let enWins = 0, enLosses = 0, enBalance = 0, enPeak = 0, enMaxDD = 0;
+  let enParoliStep = 0, enMaxStakeUsed = 5, enLossStreak = 0, enMaxLossStreak = 0;
+  const enMonthMap: Record<string, { wins: number; losses: number; pnl: number }> = {};
+  const enEquity:   EquityPoint[] = [];
+
+  for (let i = 55; i < candles.length - 1; i++) {
+    const c    = candles[i];
+    const next = candles[i + 1];
 
     if (isNewsTime(c.epoch))           { newsFiltered++;  continue; }
     if (isVolatilitySpike(candles, i)) { spikeFiltered++; continue; }
 
     const window = candles.slice(Math.max(0, i - WINDOW), i + 1).map(x => x.close);
+    const lastBullish = c.close > c.open;
+
+    // ── Standard signal ───────────────────────────────────────────────────────
     const sig = computeSignal(window);
-    if (!sig || sig.confidence < THRESHOLD) continue;
+    if (sig && sig.confidence >= THRESHOLD) {
+      signalsFired++;
+      const won    = sig.direction === "UP" ? next.close > next.open : next.close < next.open;
+      const stdPnl = won ? BASE_STAKE * (PAYOUT_RATIO - 1) : -BASE_STAKE;
 
-    signalsFired++;
-    const next = candles[i + 1];
-    const won  = sig.direction === "UP" ? next.close > next.open : next.close < next.open;
+      balance += stdPnl;
+      if (won) wins++; else losses++;
+      if (balance > peak) peak = balance;
+      const dd = peak - balance;
+      if (dd > maxDrawdown) maxDrawdown = dd;
 
-    // ── Standard ───────────────────────────────────────────────────────────────
-    const stdPnl = won ? BASE_STAKE * (PAYOUT_RATIO - 1) : -BASE_STAKE;
-    balance += stdPnl;
-    if (won) wins++; else losses++;
+      const hour = new Date(c.epoch * 1000).getUTCHours();
+      if (!hourMap[hour]) hourMap[hour] = { wins: 0, losses: 0 };
+      if (won) hourMap[hour].wins++; else hourMap[hour].losses++;
 
-    if (balance > peak) peak = balance;
-    const dd = peak - balance;
-    if (dd > maxDrawdown) maxDrawdown = dd;
+      const ck = sig.confidence >= 90 ? "90+" : sig.confidence >= 85 ? "85–89" : sig.confidence >= 80 ? "80–84" : "75–79";
+      if (won) confMap[ck].wins++; else confMap[ck].losses++;
 
-    const hour = new Date(c.epoch * 1000).getUTCHours();
-    if (!hourMap[hour]) hourMap[hour] = { wins: 0, losses: 0 };
-    if (won) hourMap[hour].wins++; else hourMap[hour].losses++;
+      const dObj = new Date(c.epoch * 1000);
+      const mk   = `${dObj.getUTCFullYear()}-${String(dObj.getUTCMonth() + 1).padStart(2, "0")}`;
+      if (!monthMap[mk]) monthMap[mk] = { wins: 0, losses: 0, pnl: 0 };
+      monthMap[mk].pnl += stdPnl;
+      if (won) monthMap[mk].wins++; else monthMap[mk].losses++;
 
-    const ck = sig.confidence >= 90 ? "90+" : sig.confidence >= 85 ? "85–89" : sig.confidence >= 80 ? "80–84" : "75–79";
-    if (won) confMap[ck].wins++; else confMap[ck].losses++;
+      const total = wins + losses;
+      if (total % 10 === 0) equity.push({ epoch: c.epoch, balance: Math.round(balance * 100) / 100 });
 
-    const dObj = new Date(c.epoch * 1000);
-    const mk   = `${dObj.getUTCFullYear()}-${String(dObj.getUTCMonth() + 1).padStart(2, "0")}`;
-    if (!monthMap[mk]) monthMap[mk] = { wins: 0, losses: 0, pnl: 0 };
-    monthMap[mk].pnl += stdPnl;
-    if (won) monthMap[mk].wins++; else monthMap[mk].losses++;
+      // ── Martingale (same signal, different stake) ──────────────────────────
+      if (mgStake > mgMaxStakeUsed) mgMaxStakeUsed = mgStake;
+      const mgPnl = won ? mgStake * (PAYOUT_RATIO - 1) : -mgStake;
+      mgBalance += mgPnl;
 
-    const total = wins + losses;
-    if (total % 10 === 0) equity.push({ epoch: c.epoch, balance: Math.round(balance * 100) / 100 });
+      const mk2 = `${new Date(c.epoch * 1000).getUTCFullYear()}-${String(new Date(c.epoch * 1000).getUTCMonth() + 1).padStart(2, "0")}`;
+      if (!mgMonthMap[mk2]) mgMonthMap[mk2] = { wins: 0, losses: 0, pnl: 0 };
+      mgMonthMap[mk2].pnl += mgPnl;
+      if (won) mgMonthMap[mk2].wins++; else mgMonthMap[mk2].losses++;
 
-    // ── Martingale ─────────────────────────────────────────────────────────────
-    if (mgStake > mgMaxStakeUsed) mgMaxStakeUsed = mgStake;
-    const mgPnl = won ? mgStake * (PAYOUT_RATIO - 1) : -mgStake;
-    mgBalance += mgPnl;
-
-    if (!mgMonthMap[mk]) mgMonthMap[mk] = { wins: 0, losses: 0, pnl: 0 };
-    mgMonthMap[mk].pnl += mgPnl;
-    if (won) mgMonthMap[mk].wins++; else mgMonthMap[mk].losses++;
-
-    if (won) {
-      mgStake  = BASE_STAKE;
-      mgStreak = 0;
-    } else {
-      mgStreak++;
-      if (mgStreak > mgMaxStreak) mgMaxStreak = mgStreak;
-      mgStake = Math.min(mgStake * 2, MAX_STAKE);
+      if (won) { mgStake = BASE_STAKE; mgStreak = 0; }
+      else {
+        mgStreak++;
+        if (mgStreak > mgMaxStreak) mgMaxStreak = mgStreak;
+        mgStake = Math.min(mgStake * 2, MAX_STAKE);
+      }
+      if (mgBalance > mgPeak) mgPeak = mgBalance;
+      const mgDD = mgPeak - mgBalance;
+      if (mgDD > mgMaxDD) mgMaxDD = mgDD;
+      if (total % 10 === 0) mgEquity.push({ epoch: c.epoch, balance: Math.round(mgBalance * 100) / 100 });
     }
 
-    if (mgBalance > mgPeak) mgPeak = mgBalance;
-    const mgDD = mgPeak - mgBalance;
-    if (mgDD > mgMaxDD) mgMaxDD = mgDD;
+    // ── Enhanced signal (independent gate — different filter) ─────────────────
+    const eSig = computeEnhancedSignal(window, lastBullish);
+    if (eSig) {
+      const won   = eSig.direction === "UP" ? next.close > next.open : next.close < next.open;
+      const stake = PAROLI_STEPS[Math.min(enParoliStep, PAROLI_STEPS.length - 1)];
+      if (stake > enMaxStakeUsed) enMaxStakeUsed = stake;
+      const ePnl  = won ? stake * (PAYOUT_RATIO - 1) : -stake;
 
-    if (total % 10 === 0) mgEquity.push({ epoch: c.epoch, balance: Math.round(mgBalance * 100) / 100 });
+      enBalance += ePnl;
+      if (won) {
+        enWins++;
+        enLossStreak = 0;
+        // advance paroli step (reset after step 2 = $20)
+        enParoliStep = enParoliStep >= PAROLI_STEPS.length - 1 ? 0 : enParoliStep + 1;
+      } else {
+        enLosses++;
+        enLossStreak++;
+        if (enLossStreak > enMaxLossStreak) enMaxLossStreak = enLossStreak;
+        enParoliStep = 0;
+      }
+
+      if (enBalance > enPeak) enPeak = enBalance;
+      const enDD = enPeak - enBalance;
+      if (enDD > enMaxDD) enMaxDD = enDD;
+
+      const dObj = new Date(c.epoch * 1000);
+      const mk   = `${dObj.getUTCFullYear()}-${String(dObj.getUTCMonth() + 1).padStart(2, "0")}`;
+      if (!enMonthMap[mk]) enMonthMap[mk] = { wins: 0, losses: 0, pnl: 0 };
+      enMonthMap[mk].pnl += ePnl;
+      if (won) enMonthMap[mk].wins++; else enMonthMap[mk].losses++;
+
+      const enTotal = enWins + enLosses;
+      if (enTotal % 10 === 0) enEquity.push({ epoch: c.epoch, balance: Math.round(enBalance * 100) / 100 });
+    }
   }
 
   const totalTrades = wins + losses;
+  const enTotal     = enWins + enLosses;
 
   return {
     asset,
@@ -343,6 +448,23 @@ function runAssetBacktest(candles: Candle[], asset: string): AssetBacktestResult
           pnl: Math.round(v.pnl * 100) / 100,
         })),
       equity: mgEquity,
+    },
+    enhanced: {
+      trades:            enTotal,
+      wins:              enWins,
+      losses:            enLosses,
+      winRate:           enTotal > 0 ? Math.round(enWins / enTotal * 100) : 0,
+      grossPnl:          Math.round(enBalance * 100) / 100,
+      maxDrawdown:       Math.round(enMaxDD * 100) / 100,
+      maxStakeUsed:      enMaxStakeUsed,
+      longestLossStreak: enMaxLossStreak,
+      monthly: Object.entries(enMonthMap)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([month, v]) => ({
+          month, trades: v.wins + v.losses, wins: v.wins, losses: v.losses,
+          pnl: Math.round(v.pnl * 100) / 100,
+        })),
+      equity: enEquity,
     },
   };
 }
@@ -425,7 +547,19 @@ async function runBacktestJob(runId: string, months: number) {
       maxStakeUsed:      Math.max(...assetResults.map(r => r.martingale.maxStakeUsed)),
       longestLossStreak: Math.max(...assetResults.map(r => r.martingale.longestLossStreak)),
     },
+    enhanced: {
+      trades:            assetResults.reduce((s, r) => s + r.enhanced.trades, 0),
+      wins:              assetResults.reduce((s, r) => s + r.enhanced.wins, 0),
+      losses:            assetResults.reduce((s, r) => s + r.enhanced.losses, 0),
+      grossPnl:          Math.round(assetResults.reduce((s, r) => s + r.enhanced.grossPnl, 0) * 100) / 100,
+      maxDrawdown:       Math.max(...assetResults.map(r => r.enhanced.maxDrawdown)),
+      maxStakeUsed:      Math.max(...assetResults.map(r => r.enhanced.maxStakeUsed)),
+      longestLossStreak: Math.max(...assetResults.map(r => r.enhanced.longestLossStreak)),
+      winRate:           0, // filled below
+    },
   };
+  combined.enhanced.winRate = combined.enhanced.trades > 0
+    ? Math.round(combined.enhanced.wins / combined.enhanced.trades * 100) : 0;
   const combinedWinRate = combined.trades > 0
     ? Math.round(combined.wins / combined.trades * 100) : 0;
 
