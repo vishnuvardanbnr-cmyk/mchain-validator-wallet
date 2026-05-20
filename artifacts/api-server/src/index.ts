@@ -6,6 +6,7 @@ import {
   startBotLoop, startPricePoll,
 } from "./routes";
 import { startOrderSweep } from "./lib/orderSweep";
+import { startTradeSweep } from "./lib/tradeSweep";
 
 const rawPort = process.env["PORT"];
 
@@ -37,6 +38,7 @@ async function start() {
   logger.info("Database tables ready");
 
   startOrderSweep();
+  startTradeSweep();
   startPricePoll();
   startBotLoop();
   logger.info("AlphaBot trading engine started");
