@@ -133,24 +133,11 @@ function MonthRow3({ label, std, mg, en }: {
 // ── Main screen ───────────────────────────────────────────────────────────────
 export default function BotBacktestScreen() {
   const insets   = useSafeAreaInsets();
-  const [run, setRun]           = useState<BacktestRun | null>(null);
-  const [loading, setLoading]   = useState(true);
-  const [starting, setStarting] = useState(false);
-  const [months, setMonths]     = useState(6);
-  const [tab, setTab]           = useState<"compare" | "monthly" | "hours" | "confidence">("compare");
+  const [run, setRun]   = useState<BacktestRun | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [tab, setTab]   = useState<"compare" | "monthly" | "hours" | "confidence">("compare");
   const pollRef  = useRef<ReturnType<typeof setInterval> | null>(null);
   const fadeAnim = useRef(new Animated.Value(0)).current;
-
-  // Pre-train state
-  const [pretraining, setPretraining] = useState(false);
-  const [pretrainResult, setPretrainResult] = useState<{
-    ok: boolean; summary: string; months: number;
-    results: Array<{
-      asset: string; candleCount: number; trainSamples: number;
-      trainAccuracy: number; testAccuracy: number; threshold: number;
-      feedbackCount: number; skipped: boolean; skipReason?: string;
-    }>;
-  } | null>(null);
 
   const fetchLatest = useCallback(async () => {
     try {
@@ -169,42 +156,6 @@ export default function BotBacktestScreen() {
     fetchLatest();
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, [fetchLatest]);
-
-  const startRun = async () => {
-    setStarting(true);
-    fadeAnim.setValue(0);
-    try {
-      const r = await fetch(`${getPublicApiBase()}/bot/backtest/run`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ months }),
-      });
-      const data = await r.json() as { runId?: string };
-      if (data.runId) {
-        if (pollRef.current) clearInterval(pollRef.current);
-        pollRef.current = setInterval(fetchLatest, 3000);
-        await fetchLatest();
-      }
-    } catch (_) {}
-    setStarting(false);
-  };
-
-  const startPretrain = async () => {
-    setPretraining(true);
-    setPretrainResult(null);
-    try {
-      const r = await fetch(`${getPublicApiBase()}/bot/pretrain`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ months: 12 }),
-      });
-      const data = await r.json() as typeof pretrainResult;
-      setPretrainResult(data);
-    } catch (_) {
-      setPretrainResult({ ok: false, summary: "Network error — check connection", months: 12, results: [] });
-    }
-    setPretraining(false);
-  };
 
   const isRunning = run?.status === "running";
   useEffect(() => {
@@ -629,103 +580,6 @@ export default function BotBacktestScreen() {
         <Text style={styles.subtitle}>3-strategy comparison: Fixed · Martingale · Enhanced+Paroli</Text>
       </View>
 
-      {/* Run control */}
-      <View style={styles.runCard}>
-        <Text style={styles.runLabel}>Backtest period</Text>
-        <View style={styles.monthPicker}>
-          {([3, 6, 12, 24, 60] as const).map(m => (
-            <Pressable key={m} style={[styles.monthBtn, months === m && styles.monthBtnActive]}
-              onPress={() => setMonths(m)}>
-              <Text style={[styles.monthBtnText, months === m && styles.monthBtnTextActive]}>
-                {m === 60 ? "5 yrs" : `${m}m`}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
-        {months >= 48 && (
-          <View style={{ backgroundColor: "#0d1a0d", borderRadius: 8, padding: 8, marginBottom: 10, borderWidth: 1, borderColor: "#1a4a1a" }}>
-            <Text style={{ color: "#4caf50", fontSize: 11, lineHeight: 16 }}>
-              ⚡ First 5-year run downloads ~500k candles from Deriv and caches them — takes 5–10 min once. Every run after that pulls only new candles and finishes in seconds.
-            </Text>
-          </View>
-        )}
-        <Pressable style={[styles.runBtn, (isRunning || starting) && styles.runBtnDisabled]}
-          onPress={startRun} disabled={isRunning || starting}>
-          {isRunning || starting
-            ? <ActivityIndicator color="#fff" size="small" />
-            : <Text style={styles.runBtnText}>▶  Run Backtest</Text>
-          }
-        </Pressable>
-      </View>
-
-      {/* ── Historical Pre-Train card ──────────────────────────────────────── */}
-      <View style={[styles.runCard, { borderColor: "#1a3a4a", marginTop: 0 }]}>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 6 }}>
-          <Text style={{ fontSize: 18 }}>🧠</Text>
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.runLabel, { marginBottom: 0 }]}>Pre-Train on 1 Year of History</Text>
-            <Text style={{ color: D.muted, fontSize: 11, marginTop: 2 }}>
-              Trains the AI on every cached candle (not just signals) — uses the already-downloaded backtest data. Takes ~10 sec.
-            </Text>
-          </View>
-        </View>
-
-        <Pressable
-          style={[styles.runBtn, { backgroundColor: "#0d3a4a", borderColor: "#1a6a8a", borderWidth: 1 },
-            pretraining && styles.runBtnDisabled]}
-          onPress={startPretrain} disabled={pretraining}>
-          {pretraining
-            ? <ActivityIndicator color="#00bcd4" size="small" />
-            : <Text style={[styles.runBtnText, { color: "#00bcd4" }]}>⚡  Pre-Train Model Now</Text>
-          }
-        </Pressable>
-
-        {/* Result */}
-        {pretrainResult && (
-          <View style={{ marginTop: 12, backgroundColor: pretrainResult.ok ? "#051a1a" : "#1a0505",
-            borderRadius: 10, padding: 12, borderWidth: 1,
-            borderColor: pretrainResult.ok ? "#0a4a4a" : "#4a1a1a" }}>
-            <Text style={{ color: pretrainResult.ok ? "#00e5ff" : D.red, fontSize: 12, fontWeight: "700", marginBottom: 6 }}>
-              {pretrainResult.ok ? "✅ Model Updated" : "⚠️ Pre-Train Failed"}
-            </Text>
-            <Text style={{ color: D.sub, fontSize: 11, marginBottom: pretrainResult.ok ? 10 : 0 }}>
-              {pretrainResult.summary}
-            </Text>
-            {pretrainResult.ok && pretrainResult.results.map(r => (
-              <View key={r.asset} style={{ flexDirection: "row", alignItems: "center",
-                justifyContent: "space-between", marginTop: 6,
-                backgroundColor: "#0a2a2a", borderRadius: 8, padding: 8 }}>
-                <Text style={{ color: D.text, fontSize: 12, fontWeight: "700", width: 64 }}>
-                  {r.asset === "GOLD" ? "🥇 GOLD" : "💶 EUR"}
-                </Text>
-                <View style={{ alignItems: "center" }}>
-                  <Text style={{ color: "#00e5ff", fontSize: 13, fontWeight: "800" }}>{r.testAccuracy}%</Text>
-                  <Text style={{ color: D.muted, fontSize: 9 }}>Test Acc</Text>
-                </View>
-                <View style={{ alignItems: "center" }}>
-                  <Text style={{ color: D.sub, fontSize: 12 }}>{(r.trainSamples / 1000).toFixed(1)}k</Text>
-                  <Text style={{ color: D.muted, fontSize: 9 }}>Samples</Text>
-                </View>
-                <View style={{ alignItems: "center" }}>
-                  <Text style={{ color: D.gold, fontSize: 12 }}>{(r.candleCount / 1000).toFixed(1)}k</Text>
-                  <Text style={{ color: D.muted, fontSize: 9 }}>Candles</Text>
-                </View>
-                <View style={{ alignItems: "center" }}>
-                  <Text style={{ color: r.feedbackCount > 0 ? "#00d97e" : D.muted, fontSize: 12 }}>
-                    +{r.feedbackCount}
-                  </Text>
-                  <Text style={{ color: D.muted, fontSize: 9 }}>Live</Text>
-                </View>
-              </View>
-            ))}
-            {pretrainResult.ok && (
-              <Text style={{ color: D.muted, fontSize: 10, marginTop: 8, fontStyle: "italic" }}>
-                Bot loads the new weights automatically within the hour.
-              </Text>
-            )}
-          </View>
-        )}
-      </View>
 
       {/* Progress */}
       {isRunning && run && (
@@ -782,9 +636,9 @@ export default function BotBacktestScreen() {
 
       {!run && !loading && (
         <View style={styles.emptyState}>
-          <Text style={styles.emptyIcon}>📈</Text>
-          <Text style={styles.emptyTitle}>No backtest yet</Text>
-          <Text style={styles.emptySub}>Run a backtest to compare all three strategies over 6 months of real GOLD + EURUSD data.</Text>
+          <Text style={styles.emptyIcon}>🤖</Text>
+          <Text style={styles.emptyTitle}>Model results loading…</Text>
+          <Text style={styles.emptySub}>The AI model is trained and managed by MChain. Results will appear here once available.</Text>
         </View>
       )}
     </ScrollView>

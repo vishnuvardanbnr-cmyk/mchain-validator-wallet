@@ -11,11 +11,12 @@ import Disputes from "@/pages/Disputes";
 import Settings from "@/pages/Settings";
 import Escrow from "@/pages/Escrow";
 import Legal from "@/pages/Legal";
-import { Shield, LayoutDashboard, BadgeCheck, Store, AlertTriangle, LogOut, Settings as SettingsIcon, Lock, FileText, LayoutGrid, Coins, DollarSign, MonitorDot } from "lucide-react";
+import { Shield, LayoutDashboard, BadgeCheck, Store, AlertTriangle, LogOut, Settings as SettingsIcon, Lock, FileText, LayoutGrid, Coins, DollarSign, MonitorDot, Brain } from "lucide-react";
 import DApps from "@/pages/DApps";
 import Tokens from "@/pages/Tokens";
 import Prices from "@/pages/Prices";
 import Monitor from "@/pages/Monitor";
+import BotAI from "@/pages/BotAI";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: false, staleTime: 30_000 } },
@@ -36,6 +37,7 @@ function Nav({ onLogout }: { onLogout: () => void }) {
     { href: "/legal", label: "Legal", Icon: FileText },
     { href: "/settings", label: "Settings", Icon: SettingsIcon },
     { href: "/monitor", label: "VPS Monitor", Icon: MonitorDot },
+    { href: "/bot-ai",  label: "Bot AI",      Icon: Brain },
   ];
 
   return (
@@ -113,6 +115,7 @@ function AppShell() {
           <Route path="/legal" component={Legal} />
           <Route path="/settings" component={Settings} />
           <Route path="/monitor" component={Monitor} />
+          <Route path="/bot-ai"  component={BotAI} />
           <Route>
             <div className="p-8 text-muted-foreground">Page not found</div>
           </Route>
