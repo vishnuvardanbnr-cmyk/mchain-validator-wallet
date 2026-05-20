@@ -1,6 +1,10 @@
 import app from "./app";
 import { logger } from "./lib/logger";
-import { ensureDappsTable, ensureTokensTable, ensurePricesTable, ensureCardsTables, ensureTradingTables } from "./routes";
+import {
+  ensureDappsTable, ensureTokensTable, ensurePricesTable,
+  ensureCardsTables, ensureTradingTables, ensureBotTables,
+  startBotLoop, startPricePoll,
+} from "./routes";
 import { startOrderSweep } from "./lib/orderSweep";
 
 const rawPort = process.env["PORT"];
@@ -28,10 +32,14 @@ async function start() {
     ensurePricesTable(),
     ensureCardsTables(),
     ensureTradingTables(),
+    ensureBotTables(),
   ]);
   logger.info("Database tables ready");
 
   startOrderSweep();
+  startPricePoll();
+  startBotLoop();
+  logger.info("AlphaBot trading engine started");
 
   app.listen(port, (err) => {
     if (err) {

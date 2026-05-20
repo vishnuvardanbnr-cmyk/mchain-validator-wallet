@@ -78,6 +78,15 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="copy-trade"
+        options={{
+          title: "Copy",
+          tabBarIcon: ({ color, focused }) => (
+            <Icon name={focused ? "people" : "people-outline"} size={22} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="p2p"
         options={{
           title: "P2P",
