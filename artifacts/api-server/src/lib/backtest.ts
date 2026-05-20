@@ -613,6 +613,98 @@ async function runAssetBacktest(candles: Candle[], asset: string): Promise<Asset
   };
 }
 
+// ── Historical Pre-Train ───────────────────────────────────────────────────────
+// Loads cached candles and trains the ML model on ALL valid candles (not just
+// signal-fired ones) — giving the model thousands of labeled examples instead
+// of a handful of live trades.  Cached data makes this fast (no download needed
+// as long as a backtest has been run at least once).
+const ASSET_SYMBOL_MAP: Record<string, string> = {
+  GOLD: "frxXAUUSD",
+  EURUSD: "frxEURUSD",
+};
+
+export interface PretrainResult {
+  asset:         string;
+  candleCount:   number;
+  trainSamples:  number;
+  trainAccuracy: number;
+  testAccuracy:  number;
+  threshold:     number;
+  feedbackCount: number;
+  skipped:       boolean;  // true when cache is empty — run a backtest first
+  skipReason?:   string;
+}
+
+export async function historicalPretrain(
+  asset: string,
+  months = 12,
+): Promise<PretrainResult> {
+  const symbol      = ASSET_SYMBOL_MAP[asset];
+  if (!symbol) throw new Error(`Unknown asset: ${asset}`);
+  const cutoffEpoch = Math.floor(Date.now() / 1000) - months * 30 * 24 * 3600;
+
+  await ensureCandleCache();
+  const candles = (await loadCandleCache(symbol, cutoffEpoch)) as Candle[];
+
+  if (candles.length < 200) {
+    return {
+      asset, candleCount: candles.length, trainSamples: 0,
+      trainAccuracy: 0, testAccuracy: 0, threshold: 0.55,
+      feedbackCount: 0, skipped: true,
+      skipReason: `Only ${candles.length} cached candles — run a full backtest first to download historical data.`,
+    };
+  }
+
+  // ── Build (features, label) for EVERY valid candle ─────────────────────────
+  const mlX: number[][] = [];
+  const mlY: number[]   = [];
+  for (let i = 65; i < candles.length - 1; i++) {
+    const c    = candles[i];
+    const next = candles[i + 1];
+    if (isNewsTime(c.epoch))           continue;
+    if (isVolatilitySpike(candles, i)) continue;
+    const feats = extractFeatures(candles, i);
+    if (!feats) continue;
+    mlX.push(feats);
+    mlY.push(next.close > next.open ? 1 : 0);
+  }
+
+  if (mlX.length < 200) {
+    return {
+      asset, candleCount: candles.length, trainSamples: 0,
+      trainAccuracy: 0, testAccuracy: 0, threshold: 0.55,
+      feedbackCount: 0, skipped: true,
+      skipReason: `Not enough valid feature rows (${mlX.length}) — need at least 200.`,
+    };
+  }
+
+  // ── Chronological 70/30 split ───────────────────────────────────────────────
+  const splitIdx  = Math.floor(mlX.length * 0.7);
+  const baseTrainX = mlX.slice(0, splitIdx);
+  const baseTrainY = mlY.slice(0, splitIdx);
+  const testX      = mlX.slice(splitIdx);
+  const testY      = mlY.slice(splitIdx);
+
+  // ── Mix in live feedback with 3× mistake boost ─────────────────────────────
+  const feedback   = await loadFeedbackTrainingData(asset, 3);
+  const trainX     = [...baseTrainX, ...feedback.X];
+  const trainY     = [...baseTrainY, ...feedback.Y];
+
+  const model = trainModel(trainX, trainY, testX, testY, asset);
+  await saveModel(model);
+
+  return {
+    asset,
+    candleCount:   candles.length,
+    trainSamples:  trainX.length,
+    trainAccuracy: Math.round(model.accuracy     * 10000) / 100,
+    testAccuracy:  Math.round(model.testAccuracy * 10000) / 100,
+    threshold:     model.threshold,
+    feedbackCount: feedback.count,
+    skipped:       false,
+  };
+}
+
 // ── DB schema ─────────────────────────────────────────────────────────────────
 export async function ensureBacktestTable(): Promise<void> {
   await pool.query(`

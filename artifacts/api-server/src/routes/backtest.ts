@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { pool } from "@workspace/db";
-import { startBacktest, ensureBacktestTable } from "../lib/backtest";
+import { startBacktest, ensureBacktestTable, historicalPretrain, PretrainResult } from "../lib/backtest";
 
 const router = Router();
 
@@ -62,6 +62,37 @@ router.get("/bot/backtest/:id", async (req, res) => {
       progress: r.progress, message: r.message,
       results: r.results,
       createdAt: r.created_at, finishedAt: r.finished_at,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// ── Historical Pre-Train ──────────────────────────────────────────────────────
+// Trains the ML model on all cached candles for both assets in parallel.
+// This is much faster than a full backtest (no simulation) and produces a
+// stronger model when the candle cache already has 1+ years of data.
+router.post("/bot/pretrain", async (req, res) => {
+  try {
+    const months = Math.min(24, Math.max(1, parseInt(
+      String((req.body as { months?: string }).months ?? "12")
+    )));
+
+    const [goldResult, eurusdResult] = await Promise.all([
+      historicalPretrain("GOLD",   months),
+      historicalPretrain("EURUSD", months),
+    ]);
+
+    const results: PretrainResult[] = [goldResult, eurusdResult];
+    const anySkipped = results.some(r => r.skipped);
+
+    res.json({
+      ok:      !anySkipped,
+      months,
+      results,
+      summary: anySkipped
+        ? results.find(r => r.skipped)?.skipReason ?? "Cache empty — run a backtest first"
+        : `Model retrained on ${results.reduce((s, r) => s + r.trainSamples, 0).toLocaleString()} samples across both assets`,
     });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });

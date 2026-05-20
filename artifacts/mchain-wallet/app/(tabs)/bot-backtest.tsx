@@ -141,6 +141,17 @@ export default function BotBacktestScreen() {
   const pollRef  = useRef<ReturnType<typeof setInterval> | null>(null);
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
+  // Pre-train state
+  const [pretraining, setPretraining] = useState(false);
+  const [pretrainResult, setPretrainResult] = useState<{
+    ok: boolean; summary: string; months: number;
+    results: Array<{
+      asset: string; candleCount: number; trainSamples: number;
+      trainAccuracy: number; testAccuracy: number; threshold: number;
+      feedbackCount: number; skipped: boolean; skipReason?: string;
+    }>;
+  } | null>(null);
+
   const fetchLatest = useCallback(async () => {
     try {
       const r    = await fetch(`${getPublicApiBase()}/bot/backtest/latest`);
@@ -176,6 +187,23 @@ export default function BotBacktestScreen() {
       }
     } catch (_) {}
     setStarting(false);
+  };
+
+  const startPretrain = async () => {
+    setPretraining(true);
+    setPretrainResult(null);
+    try {
+      const r = await fetch(`${getPublicApiBase()}/bot/pretrain`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ months: 12 }),
+      });
+      const data = await r.json() as typeof pretrainResult;
+      setPretrainResult(data);
+    } catch (_) {
+      setPretrainResult({ ok: false, summary: "Network error — check connection", months: 12, results: [] });
+    }
+    setPretraining(false);
   };
 
   const isRunning = run?.status === "running";
@@ -628,6 +656,75 @@ export default function BotBacktestScreen() {
             : <Text style={styles.runBtnText}>▶  Run Backtest</Text>
           }
         </Pressable>
+      </View>
+
+      {/* ── Historical Pre-Train card ──────────────────────────────────────── */}
+      <View style={[styles.runCard, { borderColor: "#1a3a4a", marginTop: 0 }]}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 6 }}>
+          <Text style={{ fontSize: 18 }}>🧠</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.runLabel, { marginBottom: 0 }]}>Pre-Train on 1 Year of History</Text>
+            <Text style={{ color: D.muted, fontSize: 11, marginTop: 2 }}>
+              Trains the AI on every cached candle (not just signals) — uses the already-downloaded backtest data. Takes ~10 sec.
+            </Text>
+          </View>
+        </View>
+
+        <Pressable
+          style={[styles.runBtn, { backgroundColor: "#0d3a4a", borderColor: "#1a6a8a", borderWidth: 1 },
+            pretraining && styles.runBtnDisabled]}
+          onPress={startPretrain} disabled={pretraining}>
+          {pretraining
+            ? <ActivityIndicator color="#00bcd4" size="small" />
+            : <Text style={[styles.runBtnText, { color: "#00bcd4" }]}>⚡  Pre-Train Model Now</Text>
+          }
+        </Pressable>
+
+        {/* Result */}
+        {pretrainResult && (
+          <View style={{ marginTop: 12, backgroundColor: pretrainResult.ok ? "#051a1a" : "#1a0505",
+            borderRadius: 10, padding: 12, borderWidth: 1,
+            borderColor: pretrainResult.ok ? "#0a4a4a" : "#4a1a1a" }}>
+            <Text style={{ color: pretrainResult.ok ? "#00e5ff" : D.red, fontSize: 12, fontWeight: "700", marginBottom: 6 }}>
+              {pretrainResult.ok ? "✅ Model Updated" : "⚠️ Pre-Train Failed"}
+            </Text>
+            <Text style={{ color: D.sub, fontSize: 11, marginBottom: pretrainResult.ok ? 10 : 0 }}>
+              {pretrainResult.summary}
+            </Text>
+            {pretrainResult.ok && pretrainResult.results.map(r => (
+              <View key={r.asset} style={{ flexDirection: "row", alignItems: "center",
+                justifyContent: "space-between", marginTop: 6,
+                backgroundColor: "#0a2a2a", borderRadius: 8, padding: 8 }}>
+                <Text style={{ color: D.text, fontSize: 12, fontWeight: "700", width: 64 }}>
+                  {r.asset === "GOLD" ? "🥇 GOLD" : "💶 EUR"}
+                </Text>
+                <View style={{ alignItems: "center" }}>
+                  <Text style={{ color: "#00e5ff", fontSize: 13, fontWeight: "800" }}>{r.testAccuracy}%</Text>
+                  <Text style={{ color: D.muted, fontSize: 9 }}>Test Acc</Text>
+                </View>
+                <View style={{ alignItems: "center" }}>
+                  <Text style={{ color: D.sub, fontSize: 12 }}>{(r.trainSamples / 1000).toFixed(1)}k</Text>
+                  <Text style={{ color: D.muted, fontSize: 9 }}>Samples</Text>
+                </View>
+                <View style={{ alignItems: "center" }}>
+                  <Text style={{ color: D.gold, fontSize: 12 }}>{(r.candleCount / 1000).toFixed(1)}k</Text>
+                  <Text style={{ color: D.muted, fontSize: 9 }}>Candles</Text>
+                </View>
+                <View style={{ alignItems: "center" }}>
+                  <Text style={{ color: r.feedbackCount > 0 ? "#00d97e" : D.muted, fontSize: 12 }}>
+                    +{r.feedbackCount}
+                  </Text>
+                  <Text style={{ color: D.muted, fontSize: 9 }}>Live</Text>
+                </View>
+              </View>
+            ))}
+            {pretrainResult.ok && (
+              <Text style={{ color: D.muted, fontSize: 10, marginTop: 8, fontStyle: "italic" }}>
+                Bot loads the new weights automatically within the hour.
+              </Text>
+            )}
+          </View>
+        )}
       </View>
 
       {/* Progress */}
