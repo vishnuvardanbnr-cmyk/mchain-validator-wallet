@@ -1,7 +1,10 @@
 import { Router } from "express";
 import { pool } from "@workspace/db";
 import { notifyTradeOpened, isTelegramConfigured } from "../lib/telegram";
-import { loadLatestModel, computeMLSignal } from "../lib/ml-signal.js";
+import {
+  loadLatestModel, computeMLSignal,
+  storeFeedbackPending, resolveFeedback,
+} from "../lib/ml-signal.js";
 
 const router = Router();
 
@@ -273,6 +276,54 @@ export function startBotLoop() {
             emaFast: 0, emaSlow: 0, rsiValue: 0, bbPos: 0,
             reason: `ML model (prob ${(mlSig.probability * 100).toFixed(1)}%, threshold ${(mlModel.threshold * 100).toFixed(0)}%)`,
           };
+          // ── Capture this signal for feedback loop ─────────────────────────────
+          // Stored before trade so tradeId resolves correctly even on error
+          const entryPrice = candles[candles.length - 1].close;
+          const capturedSig = mlSig;
+          const capturedAsset = asset;
+          // We need tradeId — store after placement below
+          void (async () => {
+            try {
+              const tradeId = await placeBotTrade(signal!, BOT_ADDRESS, 1);
+              await storeSignal(signal!, tradeId);
+
+              // Telegram notification
+              if (isTelegramConfigured()) {
+                void notifyTradeOpened({
+                  asset:      signal!.asset,
+                  direction:  signal!.direction,
+                  amount:     1,
+                  duration:   signal!.duration,
+                  entryPrice: null,
+                  confidence: signal!.confidence,
+                  reason:     signal!.reason,
+                  tradeId,
+                });
+              }
+
+              await executeCopyTrades(signal!);
+
+              // Store feedback — resolve after 5 min using candle direction
+              const fbId = await storeFeedbackPending({
+                asset: capturedAsset, tradeId,
+                features: capturedSig.features,
+                direction: capturedSig.direction,
+                probability: capturedSig.probability,
+              });
+              setTimeout(() => {
+                const latest = (mlCandleHist[capturedAsset] ?? []);
+                if (latest.length === 0) return;
+                const exitPrice = latest[latest.length - 1].close;
+                const wentUp    = exitPrice > entryPrice;
+                const correct   =
+                  (capturedSig.direction === "UP"   &&  wentUp) ||
+                  (capturedSig.direction === "DOWN"  && !wentUp);
+                void resolveFeedback(fbId, correct ? 1 : 0);
+              }, 310_000); // 5 min 10 s — one 5-min candle after entry
+            } catch { /* continue loop */ }
+          })();
+          lastSignal = { ...signal, ts: Date.now() };
+          return; // skip the normal trade placement below
         }
       }
 

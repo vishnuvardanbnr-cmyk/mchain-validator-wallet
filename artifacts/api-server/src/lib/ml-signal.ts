@@ -309,13 +309,16 @@ export async function loadLatestModel(asset: string): Promise<{ weights: number[
 }
 
 // ── Signal generation (for live bot) ─────────────────────────────────────────
-// Build a price + candle history snapshot and generate a live ML signal.
+export interface MLSignalWithFeatures extends MLSignal {
+  features: number[];
+}
+
 export function computeMLSignal(
   candles: Candle[],
   weights: number[],
   bias: number,
   threshold: number,
-): MLSignal | null {
+): MLSignalWithFeatures | null {
   if (candles.length < 60) return null;
   const idx      = candles.length - 1;
   const features = extractFeatures(candles, idx);
@@ -323,10 +326,178 @@ export function computeMLSignal(
 
   const prob = mlPredict(features, weights, bias);
   if (prob > threshold) {
-    return { direction: "UP",   probability: prob, confidence: Math.round(prob * 100) };
+    return { direction: "UP",   probability: prob, confidence: Math.round(prob * 100), features };
   }
   if (prob < 1 - threshold) {
-    return { direction: "DOWN", probability: 1 - prob, confidence: Math.round((1 - prob) * 100) };
+    return { direction: "DOWN", probability: 1 - prob, confidence: Math.round((1 - prob) * 100), features };
   }
-  return null;  // abstain — uncertain
+  return null;
+}
+
+// ── Candle cache (5-year storage) ─────────────────────────────────────────────
+// Fetched candles are stored in PostgreSQL so subsequent backtests only fetch
+// new candles since the last cached epoch — making 5-year runs fast after the
+// first (one-time) download.
+export async function ensureCandleCache(): Promise<void> {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS bot_candle_cache (
+      asset  TEXT NOT NULL,
+      epoch  INT  NOT NULL,
+      open   DOUBLE PRECISION NOT NULL,
+      high   DOUBLE PRECISION NOT NULL,
+      low    DOUBLE PRECISION NOT NULL,
+      close  DOUBLE PRECISION NOT NULL,
+      PRIMARY KEY (asset, epoch)
+    );
+    CREATE INDEX IF NOT EXISTS bot_candle_cache_asset ON bot_candle_cache(asset, epoch ASC);
+  `);
+}
+
+export async function getLatestCachedEpoch(asset: string): Promise<number> {
+  await ensureCandleCache();
+  const { rows } = await pool.query<{ latest: number }>(
+    "SELECT MAX(epoch) AS latest FROM bot_candle_cache WHERE asset=$1", [asset]
+  );
+  return (rows[0]?.latest as number) ?? 0;
+}
+
+export async function loadCandleCache(
+  asset: string, sinceEpoch: number
+): Promise<Array<{ epoch: number; open: number; high: number; low: number; close: number }>> {
+  await ensureCandleCache();
+  const { rows } = await pool.query(
+    "SELECT epoch, open, high, low, close FROM bot_candle_cache WHERE asset=$1 AND epoch >= $2 ORDER BY epoch ASC",
+    [asset, sinceEpoch]
+  );
+  return rows as Array<{ epoch: number; open: number; high: number; low: number; close: number }>;
+}
+
+export async function upsertCandleCache(
+  asset: string,
+  candles: Array<{ epoch: number; open: number; high: number; low: number; close: number }>
+): Promise<void> {
+  if (candles.length === 0) return;
+  const CHUNK = 500;
+  for (let start = 0; start < candles.length; start += CHUNK) {
+    const chunk  = candles.slice(start, start + CHUNK);
+    const vals   = chunk.map((_, j) =>
+      `($1,$${j*5+2},$${j*5+3},$${j*5+4},$${j*5+5},$${j*5+6})`
+    ).join(",");
+    const params: (string | number)[] = [asset];
+    chunk.forEach(c => params.push(c.epoch, c.open, c.high, c.low, c.close));
+    await pool.query(
+      `INSERT INTO bot_candle_cache (asset,epoch,open,high,low,close) VALUES ${vals}
+       ON CONFLICT (asset,epoch) DO NOTHING`,
+      params
+    );
+  }
+}
+
+// ── Feedback loop (learn from live mistakes) ──────────────────────────────────
+// Every trade the live bot places using the ML signal stores its feature vector
+// and direction.  After the trade closes (~5 min), the actual candle direction
+// is recorded.  On the NEXT backtest retrain, these feedback samples are mixed
+// into the training set — with 3× weight on wrong predictions so the model
+// actively corrects its mistakes.
+export async function ensureFeedbackTable(): Promise<void> {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS bot_ml_feedback (
+      id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      asset        TEXT NOT NULL,
+      trade_id     UUID,
+      features     JSONB NOT NULL,
+      direction    TEXT NOT NULL,
+      probability  DOUBLE PRECISION NOT NULL,
+      actual_label INT,      -- 1 = correct direction won, 0 = wrong, NULL = pending
+      correct      BOOLEAN,
+      created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      resolved_at  TIMESTAMPTZ
+    );
+    CREATE INDEX IF NOT EXISTS bot_ml_fb_asset ON bot_ml_feedback(asset, created_at DESC);
+    CREATE INDEX IF NOT EXISTS bot_ml_fb_trade ON bot_ml_feedback(trade_id);
+  `);
+}
+
+export async function storeFeedbackPending(opts: {
+  asset: string;
+  tradeId: string;
+  features: number[];
+  direction: "UP" | "DOWN";
+  probability: number;
+}): Promise<string> {
+  await ensureFeedbackTable();
+  const { rows } = await pool.query<{ id: string }>(
+    `INSERT INTO bot_ml_feedback (asset,trade_id,features,direction,probability)
+     VALUES ($1,$2,$3,$4,$5) RETURNING id`,
+    [opts.asset, opts.tradeId, JSON.stringify(opts.features), opts.direction, opts.probability]
+  );
+  return rows[0].id;
+}
+
+export async function resolveFeedback(feedbackId: string, actualLabel: number): Promise<void> {
+  try {
+    await pool.query(
+      `UPDATE bot_ml_feedback
+       SET actual_label=$2, correct=$3, resolved_at=NOW()
+       WHERE id=$1`,
+      [feedbackId, actualLabel, actualLabel === 1]
+    );
+  } catch { /* non-critical */ }
+}
+
+// Load resolved feedback for a given asset.
+// Returns (features, label) pairs with wrong predictions repeated BOOST times
+// so the model pays extra attention to its past mistakes.
+export async function loadFeedbackTrainingData(
+  asset: string,
+  boost = 3
+): Promise<{ X: number[][]; Y: number[]; count: number }> {
+  try {
+    await ensureFeedbackTable();
+    const { rows } = await pool.query<{ features: unknown; actual_label: number; correct: boolean }>(
+      `SELECT features, actual_label, correct
+       FROM bot_ml_feedback
+       WHERE asset=$1 AND actual_label IS NOT NULL
+       ORDER BY created_at DESC LIMIT 10000`,
+      [asset]
+    );
+    const X: number[][] = [];
+    const Y: number[]   = [];
+    for (const row of rows) {
+      const feats: number[] = Array.isArray(row.features)
+        ? (row.features as number[])
+        : (JSON.parse(String(row.features)) as number[]);
+      const label = row.actual_label;
+      // Add once (all feedback) + extra copies for wrong predictions
+      const reps = row.correct ? 1 : boost;
+      for (let i = 0; i < reps; i++) { X.push(feats); Y.push(label); }
+    }
+    return { X, Y, count: rows.length };
+  } catch {
+    return { X: [], Y: [], count: 0 };
+  }
+}
+
+export async function getFeedbackStats(asset: string): Promise<{
+  total: number; correct: number; pending: number; liveAccuracy: number;
+}> {
+  try {
+    await ensureFeedbackTable();
+    const { rows } = await pool.query<{
+      total: string; correct_count: string; pending: string;
+    }>(
+      `SELECT COUNT(*) AS total,
+              COUNT(*) FILTER (WHERE correct = true) AS correct_count,
+              COUNT(*) FILTER (WHERE actual_label IS NULL) AS pending
+       FROM bot_ml_feedback WHERE asset=$1`,
+      [asset]
+    );
+    const total   = parseInt(rows[0]?.total ?? "0");
+    const correct = parseInt(rows[0]?.correct_count ?? "0");
+    const pending = parseInt(rows[0]?.pending ?? "0");
+    const resolved = total - pending;
+    return { total, correct, pending, liveAccuracy: resolved > 0 ? Math.round(correct / resolved * 100) : 0 };
+  } catch {
+    return { total: 0, correct: 0, pending: 0, liveAccuracy: 0 };
+  }
 }

@@ -33,6 +33,7 @@ interface MLStat {
   trainAccuracy: number; testAccuracy: number;
   trainSamples: number; testTrades: number;
   threshold: number; overfit: boolean;
+  feedbackCount: number;
   monthly: MonthlyStat[]; equity: EquityPoint[];
 }
 interface AssetResult {
@@ -52,7 +53,7 @@ interface Combined {
   newsFiltered: number; spikeFiltered: number; signalsFired: number;
   martingale: { grossPnl: number; maxDrawdown: number; maxStakeUsed: number; longestLossStreak: number; };
   enhanced:   { trades: number; wins: number; losses: number; winRate: number; grossPnl: number; maxDrawdown: number; maxStakeUsed: number; longestLossStreak: number; };
-  ml: { trades: number; wins: number; losses: number; winRate: number; grossPnl: number; maxDrawdown: number; trainAccuracy: number; testAccuracy: number; trainSamples: number; testTrades: number; threshold: number; overfit: boolean; };
+  ml: { trades: number; wins: number; losses: number; winRate: number; grossPnl: number; maxDrawdown: number; trainAccuracy: number; testAccuracy: number; trainSamples: number; testTrades: number; threshold: number; overfit: boolean; feedbackCount: number; };
 }
 interface BacktestRun {
   id: string; status: string; months: number;
@@ -233,7 +234,22 @@ export default function BotBacktestScreen() {
               </View>
             </View>
             {/* Train vs test accuracy — key overfitting check */}
-            <View style={{ flexDirection: "row", marginTop: 8, gap: 12, alignItems: "center" }}>
+            {/* Feedback loop stats */}
+            {(ml.feedbackCount ?? 0) > 0 && (
+              <View style={{ backgroundColor: "#0a1a1a", borderRadius: 10, padding: 10, marginTop: 10, borderWidth: 1, borderColor: "#004444", flexDirection: "row", alignItems: "center", gap: 12 }}>
+                <Text style={{ fontSize: 20 }}>🔄</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ color: "#00e5ff", fontSize: 12, fontWeight: "700" }}>
+                    Learned from {ml.feedbackCount} Live Trade{ml.feedbackCount !== 1 ? "s" : ""}
+                  </Text>
+                  <Text style={{ color: D.muted, fontSize: 10, marginTop: 2, lineHeight: 14 }}>
+                    Wrong predictions carry 3× weight in retraining — the model actively corrects its own mistakes from live trading.
+                  </Text>
+                </View>
+              </View>
+            )}
+
+          <View style={{ flexDirection: "row", marginTop: 8, gap: 12, alignItems: "center" }}>
               <View style={{ flex: 1, backgroundColor: D.card2, borderRadius: 8, padding: 8 }}>
                 <Text style={{ color: D.muted, fontSize: 10, textAlign: "center" }}>TRAIN ACC</Text>
                 <Text style={{ color: D.sub, fontSize: 14, fontWeight: "700", textAlign: "center" }}>
@@ -260,6 +276,32 @@ export default function BotBacktestScreen() {
             </View>
           </View>
         )}
+
+        {/* Feedback loop explainer */}
+        <View style={styles.howCard}>
+          <Text style={styles.howTitle}>🔄 Live Feedback Loop</Text>
+          <View style={styles.howItem}>
+            <Text style={styles.howNum}>①</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.howLabel}>Trade Placed → Features Captured</Text>
+              <Text style={styles.howDesc}>Every live AI signal saves its 16-feature input vector + probability to the database with the trade ID.</Text>
+            </View>
+          </View>
+          <View style={styles.howItem}>
+            <Text style={styles.howNum}>②</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.howLabel}>5-Minute Outcome Resolution</Text>
+              <Text style={styles.howDesc}>After one 5-min candle, the live close price is compared to entry. Correct direction = 1, wrong = 0 — stored automatically.</Text>
+            </View>
+          </View>
+          <View style={[styles.howItem, { marginBottom: 0 }]}>
+            <Text style={styles.howNum}>③</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.howLabel}>Mistake-Boosted Retraining</Text>
+              <Text style={styles.howDesc}>Next backtest mixes live data into training. Wrong trades get 3× weight so the model actively corrects its own live errors. Best effect after 20+ trades.</Text>
+            </View>
+          </View>
+        </View>
 
         {/* 3-way comparison table (Fixed $1 | Martin | Enhanced) */}
         <View style={styles.section}>
@@ -563,13 +605,22 @@ export default function BotBacktestScreen() {
       <View style={styles.runCard}>
         <Text style={styles.runLabel}>Backtest period</Text>
         <View style={styles.monthPicker}>
-          {[1, 3, 6, 12].map(m => (
+          {([3, 6, 12, 24, 60] as const).map(m => (
             <Pressable key={m} style={[styles.monthBtn, months === m && styles.monthBtnActive]}
               onPress={() => setMonths(m)}>
-              <Text style={[styles.monthBtnText, months === m && styles.monthBtnTextActive]}>{m}m</Text>
+              <Text style={[styles.monthBtnText, months === m && styles.monthBtnTextActive]}>
+                {m === 60 ? "5 yrs" : `${m}m`}
+              </Text>
             </Pressable>
           ))}
         </View>
+        {months >= 48 && (
+          <View style={{ backgroundColor: "#0d1a0d", borderRadius: 8, padding: 8, marginBottom: 10, borderWidth: 1, borderColor: "#1a4a1a" }}>
+            <Text style={{ color: "#4caf50", fontSize: 11, lineHeight: 16 }}>
+              ⚡ First 5-year run downloads ~500k candles from Deriv and caches them — takes 5–10 min once. Every run after that pulls only new candles and finishes in seconds.
+            </Text>
+          </View>
+        )}
         <Pressable style={[styles.runBtn, (isRunning || starting) && styles.runBtnDisabled]}
           onPress={startRun} disabled={isRunning || starting}>
           {isRunning || starting

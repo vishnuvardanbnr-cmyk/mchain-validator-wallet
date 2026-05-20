@@ -3,6 +3,9 @@ import { pool } from "@workspace/db";
 import {
   extractFeatures, trainModel, saveModel,
   mlPredict, NUM_FEATURES, MLModelWeights,
+  ensureCandleCache, getLatestCachedEpoch,
+  loadCandleCache, upsertCandleCache,
+  loadFeedbackTrainingData,
 } from "./ml-signal.js";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -43,14 +46,15 @@ export interface MLStat {
   winRate: number;
   grossPnl: number;
   maxDrawdown: number;
-  trainAccuracy: number;   // % of training samples predicted correctly
-  testAccuracy: number;    // % of held-out test samples — real performance
+  trainAccuracy: number;
+  testAccuracy: number;
   trainSamples: number;
-  testTrades: number;      // trades taken from test set (above threshold)
-  threshold: number;       // probability threshold chosen by model
+  testTrades: number;
+  threshold: number;
+  feedbackCount: number;   // live trades mixed into training
   monthly: MonthlyStat[];
   equity: EquityPoint[];
-  overfit: boolean;        // true if trainAcc >> testAcc (data-leakage warning)
+  overfit: boolean;
 }
 
 export interface AssetBacktestResult {
@@ -155,23 +159,55 @@ function fetchCandlePage(symbol: string, endEpoch: number): Promise<Candle[]> {
 
 async function fetchAllCandles(symbol: string, months: number): Promise<Candle[]> {
   const cutoffEpoch = Math.floor(Date.now() / 1000) - months * 30 * 24 * 3600;
-  let endEpoch = Math.floor(Date.now() / 1000);
+  const nowEpoch    = Math.floor(Date.now() / 1000);
+
+  // ── Step 1: load from cache ──────────────────────────────────────────────────
+  await ensureCandleCache();
+  const latestCached = await getLatestCachedEpoch(symbol);
+  const cached = latestCached >= cutoffEpoch
+    ? (await loadCandleCache(symbol, cutoffEpoch)) as Candle[]
+    : [];
+
+  // ── Step 2: decide what to fetch from Deriv ──────────────────────────────────
+  // If cache covers the full range and is recent (< 2 h old), no new fetch needed
+  const cacheIsFresh = latestCached > nowEpoch - 7_200;
+  const cacheCovers  = cached.length > 0 && cached[0].epoch <= cutoffEpoch + 3600;
+  if (cacheIsFresh && cacheCovers) return cached;
+
+  // ── Step 3: fetch pages from the earliest gap to now ─────────────────────────
+  // Start from current time, page back until we reach cutoffEpoch or latestCached
+  const fetchCutoff  = cacheCovers ? (latestCached || cutoffEpoch) : cutoffEpoch;
+  const MAX_ITER     = 130;   // 130 × 5 000 = 650 000 candles — covers 5+ years
+  let   endEpoch     = nowEpoch;
   const pages: Candle[][] = [];
-  const MAX_ITER = 25;
 
   for (let iter = 0; iter < MAX_ITER; iter++) {
     const page = await fetchCandlePage(symbol, endEpoch);
     if (page.length === 0) break;
-    pages.unshift(page);
+    const newCandles = cacheCovers
+      ? page.filter(c => c.epoch > latestCached)
+      : page;
+    if (newCandles.length > 0) pages.unshift(newCandles);
     const earliest = page[0].epoch;
-    if (earliest <= cutoffEpoch) break;
+    if (earliest <= fetchCutoff) break;
     endEpoch = earliest - 1;
-    await new Promise(r => setTimeout(r, 600));
+    await new Promise(r => setTimeout(r, 400));
   }
 
-  const all = pages.flat().filter(c => c.epoch >= cutoffEpoch);
-  all.sort((a, b) => a.epoch - b.epoch);
-  return all;
+  const fresh = pages.flat();
+  if (fresh.length > 0) {
+    // Persist to cache (fire-and-forget to not block the backtest)
+    upsertCandleCache(symbol, fresh).catch(() => {/* non-critical */});
+  }
+
+  // ── Step 4: merge cached + fresh, deduplicate, sort ─────────────────────────
+  const epochSet = new Set<number>();
+  const merged: Candle[] = [];
+  for (const c of [...cached, ...fresh]) {
+    if (!epochSet.has(c.epoch)) { epochSet.add(c.epoch); merged.push(c); }
+  }
+  merged.sort((a, b) => a.epoch - b.epoch);
+  return merged.filter(c => c.epoch >= cutoffEpoch);
 }
 
 // ── Signal engine ─────────────────────────────────────────────────────────────
@@ -291,7 +327,7 @@ function computeEnhancedSignal(
 }
 
 // ── Per-asset backtest (standard + martingale + enhanced/paroli in one pass) ──
-function runAssetBacktest(candles: Candle[], asset: string): AssetBacktestResult {
+async function runAssetBacktest(candles: Candle[], asset: string): Promise<AssetBacktestResult> {
   const BASE_STAKE   = 1;
   const MAX_STAKE    = 128;  // 1→2→4→8→16→32→64→128 (7 doublings)
   const PAYOUT_RATIO = 1.85;
@@ -439,13 +475,18 @@ function runAssetBacktest(candles: Candle[], asset: string): AssetBacktestResult
   const totalTrades = wins + losses;
   const enTotal     = enWins + enLosses;
 
-  // ── ML: train on first 70%, simulate on last 30% (chronological split) ─────
-  const splitIdx  = Math.floor(mlX.length * 0.7);
-  const trainX    = mlX.slice(0, splitIdx);
-  const trainY    = mlY.slice(0, splitIdx);
-  const testX     = mlX.slice(splitIdx);
-  const testY     = mlY.slice(splitIdx);
-  const testEpochs= mlEpochs.slice(splitIdx);
+  // ── ML: train on first 70% + live feedback, simulate on last 30% ─────────────
+  const splitIdx   = Math.floor(mlX.length * 0.7);
+  const baseTrainX = mlX.slice(0, splitIdx);
+  const baseTrainY = mlY.slice(0, splitIdx);
+  const testX      = mlX.slice(splitIdx);
+  const testY      = mlY.slice(splitIdx);
+  const testEpochs = mlEpochs.slice(splitIdx);
+
+  // Load live feedback — wrong predictions get 3× weight so model corrects mistakes
+  const feedback = await loadFeedbackTrainingData(asset, 3);
+  const trainX   = [...baseTrainX, ...feedback.X];
+  const trainY   = [...baseTrainY, ...feedback.Y];
 
   const mlModel = trainModel(trainX, trainY, testX, testY, asset);
 
@@ -497,6 +538,7 @@ function runAssetBacktest(candles: Candle[], asset: string): AssetBacktestResult
     trainSamples:  trainX.length,
     testTrades:    mlTotal,
     threshold:     mlModel.threshold,
+    feedbackCount: feedback.count,
     monthly:       Object.entries(mlMonthMap)
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([month, v]) => ({
@@ -612,27 +654,32 @@ async function updateProgress(runId: string, progress: number, message: string) 
 }
 
 async function runBacktestJob(runId: string, months: number) {
-  const assets = [
-    { symbol: "frxXAUUSD", label: "GOLD"   },
-    { symbol: "frxEURUSD", label: "EURUSD" },
-  ];
+  // ── Fetch both assets in parallel (halves download time) ────────────────────
+  await updateProgress(runId, 5,
+    months >= 48
+      ? `Fetching ${months / 12} years of data for both assets in parallel — first 5-year run will download ~500 k candles and cache them; subsequent runs pull only new candles and finish in seconds…`
+      : `Fetching ${months} months of historical data for both assets…`
+  );
 
-  const assetResults: AssetBacktestResult[] = [];
+  const [[goldCandles, goldErr], [eurusdCandles, eurusdErr]] = await Promise.all([
+    fetchAllCandles("frxXAUUSD", months).then(c => [c, null] as const).catch(e => [[] as Candle[], String(e)] as const),
+    fetchAllCandles("frxEURUSD", months).then(c => [c, null] as const).catch(e => [[] as Candle[], String(e)] as const),
+  ]);
 
-  for (let i = 0; i < assets.length; i++) {
-    const { symbol, label } = assets[i];
-    await updateProgress(runId, i * 45, `Fetching ${label} historical data…`);
+  if (goldErr)   await updateProgress(runId, 30, `GOLD fetch error: ${goldErr}`);
+  if (eurusdErr) await updateProgress(runId, 30, `EURUSD fetch error: ${eurusdErr}`);
 
-    let candles: Candle[] = [];
-    try {
-      candles = await fetchAllCandles(symbol, months);
-    } catch (err) {
-      await updateProgress(runId, i * 45 + 20, `${label} fetch error: ${err}`);
-    }
+  await updateProgress(runId, 50,
+    `Training AI + simulating (${goldCandles.length.toLocaleString()} GOLD + ${eurusdCandles.length.toLocaleString()} EURUSD candles)…`
+  );
 
-    await updateProgress(runId, i * 45 + 35, `Simulating ${label} (${candles.length} candles)…`);
-    assetResults.push(runAssetBacktest(candles, label));
-  }
+  // ── Run simulations in parallel as well ─────────────────────────────────────
+  const [goldResult, eurusdResult] = await Promise.all([
+    runAssetBacktest(goldCandles,   "GOLD"),
+    runAssetBacktest(eurusdCandles, "EURUSD"),
+  ]);
+
+  const assetResults: AssetBacktestResult[] = [goldResult, eurusdResult];
 
   const combined = {
     trades:       assetResults.reduce((s, r) => s + r.trades, 0),
@@ -671,6 +718,7 @@ async function runBacktestJob(runId: string, months: number) {
       testTrades:    assetResults.reduce((s, r) => s + r.ml.testTrades, 0),
       threshold:     Math.round(assetResults.reduce((s, r) => s + r.ml.threshold, 0) / assetResults.length * 100) / 100,
       overfit:       assetResults.some(r => r.ml.overfit),
+      feedbackCount: assetResults.reduce((s, r) => s + r.ml.feedbackCount, 0),
       winRate:       0,
     },
   };
