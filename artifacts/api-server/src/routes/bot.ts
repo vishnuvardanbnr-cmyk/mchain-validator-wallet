@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { pool } from "@workspace/db";
+import { notifyTradeOpened, isTelegramConfigured } from "../lib/telegram";
 
 const router = Router();
 
@@ -219,6 +220,21 @@ export function startBotLoop() {
 
       const tradeId = await placeBotTrade(signal, BOT_ADDRESS, 5);
       await storeSignal(signal, tradeId);
+
+      // Telegram notification — trade opened
+      if (isTelegramConfigured()) {
+        void notifyTradeOpened({
+          asset:      signal.asset,
+          direction:  signal.direction,
+          amount:     5,
+          duration:   signal.duration,
+          entryPrice: null,
+          confidence: signal.confidence,
+          reason:     signal.reason,
+          tradeId,
+        });
+      }
+
       await executeCopyTrades(signal);
     } catch { /* continue loop */ }
   }

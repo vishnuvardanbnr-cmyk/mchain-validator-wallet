@@ -6,6 +6,7 @@
  */
 import { pool } from "@workspace/db";
 import { logger } from "./logger";
+import { notifyTradeResolved, isTelegramConfigured } from "./telegram";
 
 const DERIV_BASE_URL = "https://api.derivws.com";
 
@@ -74,9 +75,9 @@ async function sweepTrades() {
   const { rows } = await pool.query<{
     id: string; wallet_address: string; amount_usdt: string;
     payout_usdt: string; entry_price: string;
-    deriv_contract_id: string;
+    deriv_contract_id: string; asset: string; direction: "UP" | "DOWN";
   }>(`
-    SELECT id, wallet_address, amount_usdt, payout_usdt, entry_price, deriv_contract_id
+    SELECT id, wallet_address, asset, direction, amount_usdt, payout_usdt, entry_price, deriv_contract_id
     FROM trades
     WHERE status = 'open'
       AND expires_at <= NOW()
@@ -133,6 +134,31 @@ async function sweepTrades() {
         { tradeId: trade.id, contractId, outcome, profit, exitPrice },
         "Trade sweep: contract resolved"
       );
+
+      // Telegram notification — trade result
+      if (isTelegramConfigured() && (outcome === "won" || outcome === "lost")) {
+        const balRes = await pool.query<{ balance_usdt: string }>(
+          "SELECT balance_usdt FROM card_accounts WHERE wallet_address = $1",
+          [trade.wallet_address]
+        );
+        const newBalance = parseFloat(balRes.rows[0]?.balance_usdt ?? "0");
+        const pnl = outcome === "won"
+          ? parseFloat(trade.payout_usdt) - parseFloat(trade.amount_usdt)
+          : -parseFloat(trade.amount_usdt);
+
+        void notifyTradeResolved({
+          asset:      trade.asset,
+          direction:  trade.direction,
+          status:     outcome,
+          amount:     parseFloat(trade.amount_usdt),
+          payout:     parseFloat(trade.payout_usdt),
+          entryPrice: parseFloat(trade.entry_price) || null,
+          exitPrice:  exitPrice || null,
+          pnl,
+          tradeId:    trade.id,
+          newBalance,
+        });
+      }
 
       // Brief pause between WS calls to avoid rate-limiting
       await new Promise(r => setTimeout(r, 300));
