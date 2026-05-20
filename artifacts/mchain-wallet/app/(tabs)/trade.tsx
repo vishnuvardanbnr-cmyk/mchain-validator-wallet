@@ -22,12 +22,12 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect } from "expo-router";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
-type Asset   = "BTC" | "ETH" | "GOLD";
+type Asset   = "V100" | "V50" | "GOLD" | "EURUSD";
 type Dir     = "UP" | "DOWN";
 type Duration = "1m" | "5m" | "15m" | "1h";
 type Screen  = "trade" | "confirm" | "active" | "result";
 
-interface Prices  { BTC: number; ETH: number; GOLD: number }
+interface Prices  { V100: number; V50: number; GOLD: number; EURUSD: number }
 interface Proposal {
   proposalId: string; payout: number; askPrice: number;
   spotPrice: number; longCode: string;
@@ -42,12 +42,13 @@ interface TradeResult {
   status: string; opened_at: string; resolved_at: string | null;
 }
 
-const ASSETS: Asset[] = ["BTC", "ETH", "GOLD"];
+const ASSETS: Asset[] = ["V100", "V50", "GOLD", "EURUSD"];
 const DURATIONS: Duration[] = ["1m", "5m", "15m", "1h"];
 const DURATION_LABEL: Record<Duration, string> = { "1m": "1 Min", "5m": "5 Min", "15m": "15 Min", "1h": "1 Hour" };
 
-const ASSET_ICON: Record<Asset, string> = { BTC: "₿", ETH: "Ξ", GOLD: "Au" };
-const ASSET_COLOR: Record<Asset, string> = { BTC: "#F59E0B", ETH: "#6366F1", GOLD: "#EAB308" };
+const ASSET_ICON: Record<Asset, string>  = { V100: "V₁₀₀", V50: "V₅₀", GOLD: "Au", EURUSD: "€/$" };
+const ASSET_LABEL: Record<Asset, string> = { V100: "Vol 100", V50: "Vol 50", GOLD: "Gold", EURUSD: "EUR/USD" };
+const ASSET_COLOR: Record<Asset, string> = { V100: "#8B5CF6", V50: "#06B6D4", GOLD: "#EAB308", EURUSD: "#3B82F6" };
 
 function formatPrice(price: number): string {
   if (price >= 1000) return price.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -81,7 +82,7 @@ async function fetchProposal(asset: Asset, direction: Dir, amount: number, durat
 
 async function openTrade(params: {
   walletAddress: string; asset: Asset; direction: Dir;
-  amount: number; duration: Duration; proposalId: string; payout: number;
+  amount: number; duration: Duration;
 }): Promise<Trade> {
   const r = await fetch(`${getPublicApiBase()}/trading/open`, {
     method: "POST",
@@ -120,7 +121,7 @@ export default function TradeScreen() {
   const qc        = useQueryClient();
 
   const [screen,   setScreen]   = useState<Screen>("trade");
-  const [asset,    setAsset]    = useState<Asset>("BTC");
+  const [asset,    setAsset]    = useState<Asset>("V100");
   const [dir,      setDir]      = useState<Dir>("UP");
   const [duration, setDuration] = useState<Duration>("1m");
   const [amount,   setAmount]   = useState("1");
@@ -223,11 +224,10 @@ export default function TradeScreen() {
   // Open trade mutation
   const tradeMut = useMutation({
     mutationFn: () => {
-      if (!proposal || !address) throw new Error("Not ready");
+      if (!address) throw new Error("Not ready");
       return openTrade({
         walletAddress: address, asset, direction: dir,
         amount: parseFloat(amount), duration,
-        proposalId: proposal.proposalId, payout: proposal.payout,
       });
     },
     onSuccess: (t) => {
@@ -565,16 +565,16 @@ export default function TradeScreen() {
         {/* Asset selector */}
         <View style={s.card}>
           <Text style={s.sectionLabel}>SELECT ASSET</Text>
-          <View style={s.assetRow}>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
             {ASSETS.map(a => (
               <TouchableOpacity
                 key={a}
-                style={[s.assetBtn, asset === a && s.assetBtnActive]}
+                style={[s.assetBtn, { width: "47%" }, asset === a && s.assetBtnActive]}
                 onPress={() => { setAsset(a); if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
                 activeOpacity={0.75}
               >
-                <Text style={[s.assetEmoji, { color: ASSET_COLOR[a] }]}>{ASSET_ICON[a]}</Text>
-                <Text style={[s.assetName, asset === a && { color: colors.primary }]}>{a}</Text>
+                <Text style={[s.assetEmoji, { color: ASSET_COLOR[a], fontSize: 14, letterSpacing: -0.5 }]}>{ASSET_ICON[a]}</Text>
+                <Text style={[s.assetName, asset === a && { color: colors.primary }]}>{ASSET_LABEL[a]}</Text>
                 {prices && <Text style={s.assetPrice}>${formatPrice(prices[a])}</Text>}
               </TouchableOpacity>
             ))}
