@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Platform } from "react-native";
+import { AppState, type AppStateStatus, Platform } from "react-native";
 import * as SecureStore from "expo-secure-store";
+import NetInfo from "@react-native-community/netinfo";
 import { useWallet } from "@/context/WalletContext";
 import { api, type OpenEpoch } from "@/services/api";
 import { signEpochBlockHash } from "@/services/crypto";
@@ -9,6 +10,10 @@ type ApiError = Error & { status?: number; data?: Record<string, unknown> };
 
 // Heartbeat interval: 8 minutes as per spec
 const HEARTBEAT_INTERVAL_MS = 8 * 60 * 1000;
+
+// Minimum gap before an app-resume or network-reconnect can trigger a heartbeat.
+// Prevents double-firing when the interval already sent one recently.
+const MIN_GAP_MS = 5 * 60 * 1000; // 5 minutes
 
 export function useHeartbeat() {
   const {
@@ -32,6 +37,17 @@ export function useHeartbeat() {
 
   // 429 backoff — epoch time (ms) after which we may retry
   const retryAfterRef = useRef<number>(0);
+
+  // Track when the last heartbeat was successfully sent so resume/reconnect
+  // triggers don't fire redundantly straight after a regular interval beat.
+  const lastSentAtRef = useRef<number>(0);
+
+  // Tracks the previous network connectivity state so we only fire on the
+  // false → true transition, not on every NetInfo update.
+  const wasConnectedRef = useRef<boolean | null>(null);
+
+  // Tracks AppState so we only fire on background → active transition.
+  const appStateRef = useRef<AppStateStatus>(AppState.currentState);
 
   // Epoch state — tracked in refs to avoid re-render churn in the hot path,
   // but also exposed as React state for the UI.
@@ -116,6 +132,7 @@ export function useHeartbeat() {
         ...(epochSignature ? { epochSignature } : {}),
       });
 
+      lastSentAtRef.current = Date.now();
       setPendingHeartbeat(false);
       setValidatorStatus("active");
 
@@ -178,6 +195,47 @@ export function useHeartbeat() {
 
   // Keep ref in sync so the epoch-signing setTimeout always calls the latest version
   sendHeartbeatRef.current = sendHeartbeat;
+
+  // ── Auto-trigger: app returns to foreground ──────────────────────────────────
+  // When the phone screen turns on or the user switches back to the app,
+  // fire a heartbeat immediately if enough time has passed since the last one.
+  useEffect(() => {
+    if (Platform.OS === "web") return;
+    const sub = AppState.addEventListener("change", (next: AppStateStatus) => {
+      const prev = appStateRef.current;
+      appStateRef.current = next;
+
+      if (
+        next === "active" &&
+        (prev === "background" || prev === "inactive") &&
+        !stoppedRef.current &&
+        validatorAddressRef.current &&
+        Date.now() - lastSentAtRef.current > MIN_GAP_MS
+      ) {
+        void sendHeartbeatRef.current();
+      }
+    });
+    return () => sub.remove();
+  }, []);
+
+  // ── Auto-trigger: network reconnects ────────────────────────────────────────
+  // When the device goes from offline → online, fire a heartbeat immediately
+  // so epoch signing doesn't wait up to 8 minutes after a connectivity gap.
+  useEffect(() => {
+    if (Platform.OS === "web") return;
+    const unsub = NetInfo.addEventListener((state) => {
+      const isConnected = state.isConnected ?? false;
+      const wasConnected = wasConnectedRef.current;
+
+      wasConnectedRef.current = isConnected;
+
+      // Only fire on false → true transition (reconnect), not on first call
+      if (wasConnected === false && isConnected && !stoppedRef.current && validatorAddressRef.current) {
+        void sendHeartbeatRef.current();
+      }
+    });
+    return () => unsub();
+  }, []);
 
   // Restart the foreground interval when the validator is re-activated
   const prevStatusRef = useRef(validatorStatus);
