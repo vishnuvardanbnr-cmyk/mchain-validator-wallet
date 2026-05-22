@@ -160,7 +160,7 @@ export default function SendScreen() {
   const insets = useSafeAreaInsets();
   const qc = useQueryClient();
   const { mxcAddress, getPrivateKey, activeWallet } = useWallet();
-  const { requestPin } = usePinContext();
+  const { requestPin, dismissPin } = usePinContext();
 
   const { address: prefillAddress, tokenContract } = useLocalSearchParams<{
     address?: string;
@@ -309,6 +309,7 @@ export default function SendScreen() {
     if (!mxcAddress || submittingRef.current) return;
     submittingRef.current = true;
     setLoading(true);
+    dismissPin();
     try {
       const privateKey = await getPrivateKey();
       if (!privateKey) throw new Error("Private key not found");
