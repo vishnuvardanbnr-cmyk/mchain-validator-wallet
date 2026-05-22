@@ -43,7 +43,7 @@ export async function testNodeConnection(url: string): Promise<number> {
   const timer = setTimeout(() => controller.abort(), 6000);
   const start = Date.now();
   try {
-    const res = await fetch(`${cleaned}/ping`, {
+    const res = await fetch(`${cleaned}/health`, {
       method: "GET",
       headers: { Accept: "application/json" },
       signal: controller.signal,

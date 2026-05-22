@@ -481,7 +481,10 @@ export const api = {
       `/validators/${encodeURIComponent(address)}/epochs?limit=${limit}&offset=${offset}`
     ),
 
-  ping: () => request<unknown>("/ping"),
+  ping: () => {
+    const t0 = Date.now();
+    return fetch("https://chain.mvault.pro/api/health").then(() => Date.now() - t0);
+  },
 
   getVerifiedTokens: async (): Promise<ApiVerifiedToken[]> => {
     const base = getPublicApiBase();

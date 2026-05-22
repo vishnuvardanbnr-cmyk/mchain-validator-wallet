@@ -205,9 +205,8 @@ export default function DashboardScreen() {
     if (rpcHideTimer.current) clearTimeout(rpcHideTimer.current);
     Animated.timing(rpcBadgeOpacity, { toValue: 0, duration: 100, useNativeDriver: true }).start();
     try {
-      const start = Date.now();
-      await api.ping();
-      setRpcMs(Date.now() - start);
+      const ms = await api.ping() as number;
+      setRpcMs(ms);
     } catch {
       setRpcMs(-1);
     } finally {
@@ -235,9 +234,8 @@ export default function DashboardScreen() {
     const id = setInterval(async () => {
       if (cancelled) return;
       try {
-        const start = Date.now();
-        await api.ping();
-        if (!cancelled) setRpcMs(Date.now() - start);
+        const ms = await api.ping() as number;
+        if (!cancelled) setRpcMs(ms);
       } catch {
         if (!cancelled) setRpcMs(-1);
       }
