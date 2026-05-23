@@ -47,8 +47,8 @@ export function privateKeyToEthAddress(privateKeyHex: string): `0x${string}` {
 
 // ── Chain config ──────────────────────────────────────────────────────────────
 
-const CHAIN_RPC_URL = "https://chain.mvault.pro/api/rpc";
-const CHAIN_URL     = "https://chain.mvault.pro/api";
+const CHAIN_RPC_URL = "https://node.mymchain.com/api/rpc";
+const CHAIN_URL     = "https://node.mymchain.com/api";
 
 const mchain: Chain = {
   id: 1888,

@@ -25,7 +25,7 @@ A React Native (Expo) mobile wallet and validator app for the MChain network —
   - `app/onboarding.tsx` — first-run keypair generation flow
   - `context/WalletContext.tsx` — global wallet state, key management
   - `services/crypto.ts` — secp256k1 keygen + mxc1 bech32 address derivation
-  - `services/api.ts` — all MChain REST API calls (chain.mvault.pro)
+  - `services/api.ts` — all MChain REST API calls (node.mymchain.com)
   - `services/backgroundTasks.ts` — expo-task-manager heartbeat task
   - `hooks/useHeartbeat.ts` — foreground heartbeat polling (60s)
   - `constants/colors.ts` — dark-only theme palette
@@ -37,7 +37,7 @@ A React Native (Expo) mobile wallet and validator app for the MChain network —
 - Address derivation: compressed secp256k1 pubkey → keccak256 → last 20 bytes → bech32 prefix "mxc1"
 - Private key stored only in expo-secure-store; never in AsyncStorage or logs
 - Background heartbeat uses `expo-background-fetch` + `expo-task-manager`; foreground polling via React hook
-- Chain ID: 1888, native token: MC, API base: `https://chain.mvault.pro/api`
+- Chain ID: 1888, native token: MC, API base: `https://node.mymchain.com/api`
 
 ## Product
 

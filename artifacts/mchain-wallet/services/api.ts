@@ -498,7 +498,7 @@ export const api = {
 
   ping: () => {
     const t0 = Date.now();
-    return fetch("https://chain.mvault.pro/api/health").then(() => Date.now() - t0);
+    return fetch("https://node.mymchain.com/api/health").then(() => Date.now() - t0);
   },
 
   getVerifiedTokens: async (): Promise<ApiVerifiedToken[]> => {

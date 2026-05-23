@@ -754,7 +754,7 @@ router.get("/p2p/wallet-balance/:address", async (req, res) => {
   if (!address) { res.status(400).json({ error: "address required" }); return; }
 
   const { createPublicClient, http, formatEther, parseAbi } = await import("viem");
-  const MCHAIN_RPC = "https://chain.mvault.pro/api/rpc";
+  const MCHAIN_RPC = "https://node.mymchain.com/api/rpc";
   const mchain = {
     id: 1888, name: "Mchain",
     nativeCurrency: { name: "MC", symbol: "MC", decimals: 18 },

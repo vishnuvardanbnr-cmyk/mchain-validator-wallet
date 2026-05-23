@@ -1,6 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-export const DEFAULT_NODE_URL = "https://chain.mvault.pro/api";
+export const DEFAULT_NODE_URL = "https://node.mymchain.com/api";
 
 const STORAGE_KEY = "mchain_node_url_v1";
 

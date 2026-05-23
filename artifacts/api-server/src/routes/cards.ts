@@ -8,7 +8,7 @@ import Stripe from "stripe";
 const router = Router();
 
 // ── MChain config ────────────────────────────────────────────────────────────
-const MCHAIN_RPC = "https://chain.mvault.pro/api/rpc";
+const MCHAIN_RPC = "https://node.mymchain.com/api/rpc";
 const USDT_DECIMALS = 6;
 
 const mchain = {

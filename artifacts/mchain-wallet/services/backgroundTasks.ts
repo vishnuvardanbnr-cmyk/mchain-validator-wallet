@@ -8,7 +8,7 @@ import { sendNotifIfEnabled } from "./notificationPrefs";
 
 export const HEARTBEAT_TASK = "mchain-validator-heartbeat";
 
-const CHAIN_BASE = "https://chain.mvault.pro/api";
+const CHAIN_BASE = "https://node.mymchain.com/api";
 const VALIDATOR_ADDRESS_KEY = "mchain_validator_address";
 const VALIDATOR_STATUS_KEY = "validatorStatus";
 const VALIDATOR_WALLET_ID_KEY = "mchain_validator_wallet_id";
