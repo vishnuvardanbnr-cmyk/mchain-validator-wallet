@@ -289,6 +289,7 @@ interface DepositModalProps {
 function DepositModal({ visible, onClose, address, tradingBalance, onSuccess }: DepositModalProps) {
   const { getPrivateKey }  = useWallet();
   const { requestPin }     = usePinContext();
+  const insets             = useSafeAreaInsets();
   const slideAnim          = useRef(new Animated.Value(700)).current;
   const overlayOpacity     = useRef(new Animated.Value(0)).current;
   const [mounted, setMounted] = useState(false);
@@ -531,7 +532,7 @@ function DepositModal({ visible, onClose, address, tradingBalance, onSuccess }: 
                   </Text>
                 </LinearGradient>
               </TouchableOpacity>
-              <View style={{ height: 10 }} />
+              <View style={{ height: insets.bottom + 88 }} />
             </View>
           )}
 
