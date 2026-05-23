@@ -264,7 +264,7 @@ function TxDetailSheet({
 
             <TouchableOpacity
               style={s.explorerBtn}
-              onPress={() => Linking.openURL(`https://explorer.mvault.pro/tx/${entry.hash}`).catch(() => null)}
+              onPress={() => Linking.openURL(`https://mchainscan.com/tx/${entry.hash}`).catch(() => null)}
               activeOpacity={0.8}
             >
               <Icon name="open-outline" size={15} color={colors.primary} />
