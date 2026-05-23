@@ -8,6 +8,7 @@ import { api } from "@/services/api";
 import {
   buildErc20TransferData,
   mcToWei,
+  mxcAddressToEthAddress,
   shortenAddress,
   signEvmTransaction,
   weiToMc,
@@ -279,7 +280,9 @@ export default function SendScreen() {
     const isValidMxc = trimmed.startsWith("mxc1") && trimmed.length >= 20;
     const isValidEth = /^0x[0-9a-fA-F]{40}$/.test(trimmed);
     if (!isValidMxc && !isValidEth) return "Enter a valid mxc1... or 0x... address";
-    if (trimmed === mxcAddress) return "Cannot send to your own address";
+    const toEth  = isValidMxc ? mxcAddressToEthAddress(trimmed).toLowerCase() : trimmed.toLowerCase();
+    const myEth  = mxcAddress?.startsWith("mxc1") ? mxcAddressToEthAddress(mxcAddress).toLowerCase() : (mxcAddress ?? "").toLowerCase();
+    if (toEth === myEth) return "Cannot send to your own address";
     const amt = parseFloat(amount);
     if (isNaN(amt) || amt <= 0) return "Enter a valid amount";
     if (isToken) {
