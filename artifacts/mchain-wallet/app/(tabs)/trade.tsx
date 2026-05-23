@@ -344,18 +344,15 @@ function DepositModal({ visible, onClose, address, tradingBalance, onSuccess }: 
       );
 
       setStatusMsg("Broadcasting transaction…");
-      await api.sendRawTransaction(signedTx);
+      const { txHash } = await api.sendRawTransaction(signedTx);
 
       setStep("confirming");
-      setStatusMsg("Waiting for block confirmation…");
-      await new Promise(r => setTimeout(r, 9000));
+      setStatusMsg("Waiting for 2 confirmations…");
+      await api.waitForReceipt(txHash);
 
       setStep("verifying");
       setStatusMsg("Crediting trading balance…");
-      for (let i = 0; i < 5; i++) {
-        try { await verifyCardDeposit(address); break; } catch { /* retry */ }
-        await new Promise(r => setTimeout(r, 4000));
-      }
+      await verifyCardDeposit(address);
 
       const balRes = await fetch(`${getPublicApiBase()}/trading/balance/${address}`);
       const balData = (await balRes.json()) as { balance: number };

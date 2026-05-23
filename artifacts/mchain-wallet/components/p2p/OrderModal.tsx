@@ -27,12 +27,13 @@ interface Props {
   onOrderPlaced: () => void;
 }
 
-type Step = "idle" | "signing" | "broadcasting" | "placing";
+type Step = "idle" | "signing" | "broadcasting" | "confirming" | "placing";
 
 const STEP_LABELS: Record<Step, string> = {
   idle:        "",
   signing:     "Signing transaction…",
   broadcasting:"Broadcasting to chain…",
+  confirming:  "Waiting for 2 confirmations…",
   placing:     "Placing order…",
 };
 
@@ -134,6 +135,9 @@ export function OrderModal({ visible, ad, onClose, onOrderPlaced }: Props) {
       setStep("broadcasting");
       const result = await api.sendRawTransaction(signedTx);
       const escrowTxHash = result.txHash;
+
+      setStep("confirming");
+      await api.waitForReceipt(escrowTxHash);
 
       // Place the order with the escrow lock
       setStep("placing");

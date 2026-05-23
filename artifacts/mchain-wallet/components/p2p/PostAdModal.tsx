@@ -27,12 +27,13 @@ interface Props {
   onPosted: () => void;
 }
 
-type Step = "idle" | "locking" | "broadcasting" | "creating" | "done";
+type Step = "idle" | "locking" | "broadcasting" | "confirming" | "creating" | "done";
 
 const STEP_LABELS: Record<Step, string> = {
   idle:        "Post Ad",
   locking:     "Signing transaction…",
   broadcasting:"Broadcasting to chain…",
+  confirming:  "Waiting for 2 confirmations…",
   creating:    "Publishing ad…",
   done:        "Done!",
 };
@@ -181,6 +182,9 @@ export function PostAdModal({ visible, onClose, onPosted }: Props) {
         setStep("broadcasting");
         const result = await api.sendRawTransaction(signedTx);
         escrowTxHash = result.txHash;
+
+        setStep("confirming");
+        await api.waitForReceipt(escrowTxHash);
       }
 
       // Create the ad

@@ -386,6 +386,21 @@ export const api = {
     rpcRequest<string>("eth_sendRawTransaction", [signedTx])
       .then(hash => ({ txHash: hash as string })),
 
+  getTransactionReceipt: (txHash: string) =>
+    rpcRequest<Record<string, unknown> | null>("eth_getTransactionReceipt", [txHash]),
+
+  waitForReceipt: async (txHash: string, timeoutMs = 30_000): Promise<Record<string, unknown>> => {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      const receipt = await rpcRequest<Record<string, unknown> | null>(
+        "eth_getTransactionReceipt", [txHash]
+      );
+      if (receipt) return receipt;
+      await new Promise(r => setTimeout(r, 2000));
+    }
+    throw new Error("Transaction not confirmed within 30 seconds");
+  },
+
   registerValidator: (data: {
     address: string;
     ethAddress: string;

@@ -185,6 +185,7 @@ export function TradeRoomModal({ visible, orderId, onClose }: Props) {
       const amountWei = mcToWei(order.cryptoAmount);
       const signedTx = signEvmTransaction(escrowInfo.escrowAddress, BigInt(amountWei), nonce, pk);
       const result = await api.sendRawTransaction(signedTx);
+      await api.waitForReceipt(result.txHash);
       await p2pApi.lockEscrow(orderId, mxcAddress, result.txHash);
       return result.txHash;
     },
