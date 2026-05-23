@@ -314,7 +314,7 @@ export default function SendScreen() {
     dismissPin();
     try {
       if (!account?.ethAddress) throw new Error("Account not loaded — wait a moment and retry");
-      const nonce = await api.getEvmNonce(account.ethAddress);
+      const nonce = account.nonce;
       let result: { txHash: string };
 
       if (isToken && selectedToken) {

@@ -177,8 +177,7 @@ export function TradeRoomModal({ visible, orderId, onClose }: Props) {
       if (!mxcAddress || !order) throw new Error("No wallet or order");
       if (!escrowInfo?.escrowAddress) throw new Error("Escrow not configured — contact admin");
 
-      const account = await api.getAccount(mxcAddress);
-      const nonce = await api.getEvmNonce(account.ethAddress);
+      const { nonce } = await api.getAccount(mxcAddress);
       const amountWei = mcToWei(order.cryptoAmount);
       const result = await api.sendTransaction({
         fromAddress: mxcAddress,

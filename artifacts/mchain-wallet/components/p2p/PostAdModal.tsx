@@ -155,8 +155,7 @@ export function PostAdModal({ visible, onClose, onPosted }: Props) {
         }
 
         setStep("locking");
-        const account = await api.getAccount(mxcAddress);
-        const nonce = await api.getEvmNonce(account.ethAddress);
+        const { nonce } = await api.getAccount(mxcAddress);
 
         let result: { txHash: string };
         if (token === "MC") {

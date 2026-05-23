@@ -109,8 +109,7 @@ export function OrderModal({ visible, ad, onClose, onOrderPlaced }: Props) {
       }
 
       setStep("signing");
-      const account = await api.getAccount(mxcAddress);
-      const nonce   = await api.getEvmNonce(account.ethAddress);
+      const { nonce } = await api.getAccount(mxcAddress);
 
       let result: { txHash: string };
       if (ad.token === "MC") {

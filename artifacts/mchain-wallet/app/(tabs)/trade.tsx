@@ -335,7 +335,7 @@ function DepositModal({ visible, onClose, address, tradingBalance, onSuccess }: 
 
       setStatusMsg("Broadcasting transaction…");
       const amountRaw = BigInt(Math.round(amt * Math.pow(10, USDT_DECIMALS)));
-      const nonce     = await api.getEvmNonce(address);
+      const { nonce } = await api.getAccount(address);
       const data      = buildErc20TransferDataHex(depositAddr, amountRaw);
       const { txHash } = await api.sendTransaction({
         fromAddress: address,
