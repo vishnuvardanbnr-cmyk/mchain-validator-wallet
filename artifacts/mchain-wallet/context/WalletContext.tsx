@@ -86,7 +86,8 @@ interface WalletContextType {
 
   addWallet: (keypair: KeyPair, label: string) => Promise<WalletEntry>;
   /** Add an NFC wallet without storing the private key — card+PIN required per transaction */
-  addNfcTemporaryWallet: (keypair: KeyPair, label: string) => Promise<WalletEntry>;
+  /** sessionMins: 0 = never auto-remove, undefined/omitted = use default 5 min */
+  addNfcTemporaryWallet: (keypair: KeyPair, label: string, sessionMins?: number) => Promise<WalletEntry>;
   switchWallet: (id: string) => Promise<void>;
   removeWallet: (id: string) => Promise<{ error?: string }>;
   setValidatorWallet: (id: string) => Promise<void>;
@@ -411,9 +412,13 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   );
 
   const addNfcTemporaryWallet = useCallback(
-    async (keypair: KeyPair, label: string): Promise<WalletEntry> => {
+    async (keypair: KeyPair, label: string, sessionMins?: number): Promise<WalletEntry> => {
       const id = "w_nfc_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7);
-      const sessionExpiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+      const mins = sessionMins === undefined ? 5 : sessionMins;
+      // 0 means "never auto-remove"
+      const sessionExpiresAt = mins > 0
+        ? new Date(Date.now() + mins * 60 * 1000).toISOString()
+        : undefined;
       const entry: WalletEntry = {
         id,
         mxcAddress: keypair.mxcAddress,
@@ -422,7 +427,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         label: label.trim() || "NFC Wallet",
         createdAt: new Date().toISOString(),
         nfcTemporary: true,
-        nfcSessionExpiresAt: sessionExpiresAt,
+        ...(sessionExpiresAt ? { nfcSessionExpiresAt: sessionExpiresAt } : {}),
       };
 
       const updated = [...wallets, entry];

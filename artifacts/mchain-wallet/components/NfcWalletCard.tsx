@@ -16,15 +16,38 @@ import { Icon } from "@/components/Icon";
 import { useColors } from "@/hooks/useColors";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useWallet } from "@/context/WalletContext";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   readWalletFromNfc,
   decryptPrivateKey,
   isNfcSupported,
   cancelNfc,
+  eraseNfcCard,
   type NfcWalletPayload,
 } from "@/services/nfc";
 
-type ScanStatus = "idle" | "scanning" | "pinentry" | "decrypting" | "success" | "error" | "unsupported";
+type ScanStatus =
+  | "idle"
+  | "manage"
+  | "timeout"
+  | "scanning"
+  | "pinentry"
+  | "decrypting"
+  | "success"
+  | "erasing"
+  | "erased"
+  | "erase_error"
+  | "error"
+  | "unsupported";
+
+const NFC_TIMEOUT_KEY = "nfc_auto_timeout_mins";
+const TIMEOUT_OPTIONS: { label: string; value: number }[] = [
+  { label: "5 minutes", value: 5 },
+  { label: "15 minutes", value: 15 },
+  { label: "30 minutes", value: 30 },
+  { label: "1 hour", value: 60 },
+  { label: "Never", value: 0 },
+];
 
 const PIN_LENGTH = 6;
 const KEYS = [["1", "2", "3"], ["4", "5", "6"], ["7", "8", "9"], ["", "0", "DEL"]];
@@ -132,6 +155,15 @@ export function NfcWalletCard({ open, onClose, hideCard }: NfcWalletCardProps = 
   const [scannedPayload, setScannedPayload] = useState<NfcWalletPayload | null>(null);
   const [pin, setPin] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
+  const [eraseErrorMsg, setEraseErrorMsg] = useState("");
+  const [timeoutMins, setTimeoutMins] = useState(5);
+
+  // Load stored timeout preference
+  useEffect(() => {
+    AsyncStorage.getItem(NFC_TIMEOUT_KEY).then(val => {
+      if (val !== null) setTimeoutMins(Number(val));
+    });
+  }, []);
 
   const slideAnim = useRef(new Animated.Value(600)).current;
   const overlayOpacity = useRef(new Animated.Value(0)).current;
@@ -188,16 +220,13 @@ export function NfcWalletCard({ open, onClose, hideCard }: NfcWalletCardProps = 
   function openModal() {
     successScale.setValue(0);
     setModalVisible(true);
-    setScanStatus("idle");
+    setScanStatus("manage");
     setScannedPayload(null);
-    setPin(""); setErrorMsg("");
+    setPin(""); setErrorMsg(""); setEraseErrorMsg("");
     Animated.parallel([
       Animated.timing(slideAnim, { toValue: 0, duration: 380, useNativeDriver: true, easing: Easing.out(Easing.back(1.1)) }),
       Animated.timing(overlayOpacity, { toValue: 1, duration: 280, useNativeDriver: true }),
-    ]).start(() => {
-      // startScan() internally calls crossfadeTo("scanning") — don't call it again here
-      startScan();
-    });
+    ]).start();
   }
 
   function closeModal() {
@@ -271,7 +300,7 @@ export function NfcWalletCard({ open, onClose, hideCard }: NfcWalletCardProps = 
       if (existing) {
         await switchWallet(existing.id);
       } else {
-        const entry = await addNfcTemporaryWallet(keypair, scannedPayload.label || "NFC Wallet");
+        const entry = await addNfcTemporaryWallet(keypair, scannedPayload.label || "NFC Wallet", timeoutMins);
         await switchWallet(entry.id);
       }
       if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -283,6 +312,26 @@ export function NfcWalletCard({ open, onClose, hideCard }: NfcWalletCardProps = 
       setPin("");
       crossfadeTo("pinentry");
     }
+  }
+
+  async function startErase() {
+    setEraseErrorMsg("");
+    crossfadeTo("erasing");
+    try {
+      await eraseNfcCard();
+      if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      crossfadeTo("erased");
+    } catch (e) {
+      if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      setEraseErrorMsg(e instanceof Error ? e.message : "Erase failed. Try again.");
+      crossfadeTo("erase_error");
+    }
+  }
+
+  async function saveTimeout(mins: number) {
+    setTimeoutMins(mins);
+    await AsyncStorage.setItem(NFC_TIMEOUT_KEY, String(mins));
+    crossfadeTo("manage");
   }
 
   const s = StyleSheet.create({
@@ -368,11 +417,197 @@ export function NfcWalletCard({ open, onClose, hideCard }: NfcWalletCardProps = 
       borderColor: colors.border, paddingVertical: 15, alignItems: "center", marginBottom: 10,
     },
     retryText: { fontSize: 15, fontFamily: "Inter_600SemiBold", color: colors.foreground },
+
+    // ── Manage view ────────────────────────────────────────────────────────
+    manageList: { width: "100%", gap: 10, paddingTop: 8, paddingBottom: 16 },
+    manageOption: {
+      flexDirection: "row", alignItems: "center", gap: 14,
+      backgroundColor: colors.card, borderRadius: 16,
+      borderWidth: 1, borderColor: colors.border,
+      padding: 16,
+    },
+    manageOptionDanger: { borderColor: "#EF444430", backgroundColor: "#EF444408" },
+    manageIconWrap: {
+      width: 44, height: 44, borderRadius: 14,
+      alignItems: "center", justifyContent: "center",
+    },
+    manageOptionTitle: { fontSize: 15, fontFamily: "Inter_600SemiBold", color: colors.foreground },
+    manageOptionSub: { fontSize: 12, fontFamily: "Inter_400Regular", color: colors.mutedForeground, marginTop: 1 },
+    manageOptionArrow: { marginLeft: "auto" as unknown as number },
+
+    // ── Timeout view ───────────────────────────────────────────────────────
+    timeoutList: { width: "100%", gap: 8, paddingTop: 8, paddingBottom: 16 },
+    timeoutOption: {
+      flexDirection: "row", alignItems: "center",
+      backgroundColor: colors.card, borderRadius: 14,
+      borderWidth: 1, borderColor: colors.border,
+      paddingVertical: 14, paddingHorizontal: 16,
+    },
+    timeoutOptionActive: { borderColor: colors.primary + "60", backgroundColor: colors.primary + "10" },
+    timeoutOptionLabel: { flex: 1, fontSize: 14, fontFamily: "Inter_500Medium", color: colors.foreground },
+    timeoutOptionLabelActive: { fontFamily: "Inter_700Bold", color: colors.primary },
+    timeoutCheck: {
+      width: 22, height: 22, borderRadius: 11,
+      backgroundColor: colors.primary + "20",
+      alignItems: "center", justifyContent: "center",
+    },
+
+    // ── Erase erased view ─────────────────────────────────────────────────
+    warningCircle: {
+      width: 88, height: 88, borderRadius: 44,
+      backgroundColor: "#F59E0B15", borderWidth: 1.5, borderColor: "#F59E0B40",
+      alignItems: "center", justifyContent: "center", marginBottom: 20, marginTop: 8,
+    },
+    dangerBtn: {
+      width: "100%", borderRadius: 16, overflow: "hidden", marginBottom: 10,
+    },
+    dangerGrad: { paddingVertical: 16, alignItems: "center", justifyContent: "center" },
+    dangerBtnText: { fontSize: 15, fontFamily: "Inter_700Bold", color: "#FFF" },
   });
 
   if (nfcSupported === false) return null;
 
   function renderSheetContent() {
+    // ── Manage menu ─────────────────────────────────────────────────────────
+    if (scanStatus === "manage") {
+      const currentLabel = TIMEOUT_OPTIONS.find(o => o.value === timeoutMins)?.label ?? "5 minutes";
+      return (
+        <View style={[s.body, { alignItems: "stretch" }]}>
+          <View style={s.manageList}>
+            <TouchableOpacity style={s.manageOption} onPress={() => { setPin(""); setErrorMsg(""); startScan(); }} activeOpacity={0.75}>
+              <LinearGradient colors={["#6366F1", "#0EA5E9"]} style={s.manageIconWrap}>
+                <Icon name="wifi-outline" size={22} color="#FFF" />
+              </LinearGradient>
+              <View style={{ flex: 1 }}>
+                <Text style={s.manageOptionTitle}>Load from Card</Text>
+                <Text style={s.manageOptionSub}>Scan an NFC wallet card to load it into the app</Text>
+              </View>
+              <Icon name="chevron-forward" size={16} color={colors.mutedForeground} />
+            </TouchableOpacity>
+
+            <TouchableOpacity style={s.manageOption} onPress={() => crossfadeTo("timeout")} activeOpacity={0.75}>
+              <LinearGradient colors={["#F59E0B", "#D97706"]} style={s.manageIconWrap}>
+                <Icon name="time-outline" size={22} color="#FFF" />
+              </LinearGradient>
+              <View style={{ flex: 1 }}>
+                <Text style={s.manageOptionTitle}>Auto Timeout</Text>
+                <Text style={s.manageOptionSub}>Session expires after: {currentLabel}</Text>
+              </View>
+              <Icon name="chevron-forward" size={16} color={colors.mutedForeground} />
+            </TouchableOpacity>
+
+            <TouchableOpacity style={[s.manageOption, s.manageOptionDanger]} onPress={startErase} activeOpacity={0.75}>
+              <View style={[s.manageIconWrap, { backgroundColor: "#EF444420" }]}>
+                <Icon name="trash-outline" size={22} color="#EF4444" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[s.manageOptionTitle, { color: "#EF4444" }]}>Erase Card</Text>
+                <Text style={s.manageOptionSub}>Remove wallet data from an NFC card</Text>
+              </View>
+              <Icon name="chevron-forward" size={16} color="#EF444470" />
+            </TouchableOpacity>
+          </View>
+
+          <TouchableOpacity onPress={closeModal} style={s.ghostBtn}>
+            <Text style={s.ghostBtnText}>Close</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
+    // ── Auto Timeout picker ─────────────────────────────────────────────────
+    if (scanStatus === "timeout") {
+      return (
+        <View style={[s.body, { alignItems: "stretch" }]}>
+          <Text style={[s.nfcLabel, { marginTop: 8 }]}>AUTO TIMEOUT</Text>
+          <Text style={[s.nfcTitle, { fontSize: 18, textAlign: "left", marginBottom: 4 }]}>Session Duration</Text>
+          <Text style={[s.nfcSubtitle, { textAlign: "left", marginBottom: 12 }]}>
+            NFC wallet sessions are automatically removed after this time. Set to Never to keep the session until you manually remove it.
+          </Text>
+          <View style={s.timeoutList}>
+            {TIMEOUT_OPTIONS.map(opt => {
+              const active = opt.value === timeoutMins;
+              return (
+                <TouchableOpacity
+                  key={opt.value}
+                  style={[s.timeoutOption, active && s.timeoutOptionActive]}
+                  onPress={() => saveTimeout(opt.value)}
+                  activeOpacity={0.75}
+                >
+                  <Text style={[s.timeoutOptionLabel, active && s.timeoutOptionLabelActive]}>{opt.label}</Text>
+                  {active && (
+                    <View style={s.timeoutCheck}>
+                      <Icon name="checkmark" size={13} color={colors.primary} />
+                    </View>
+                  )}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+          <TouchableOpacity onPress={() => crossfadeTo("manage")} style={s.ghostBtn}>
+            <Text style={s.ghostBtnText}>Back</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
+    // ── Erase — hold card screen ────────────────────────────────────────────
+    if (scanStatus === "erasing") {
+      return (
+        <View style={s.body}>
+          <View style={{ alignItems: "center", justifyContent: "center", marginTop: 8 }}>
+            <NfcRings color="#EF4444" />
+            <View style={{ position: "absolute" }}>
+              <CardIllustration />
+            </View>
+          </View>
+          <Text style={[s.nfcLabel, { color: "#EF4444" }]}>ERASING</Text>
+          <Text style={s.nfcTitle}>Hold card to phone</Text>
+          <Text style={s.nfcSubtitle}>Place the NFC card against the back of your phone. The wallet data will be overwritten.</Text>
+          <TouchableOpacity onPress={() => { cancelNfc().catch(() => {}); crossfadeTo("manage"); }} style={s.ghostBtn}>
+            <Text style={s.ghostBtnText}>Cancel</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
+    // ── Erase — success ─────────────────────────────────────────────────────
+    if (scanStatus === "erased") {
+      return (
+        <View style={s.body}>
+          <View style={s.successCircle}>
+            <Icon name="checkmark-circle" size={48} color="#10B981" />
+          </View>
+          <Text style={s.nfcTitle}>Card Erased</Text>
+          <Text style={s.nfcSubtitle}>The wallet data has been removed from the card. It is now blank and can be rewritten.</Text>
+          <TouchableOpacity style={s.primaryBtn} onPress={closeModal} activeOpacity={0.85}>
+            <LinearGradient colors={["#10B981", "#059669"]} style={s.primaryGrad}>
+              <Text style={s.primaryBtnText}>Done</Text>
+            </LinearGradient>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
+    // ── Erase — error ───────────────────────────────────────────────────────
+    if (scanStatus === "erase_error") {
+      return (
+        <View style={s.body}>
+          <View style={s.errorCircle}>
+            <Icon name="close-circle" size={48} color="#EF4444" />
+          </View>
+          <Text style={s.nfcTitle}>Erase Failed</Text>
+          <Text style={s.nfcSubtitle}>{eraseErrorMsg || "Could not erase the card. Try again."}</Text>
+          <TouchableOpacity style={s.retryBtn} onPress={() => { setEraseErrorMsg(""); startErase(); }}>
+            <Text style={s.retryText}>Try Again</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => crossfadeTo("manage")} style={s.ghostBtn}>
+            <Text style={s.ghostBtnText}>Back</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
     if (scanStatus === "scanning") {
       return (
         <View style={s.body}>

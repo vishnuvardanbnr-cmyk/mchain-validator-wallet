@@ -30,6 +30,7 @@ export function WalletSwitcherModal({ visible, onClose, onAddWallet }: Props) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { wallets, activeWallet, validatorWallet, switchWallet, removeWallet } = useWallet();
+  const [confirmDeleteId, setConfirmDeleteId] = React.useState<string | null>(null);
 
   const slideAnim = useRef(new Animated.Value(400)).current;
   const overlayOpacity = useRef(new Animated.Value(0)).current;
@@ -50,15 +51,14 @@ export function WalletSwitcherModal({ visible, onClose, onAddWallet }: Props) {
 
   async function handleSwitch(wallet: WalletEntry) {
     if (wallet.id === activeWallet?.id) return;
+    setConfirmDeleteId(null);
     await switchWallet(wallet.id);
     onClose();
   }
 
-  async function handleRemove(wallet: WalletEntry) {
-    const result = await removeWallet(wallet.id);
-    if (result.error) {
-      // noop — button is disabled for validator wallet anyway
-    }
+  async function handleRemove(id: string) {
+    await removeWallet(id);
+    setConfirmDeleteId(null);
   }
 
   const s = StyleSheet.create({
@@ -183,6 +183,40 @@ export function WalletSwitcherModal({ visible, onClose, onAddWallet }: Props) {
       alignItems: "center",
       justifyContent: "center",
     },
+    confirmRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+    },
+    confirmLabel: {
+      fontSize: 11,
+      fontFamily: "Inter_600SemiBold",
+      color: "#EF4444",
+    },
+    confirmYes: {
+      paddingHorizontal: 10,
+      paddingVertical: 5,
+      borderRadius: 8,
+      backgroundColor: "#EF4444",
+    },
+    confirmYesText: {
+      fontSize: 11,
+      fontFamily: "Inter_700Bold",
+      color: "#FFF",
+    },
+    confirmNo: {
+      paddingHorizontal: 10,
+      paddingVertical: 5,
+      borderRadius: 8,
+      backgroundColor: colors.card,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    confirmNoText: {
+      fontSize: 11,
+      fontFamily: "Inter_600SemiBold",
+      color: colors.mutedForeground,
+    },
     addBtn: {
       marginHorizontal: 16,
       marginTop: 4,
@@ -269,14 +303,26 @@ export function WalletSwitcherModal({ visible, onClose, onAddWallet }: Props) {
                       </View>
                     )}
 
-                    {canRemove && !isActive && (
+                    {canRemove && !isActive && confirmDeleteId !== wallet.id && (
                       <TouchableOpacity
                         style={s.removeBtn}
-                        onPress={() => handleRemove(wallet)}
+                        onPress={() => setConfirmDeleteId(wallet.id)}
                         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                       >
                         <Icon name="trash-outline" size={13} color="#EF4444" />
                       </TouchableOpacity>
+                    )}
+
+                    {canRemove && !isActive && confirmDeleteId === wallet.id && (
+                      <View style={s.confirmRow}>
+                        <Text style={s.confirmLabel}>Delete?</Text>
+                        <TouchableOpacity style={s.confirmNo} onPress={() => setConfirmDeleteId(null)}>
+                          <Text style={s.confirmNoText}>Cancel</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={s.confirmYes} onPress={() => handleRemove(wallet.id)}>
+                          <Text style={s.confirmYesText}>Delete</Text>
+                        </TouchableOpacity>
+                      </View>
                     )}
                   </TouchableOpacity>
                 );

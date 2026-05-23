@@ -256,6 +256,34 @@ export async function readWalletFromNfc(): Promise<NfcWalletPayload | null> {
   }
 }
 
+// ── Erase NFC card (overwrite with empty marker) ─────────────────────────────
+
+/**
+ * Erase an NFC card by overwriting it with a non-wallet NDEF record.
+ * Replaces the wallet payload so it can no longer be used to load a wallet.
+ */
+export async function eraseNfcCard(): Promise<void> {
+  const mod = await import("react-native-nfc-manager");
+  const { Ndef } = mod;
+  const NfcManager = mod.default;
+  await NfcManager.start();
+  try {
+    await NfcManager.requestTechnology("Ndef" as never);
+    const bytes = Ndef.encodeMessage([Ndef.textRecord('{"v":0,"erased":true}')]);
+    await new Promise<void>((resolve, reject) => {
+      NfcManager.ndefHandler.writeNdefMessage(bytes)
+        .then(() => resolve())
+        .catch(() =>
+          NfcManager.ndefHandler.format(bytes)
+            .then(() => resolve())
+            .catch((err: unknown) => reject(err))
+        );
+    });
+  } finally {
+    NfcManager.cancelTechnologyRequest().catch(() => {});
+  }
+}
+
 // ── Cancel any pending NFC operation ─────────────────────────────────────────
 
 export async function cancelNfc(): Promise<void> {
