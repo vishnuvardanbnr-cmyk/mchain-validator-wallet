@@ -197,6 +197,18 @@ export default function DashboardScreen() {
   const rpcHideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scrollRef = useRef<ScrollView>(null);
 
+  // Silent ping — updates dot colour only, no badge shown.
+  // Used on app focus and background poll so the first cold-start reading
+  // (which can be high due to DNS/TLS setup) doesn't flash a misleading number.
+  async function silentPing() {
+    try {
+      const ms = await api.ping() as number;
+      setRpcMs(ms);
+    } catch {
+      setRpcMs(-1);
+    }
+  }
+
   // On-tap ping — updates dot colour AND shows ms badge
   async function handlePingRpc() {
     if (rpcPinging) return;
@@ -220,11 +232,11 @@ export default function DashboardScreen() {
     }
   }
 
-  // Scroll to top + ping RPC whenever this tab is focused
+  // Scroll to top + silent ping whenever this tab is focused
   useFocusEffect(
     useCallback(() => {
       scrollRef.current?.scrollTo({ y: 0, animated: false });
-      void handlePingRpc();
+      void silentPing();
     }, []) // eslint-disable-line react-hooks/exhaustive-deps
   );
 

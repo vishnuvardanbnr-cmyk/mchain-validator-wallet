@@ -77,33 +77,9 @@ export default function TabLayout() {
           ),
         }}
       />
-      <Tabs.Screen
-        name="copy-trade"
-        options={{
-          title: "Copy",
-          tabBarIcon: ({ color, focused }) => (
-            <Icon name={focused ? "people" : "people-outline"} size={22} color={color} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="bot-analytics"
-        options={{
-          title: "Bot",
-          tabBarIcon: ({ color, focused }) => (
-            <Icon name={focused ? "analytics" : "analytics-outline"} size={22} color={color} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="bot-backtest"
-        options={{
-          title: "Backtest",
-          tabBarIcon: ({ color, focused }) => (
-            <Icon name={focused ? "bar-chart" : "bar-chart-outline"} size={22} color={color} />
-          ),
-        }}
-      />
+      <Tabs.Screen name="copy-trade" options={{ href: null }} />
+      <Tabs.Screen name="bot-analytics" options={{ href: null }} />
+      <Tabs.Screen name="bot-backtest" options={{ href: null }} />
       <Tabs.Screen
         name="p2p"
         options={{
