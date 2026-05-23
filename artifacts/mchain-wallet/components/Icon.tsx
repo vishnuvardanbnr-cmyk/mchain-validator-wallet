@@ -25,6 +25,7 @@ import {
   CloudUpload,
   Copy,
   Cpu,
+  CreditCard,
   Bell,
   BellOff,
   Delete,
@@ -67,6 +68,7 @@ import {
   Star,
   Store,
   Trash2,
+  TrendingUp,
   Trophy,
   Unlink,
   User,
@@ -131,6 +133,10 @@ const MAP: Record<string, LucideIcon> = {
   "close": X,
   "close-circle": CircleX,
   "x": X,
+
+  // card / credit card
+  "card": CreditCard,
+  "card-outline": CreditCard,
 
   // clipboard / copy
   "clipboard": Clipboard,
@@ -284,6 +290,10 @@ const MAP: Record<string, LucideIcon> = {
 
   // store / storefront
   "storefront-outline": Store,
+
+  // trending
+  "trending-up": TrendingUp,
+  "trending-up-outline": TrendingUp,
 
   // swap
   "swap-horizontal": ArrowLeftRight,

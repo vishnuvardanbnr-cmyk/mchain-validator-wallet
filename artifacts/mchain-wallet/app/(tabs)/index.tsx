@@ -197,13 +197,23 @@ export default function DashboardScreen() {
   const rpcHideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scrollRef = useRef<ScrollView>(null);
 
-  // Silent ping — updates dot colour only, no badge shown.
-  // Used on app focus and background poll so the first cold-start reading
-  // (which can be high due to DNS/TLS setup) doesn't flash a misleading number.
+  // Silent ping — updates dot colour and, after a 3-second delay, briefly
+  // shows the ms badge. Used on app focus so the cold-start DNS/TLS cost
+  // doesn't show a misleading number immediately.
   async function silentPing() {
     try {
       const ms = await api.ping() as number;
       setRpcMs(ms);
+      // Show the badge 3 s after we have a real reading
+      setTimeout(() => {
+        setShowRpcBadge(true);
+        Animated.timing(rpcBadgeOpacity, { toValue: 1, duration: 200, useNativeDriver: true }).start();
+        if (rpcHideTimer.current) clearTimeout(rpcHideTimer.current);
+        rpcHideTimer.current = setTimeout(() => {
+          Animated.timing(rpcBadgeOpacity, { toValue: 0, duration: 400, useNativeDriver: true }).start();
+          setTimeout(() => setShowRpcBadge(false), 400);
+        }, 4000);
+      }, 3000);
     } catch {
       setRpcMs(-1);
     }
@@ -767,7 +777,7 @@ export default function DashboardScreen() {
               ) : (
                 <View style={[s.statusDot, {
                   backgroundColor:
-                    rpcMs === null ? colors.mutedForeground :
+                    rpcMs === null ? "#10B981" :
                     rpcMs < 0 ? "#EF4444" :
                     rpcMs < 300 ? "#10B981" :
                     rpcMs < 700 ? "#F59E0B" : "#EF4444",
