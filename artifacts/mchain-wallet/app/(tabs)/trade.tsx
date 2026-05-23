@@ -2,7 +2,7 @@ import { Icon } from "@/components/Icon";
 import { usePinContext } from "@/context/PinContext";
 import { useWallet } from "@/context/WalletContext";
 import { api, getPublicApiBase, initCardAccount, verifyCardDeposit } from "@/services/api";
-import { buildErc20TransferData, signEvmTransaction } from "@/services/crypto";
+import { buildErc20TransferDataHex } from "@/services/crypto";
 import { fetchTokenBalanceRaw } from "@/services/tokens";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import * as Haptics from "expo-haptics";
@@ -324,7 +324,7 @@ function DepositModal({ visible, onClose, address, tradingBalance, onSuccess }: 
     }
   }, [visible]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  async function performDeposit(privKey: string) {
+  async function performDeposit() {
     try {
       const amt = parseFloat(amount);
       setStep("broadcasting");
@@ -333,18 +333,18 @@ function DepositModal({ visible, onClose, address, tradingBalance, onSuccess }: 
       const { account } = await initCardAccount(address);
       const depositAddr  = account.deposit_address;
 
-      setStatusMsg("Signing transaction…");
+      setStatusMsg("Broadcasting transaction…");
       const amountRaw = BigInt(Math.round(amt * Math.pow(10, USDT_DECIMALS)));
       const nonce     = await api.getEvmNonce(address);
-      const data      = buildErc20TransferData(depositAddr, amountRaw);
-      const signedTx  = signEvmTransaction(
-        USDT_CONTRACT as `0x${string}`,
-        0n, nonce, privKey,
-        { gasLimit: 100_000n, data },
-      );
-
-      setStatusMsg("Broadcasting transaction…");
-      const { txHash } = await api.sendRawTransaction(signedTx);
+      const data      = buildErc20TransferDataHex(depositAddr, amountRaw);
+      const { txHash } = await api.sendTransaction({
+        fromAddress: address,
+        toAddress: USDT_CONTRACT,
+        amount: "0",
+        data,
+        txType: "contract_call",
+        nonce,
+      });
 
       setStep("confirming");
       setStatusMsg("Waiting for 2 confirmations…");
@@ -377,9 +377,7 @@ function DepositModal({ visible, onClose, address, tradingBalance, onSuccess }: 
       title:    "Confirm Deposit",
       subtitle: `Transfer $${amt.toFixed(2)} USDT from your wallet to your trading balance`,
       onSuccess: async () => {
-        const pk = await getPrivateKey();
-        if (!pk) { setDepositErr("Could not retrieve private key"); setStep("error"); return; }
-        void performDeposit(pk);
+        void performDeposit();
       },
       onCancel: () => {},
     });

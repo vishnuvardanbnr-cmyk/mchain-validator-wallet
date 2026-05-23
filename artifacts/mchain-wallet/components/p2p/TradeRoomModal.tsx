@@ -6,7 +6,7 @@ import { usePinContext } from "@/context/PinContext";
 import { useColors } from "@/hooks/useColors";
 import { p2pApi, type P2pDispute, type P2pMessage, type P2pOrder, type EscrowInfo } from "@/services/p2pApi";
 import { api } from "@/services/api";
-import { mcToWei, signEvmTransaction } from "@/services/crypto";
+import { mcToWei, ethAddressToMxc } from "@/services/crypto";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Haptics from "expo-haptics";
 import * as ImagePicker from "expo-image-picker";
@@ -177,14 +177,18 @@ export function TradeRoomModal({ visible, orderId, onClose }: Props) {
       if (!mxcAddress || !order) throw new Error("No wallet or order");
       if (!escrowInfo?.escrowAddress) throw new Error("Escrow not configured — contact admin");
 
-      const pk = await getPrivateKey();
-      if (!pk) throw new Error("Cannot access private key — unlock your wallet first");
-
       const account = await api.getAccount(mxcAddress);
       const nonce = await api.getEvmNonce(account.ethAddress);
       const amountWei = mcToWei(order.cryptoAmount);
-      const signedTx = signEvmTransaction(escrowInfo.escrowAddress, BigInt(amountWei), nonce, pk);
-      const result = await api.sendRawTransaction(signedTx);
+      const toAddress = escrowInfo.escrowAddress.startsWith("0x")
+        ? ethAddressToMxc(escrowInfo.escrowAddress)
+        : escrowInfo.escrowAddress;
+      const result = await api.sendTransaction({
+        fromAddress: mxcAddress,
+        toAddress,
+        amount: amountWei,
+        nonce,
+      });
       await api.waitForReceipt(result.txHash);
       await p2pApi.lockEscrow(orderId, mxcAddress, result.txHash);
       return result.txHash;

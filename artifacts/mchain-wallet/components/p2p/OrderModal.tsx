@@ -7,7 +7,7 @@ import { p2pApi, type P2pAd } from "@/services/p2pApi";
 import { METHOD_FIELDS, METHOD_LABELS } from "@/services/paymentMethods";
 import { api } from "@/services/api";
 import {
-  signEvmTransaction, mcToWei, buildErc20TransferData, mxcAddressToEthAddress,
+  mcToWei, buildErc20TransferDataHex, mxcAddressToEthAddress, ethAddressToMxc,
 } from "@/services/crypto";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
@@ -108,32 +108,42 @@ export function OrderModal({ visible, ad, onClose, onOrderPlaced }: Props) {
         setToast("Escrow wallet not configured — contact admin"); setStep("idle"); return;
       }
 
-      // Sign the on-chain escrow lock TX
       setStep("signing");
-      const pk = await getPrivateKey();
-      if (!pk) { setToast("Cannot access wallet key"); setStep("idle"); return; }
-
       const account = await api.getAccount(mxcAddress);
       const nonce   = await api.getEvmNonce(account.ethAddress);
 
-      let signedTx: string;
+      let result: { txHash: string };
       if (ad.token === "MC") {
         const amountWei = mcToWei(amount);
-        signedTx = signEvmTransaction(escrowInfo.escrowAddress, BigInt(amountWei), nonce, pk);
+        const toAddress = escrowInfo.escrowAddress.startsWith("0x")
+          ? ethAddressToMxc(escrowInfo.escrowAddress)
+          : escrowInfo.escrowAddress;
+        setStep("broadcasting");
+        result = await api.sendTransaction({
+          fromAddress: mxcAddress,
+          toAddress,
+          amount: amountWei,
+          nonce,
+        });
       } else {
         if (!escrowInfo.usdtContractAddress) {
           setToast("USDT contract not configured — contact admin"); setStep("idle"); return;
         }
         const raw = BigInt(Math.round(parseFloat(amount) * 1_000_000));
-        const data = buildErc20TransferData(escrowInfo.escrowAddress, raw);
+        const data = buildErc20TransferDataHex(escrowInfo.escrowAddress, raw);
         const contractAddr = escrowInfo.usdtContractAddress.toLowerCase().startsWith("0x")
           ? escrowInfo.usdtContractAddress
           : mxcAddressToEthAddress(escrowInfo.usdtContractAddress);
-        signedTx = signEvmTransaction(contractAddr, 0n, nonce, pk, { data, gasLimit: 65_000n });
+        setStep("broadcasting");
+        result = await api.sendTransaction({
+          fromAddress: mxcAddress,
+          toAddress: contractAddr,
+          amount: "0",
+          data,
+          txType: "contract_call",
+          nonce,
+        });
       }
-
-      setStep("broadcasting");
-      const result = await api.sendRawTransaction(signedTx);
       const escrowTxHash = result.txHash;
 
       setStep("confirming");

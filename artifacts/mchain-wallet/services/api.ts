@@ -386,6 +386,19 @@ export const api = {
     rpcRequest<string>("eth_sendRawTransaction", [signedTx])
       .then(hash => ({ txHash: hash as string })),
 
+  sendTransaction: (params: {
+    fromAddress: string;
+    toAddress: string;
+    amount: string;
+    nonce: number;
+    data?: string;
+    txType?: string;
+  }) =>
+    request<{ txHash?: string; hash?: string }>("/transactions", {
+      method: "POST",
+      body: JSON.stringify(params),
+    }).then(r => ({ txHash: (r.txHash ?? r.hash ?? "") as string })),
+
   getTransactionReceipt: (txHash: string) =>
     rpcRequest<Record<string, unknown> | null>("eth_getTransactionReceipt", [txHash]),
 

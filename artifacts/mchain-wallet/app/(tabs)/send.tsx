@@ -6,11 +6,11 @@ import { usePinContext } from "@/context/PinContext";
 import { useWallet } from "@/context/WalletContext";
 import { api } from "@/services/api";
 import {
-  buildErc20TransferData,
+  buildErc20TransferDataHex,
+  ethAddressToMxc,
   mcToWei,
   mxcAddressToEthAddress,
   shortenAddress,
-  signEvmTransaction,
   weiToMc,
 } from "@/services/crypto";
 import {
@@ -314,23 +314,34 @@ export default function SendScreen() {
     setLoading(true);
     dismissPin();
     try {
-      const privateKey = await getPrivateKey();
-      if (!privateKey) throw new Error("Private key not found");
       if (!account?.ethAddress) throw new Error("Account not loaded — wait a moment and retry");
       const nonce = await api.getEvmNonce(account.ethAddress);
-      let signedTx: string;
+      let result: { txHash: string };
 
       if (isToken && selectedToken) {
         const decimals = selectedToken.decimals;
         const amountRaw = BigInt(Math.round(parseFloat(amount) * Math.pow(10, decimals)));
-        const data = buildErc20TransferData(recipient.trim(), amountRaw);
-        signedTx = signEvmTransaction(selectedToken.contractAddress, 0n, nonce, privateKey, { gasLimit: 100_000n, data });
+        const data = buildErc20TransferDataHex(recipient.trim(), amountRaw);
+        result = await api.sendTransaction({
+          fromAddress: mxcAddress,
+          toAddress: selectedToken.contractAddress,
+          amount: "0",
+          data,
+          txType: "contract_call",
+          nonce,
+        });
       } else {
         const weiAmount = mcToWei(amount);
-        signedTx = signEvmTransaction(recipient.trim(), BigInt(weiAmount), nonce, privateKey);
+        const toAddress = recipient.trim().startsWith("0x")
+          ? ethAddressToMxc(recipient.trim())
+          : recipient.trim();
+        result = await api.sendTransaction({
+          fromAddress: mxcAddress,
+          toAddress,
+          amount: weiAmount,
+          nonce,
+        });
       }
-
-      const result = await api.sendRawTransaction(signedTx);
       setTxHash(result.txHash);
       await saveRecent(recipient);
       qc.invalidateQueries({ queryKey: ["account", mxcAddress] });

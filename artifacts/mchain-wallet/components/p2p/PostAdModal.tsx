@@ -8,7 +8,7 @@ import { PAYMENT_METHODS } from "@/services/paymentMethods";
 import { PaymentDetailSheet } from "@/components/p2p/PaymentDetailSheet";
 import { api } from "@/services/api";
 import {
-  signEvmTransaction, mcToWei, buildErc20TransferData, mxcAddressToEthAddress,
+  mcToWei, buildErc20TransferDataHex, mxcAddressToEthAddress, ethAddressToMxc,
 } from "@/services/crypto";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Haptics from "expo-haptics";
@@ -154,33 +154,42 @@ export function PostAdModal({ visible, onClose, onPosted }: Props) {
           setToast("Escrow wallet not configured — contact admin"); setStep("idle"); return;
         }
 
-        // Sign & broadcast the on-chain escrow lock TX
         setStep("locking");
-        const pk = await getPrivateKey();
-        if (!pk) { setToast("Cannot access wallet key"); setStep("idle"); return; }
-
         const account = await api.getAccount(mxcAddress);
         const nonce = await api.getEvmNonce(account.ethAddress);
 
-        let signedTx: string;
+        let result: { txHash: string };
         if (token === "MC") {
           const amountWei = mcToWei(availableAmount);
-          signedTx = signEvmTransaction(escrowInfo.escrowAddress, BigInt(amountWei), nonce, pk);
+          const toAddress = escrowInfo.escrowAddress.startsWith("0x")
+            ? ethAddressToMxc(escrowInfo.escrowAddress)
+            : escrowInfo.escrowAddress;
+          setStep("broadcasting");
+          result = await api.sendTransaction({
+            fromAddress: mxcAddress,
+            toAddress,
+            amount: amountWei,
+            nonce,
+          });
         } else {
-          // USDT ERC-20 transfer to escrow
           if (!escrowInfo.usdtContractAddress) {
             setToast("USDT contract not configured — contact admin"); setStep("idle"); return;
           }
-          const amount = BigInt(Math.round(parseFloat(availableAmount) * 1_000_000)); // 6 decimals
-          const data = buildErc20TransferData(escrowInfo.escrowAddress, amount);
+          const amount = BigInt(Math.round(parseFloat(availableAmount) * 1_000_000));
+          const data = buildErc20TransferDataHex(escrowInfo.escrowAddress, amount);
           const contractAddr = escrowInfo.usdtContractAddress.toLowerCase().startsWith("0x")
             ? escrowInfo.usdtContractAddress
             : mxcAddressToEthAddress(escrowInfo.usdtContractAddress);
-          signedTx = signEvmTransaction(contractAddr, 0n, nonce, pk, { data, gasLimit: 65_000n });
+          setStep("broadcasting");
+          result = await api.sendTransaction({
+            fromAddress: mxcAddress,
+            toAddress: contractAddr,
+            amount: "0",
+            data,
+            txType: "contract_call",
+            nonce,
+          });
         }
-
-        setStep("broadcasting");
-        const result = await api.sendRawTransaction(signedTx);
         escrowTxHash = result.txHash;
 
         setStep("confirming");

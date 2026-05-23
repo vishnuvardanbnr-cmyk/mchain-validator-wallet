@@ -6,7 +6,7 @@ import { keccak_256 } from "@noble/hashes/sha3";
 import { sha256 } from "@noble/hashes/sha256";
 import { bech32 } from "bech32";
 
-function bytesToHex(bytes: Uint8Array): string {
+export function bytesToHex(bytes: Uint8Array): string {
   return Array.from(bytes)
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
@@ -315,4 +315,8 @@ export function formatDate(iso: string): string {
   } catch {
     return iso;
   }
+}
+
+export function buildErc20TransferDataHex(toAddress: string, amountRaw: bigint): string {
+  return "0x" + bytesToHex(buildErc20TransferData(toAddress, amountRaw));
 }
