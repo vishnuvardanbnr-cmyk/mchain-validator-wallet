@@ -119,8 +119,13 @@ function TxDetailSheet({
   const insets = useSafeAreaInsets();
   const [copied, setCopied] = useState<string | null>(null);
 
-  const isSend = entry.fromEth?.toLowerCase() === myEthAddress?.toLowerCase();
-  const isReceive = entry.toEth?.toLowerCase() === myEthAddress?.toLowerCase();
+  const addr = myEthAddress?.toLowerCase();
+  const isSend =
+    entry.fromEth?.toLowerCase() === addr ||
+    entry.fromMxc?.toLowerCase() === addr;
+  const isReceive =
+    entry.toEth?.toLowerCase() === addr ||
+    entry.toMxc?.toLowerCase() === addr;
   const isSelf = isSend && isReceive;
   const label = isSelf ? "Self Transfer" : isSend ? "Sent" : "Received";
   const color = isSelf ? colors.primary : isSend ? "#EF4444" : "#10B981";
@@ -286,8 +291,13 @@ function TxRow({
   onPress: () => void;
 }) {
   const colors = useColors();
-  const isSend = entry.fromEth?.toLowerCase() === myEthAddress?.toLowerCase();
-  const isReceive = entry.toEth?.toLowerCase() === myEthAddress?.toLowerCase();
+  const addr = myEthAddress?.toLowerCase();
+  const isSend =
+    entry.fromEth?.toLowerCase() === addr ||
+    entry.fromMxc?.toLowerCase() === addr;
+  const isReceive =
+    entry.toEth?.toLowerCase() === addr ||
+    entry.toMxc?.toLowerCase() === addr;
   const isSelf = isSend && isReceive;
 
   const label = isSelf ? "Self" : isSend ? "Sent" : "Received";
