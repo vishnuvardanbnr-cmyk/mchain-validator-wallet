@@ -7,7 +7,7 @@ import { p2pApi, type P2pAd } from "@/services/p2pApi";
 import { METHOD_FIELDS, METHOD_LABELS } from "@/services/paymentMethods";
 import { api } from "@/services/api";
 import {
-  mcToWei, buildErc20TransferDataHex, mxcAddressToEthAddress, ethAddressToMxc,
+  mcToWei, buildErc20TransferDataHex, mxcAddressToEthAddress,
 } from "@/services/crypto";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
@@ -115,13 +115,10 @@ export function OrderModal({ visible, ad, onClose, onOrderPlaced }: Props) {
       let result: { txHash: string };
       if (ad.token === "MC") {
         const amountWei = mcToWei(amount);
-        const toAddress = escrowInfo.escrowAddress.startsWith("0x")
-          ? ethAddressToMxc(escrowInfo.escrowAddress)
-          : escrowInfo.escrowAddress;
         setStep("broadcasting");
         result = await api.sendTransaction({
           fromAddress: mxcAddress,
-          toAddress,
+          toAddress: escrowInfo.escrowAddress,
           amount: amountWei,
           nonce,
         });

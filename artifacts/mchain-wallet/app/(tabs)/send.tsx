@@ -7,7 +7,6 @@ import { useWallet } from "@/context/WalletContext";
 import { api } from "@/services/api";
 import {
   buildErc20TransferDataHex,
-  ethAddressToMxc,
   mcToWei,
   mxcAddressToEthAddress,
   shortenAddress,
@@ -332,12 +331,9 @@ export default function SendScreen() {
         });
       } else {
         const weiAmount = mcToWei(amount);
-        const toAddress = recipient.trim().startsWith("0x")
-          ? ethAddressToMxc(recipient.trim())
-          : recipient.trim();
         result = await api.sendTransaction({
           fromAddress: mxcAddress,
-          toAddress,
+          toAddress: recipient.trim(),
           amount: weiAmount,
           nonce,
         });

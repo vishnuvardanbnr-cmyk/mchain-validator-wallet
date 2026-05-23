@@ -6,7 +6,7 @@ import { usePinContext } from "@/context/PinContext";
 import { useColors } from "@/hooks/useColors";
 import { p2pApi, type P2pDispute, type P2pMessage, type P2pOrder, type EscrowInfo } from "@/services/p2pApi";
 import { api } from "@/services/api";
-import { mcToWei, ethAddressToMxc } from "@/services/crypto";
+import { mcToWei } from "@/services/crypto";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Haptics from "expo-haptics";
 import * as ImagePicker from "expo-image-picker";
@@ -180,12 +180,9 @@ export function TradeRoomModal({ visible, orderId, onClose }: Props) {
       const account = await api.getAccount(mxcAddress);
       const nonce = await api.getEvmNonce(account.ethAddress);
       const amountWei = mcToWei(order.cryptoAmount);
-      const toAddress = escrowInfo.escrowAddress.startsWith("0x")
-        ? ethAddressToMxc(escrowInfo.escrowAddress)
-        : escrowInfo.escrowAddress;
       const result = await api.sendTransaction({
         fromAddress: mxcAddress,
-        toAddress,
+        toAddress: escrowInfo.escrowAddress,
         amount: amountWei,
         nonce,
       });

@@ -8,7 +8,7 @@ import { PAYMENT_METHODS } from "@/services/paymentMethods";
 import { PaymentDetailSheet } from "@/components/p2p/PaymentDetailSheet";
 import { api } from "@/services/api";
 import {
-  mcToWei, buildErc20TransferDataHex, mxcAddressToEthAddress, ethAddressToMxc,
+  mcToWei, buildErc20TransferDataHex, mxcAddressToEthAddress,
 } from "@/services/crypto";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Haptics from "expo-haptics";
@@ -161,13 +161,10 @@ export function PostAdModal({ visible, onClose, onPosted }: Props) {
         let result: { txHash: string };
         if (token === "MC") {
           const amountWei = mcToWei(availableAmount);
-          const toAddress = escrowInfo.escrowAddress.startsWith("0x")
-            ? ethAddressToMxc(escrowInfo.escrowAddress)
-            : escrowInfo.escrowAddress;
           setStep("broadcasting");
           result = await api.sendTransaction({
             fromAddress: mxcAddress,
-            toAddress,
+            toAddress: escrowInfo.escrowAddress,
             amount: amountWei,
             nonce,
           });
