@@ -134,7 +134,7 @@ export function OrderModal({ visible, ad, onClose, onOrderPlaced }: Props) {
         result = await api.sendTransaction({
           fromAddress: mxcAddress,
           toAddress: contractAddr,
-          amount: raw.toString(),
+          amount: "1",
           data,
           txType: "contract_call",
           nonce,
