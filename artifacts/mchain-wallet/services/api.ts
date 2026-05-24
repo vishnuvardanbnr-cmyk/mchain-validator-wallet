@@ -141,6 +141,14 @@ export interface TokenTransfer {
   logIndex: number;
 }
 
+export interface SubWallet {
+  id: string;
+  validatorAddress: string;
+  subWalletAddress: string;
+  status: string;
+  createdAt: string;
+}
+
 export interface ValidatorInfo {
   id: string;
   address: string;
@@ -450,6 +458,38 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ address }),
     }),
+
+  getSubWallets: async (validatorAddress: string): Promise<{ subWallets: SubWallet[] }> => {
+    const base = getPublicApiBase();
+    const res = await fetch(`${base}/validators/${encodeURIComponent(validatorAddress)}/sub-wallets`, {
+      signal: AbortSignal.timeout(8_000),
+    });
+    if (!res.ok) return { subWallets: [] };
+    return res.json();
+  },
+
+  addSubWallet: async (validatorAddress: string, subWalletAddress: string): Promise<{ subWallet: SubWallet }> => {
+    const base = getPublicApiBase();
+    const res = await fetch(`${base}/validators/${encodeURIComponent(validatorAddress)}/sub-wallets`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ subWalletAddress }),
+      signal: AbortSignal.timeout(10_000),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error((data as { error?: string }).error ?? "Failed to add sub wallet");
+    return data;
+  },
+
+  removeSubWallet: async (validatorAddress: string, subWalletAddress: string): Promise<{ ok: boolean }> => {
+    const base = getPublicApiBase();
+    const res = await fetch(
+      `${base}/validators/${encodeURIComponent(validatorAddress)}/sub-wallets/${encodeURIComponent(subWalletAddress)}`,
+      { method: "DELETE", signal: AbortSignal.timeout(8_000) }
+    );
+    if (!res.ok) throw new Error("Failed to remove sub wallet");
+    return res.json();
+  },
 
   getValidatorStatus: (address: string) =>
     request<{ validator: ValidatorInfo }>(
