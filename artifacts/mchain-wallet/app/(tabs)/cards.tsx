@@ -1,4 +1,5 @@
 import { Icon } from "@/components/Icon";
+import KripicardModule from "@/components/KripicardModule";
 import { useColors } from "@/hooks/useColors";
 import { useWallet } from "@/context/WalletContext";
 import {
@@ -889,69 +890,13 @@ export default function CardsScreen() {
           </View>
         )}
 
-        {/* ── Coming soon card ── */}
-        <View style={{ marginTop: 28 }}>
-          <Text style={{ fontSize: 11, fontFamily: "Inter_700Bold",
-            color: colors.mutedForeground, letterSpacing: 1.5, marginBottom: 16 }}>
-            COMING SOON
-          </Text>
-          <View style={[s.comingSoonCard, { opacity: 0.6 }]}>
-            <LinearGradient
-              colors={["#1a1a2e", "#16213e", "#0f3460"]}
-              start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
-              style={[s.cardGrad, { aspectRatio: 1.586 }]}
-            >
-              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }}>
-                <View>
-                  <Text style={{ fontSize: 13, fontFamily: "Inter_700Bold",
-                    color: "#FFF", letterSpacing: 1.5 }}>MChain</Text>
-                  <Text style={{ fontSize: 9, fontFamily: "Inter_400Regular",
-                    color: "rgba(255,255,255,0.5)", letterSpacing: 2, marginTop: 2 }}>WEB3 CARD</Text>
-                </View>
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-                  <ContactlessIcon color="rgba(255,255,255,0.3)" />
-                  <CardChip color="#6B7280" />
-                </View>
-              </View>
-              <View style={{ flex: 1, justifyContent: "center" }}>
-                <View style={{ alignSelf: "flex-start", paddingHorizontal: 10, paddingVertical: 4,
-                  backgroundColor: "#ffffff15", borderRadius: 20, borderWidth: 1,
-                  borderColor: "rgba(255,255,255,0.15)" }}>
-                  <Text style={{ fontSize: 10, fontFamily: "Inter_700Bold",
-                    color: "rgba(255,255,255,0.6)", letterSpacing: 1.5 }}>COMING SOON</Text>
-                </View>
-              </View>
-              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end" }}>
-                <View>
-                  <Text style={{ fontSize: 10, fontFamily: "Inter_500Medium",
-                    color: "rgba(255,255,255,0.3)", letterSpacing: 1 }}>DIRECT USDT CARD</Text>
-                  <Text style={{ fontSize: 14, fontFamily: "Inter_600SemiBold",
-                    color: "rgba(255,255,255,0.5)", letterSpacing: 2.5, marginTop: 3 }}>
-                    •••• •••• •••• ••••
-                  </Text>
-                </View>
-                <Text style={{ fontSize: 11, fontFamily: "Inter_700Bold",
-                  color: "rgba(255,255,255,0.35)", letterSpacing: 1 }}>USDT</Text>
-              </View>
-            </LinearGradient>
-          </View>
-
-          <View style={{ backgroundColor: colors.card, borderRadius: 16,
-            borderWidth: 1, borderColor: colors.border, padding: 18, marginTop: 12, opacity: 0.7 }}>
-            <Text style={{ fontSize: 15, fontFamily: "Inter_700Bold",
-              color: colors.foreground, marginBottom: 6 }}>Direct Spending USDT Card</Text>
-            <Text style={{ fontSize: 13, fontFamily: "Inter_400Regular",
-              color: colors.mutedForeground, lineHeight: 20, marginBottom: 14 }}>
-              Spend USDT directly — no fiat conversion. Pay at merchants natively with stablecoins.
-            </Text>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-              <Icon name="time-outline" size={14} color={colors.mutedForeground} />
-              <Text style={{ fontSize: 12, fontFamily: "Inter_400Regular", color: colors.mutedForeground }}>
-                We'll notify you when this is ready
-              </Text>
-            </View>
-          </View>
-        </View>
+        {/* ── KripiCard USDT-to-USDT module ── */}
+        <KripicardModule
+          ethAddress={ethAddress!}
+          account={account}
+          onAccountUpdated={() => loadAccount(true)}
+          showMsg={showMsg}
+        />
 
       </ScrollView>
     </View>

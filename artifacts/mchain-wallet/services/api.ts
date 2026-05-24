@@ -688,6 +688,10 @@ export interface CardAccount {
   status: string;
   created_at: string;
   updated_at: string;
+  kripicard_card_id?: string | null;
+  kripicard_last4?: string | null;
+  kripicard_bin?: string | null;
+  kripicard_status?: string | null;
 }
 
 export interface CardDeposit {
@@ -779,4 +783,102 @@ export async function getStripeCardDetails(ethAddress: string): Promise<StripeCa
     throw new Error((data as { error?: string }).error ?? "Failed to fetch card details");
   }
   return res.json();
+}
+
+// ── KripiCard API ─────────────────────────────────────────────────────────────
+
+export interface KripicardDetails {
+  cardId: string;
+  last4: string | null;
+  bin: string | null;
+  status: string;
+  cardNumber: string;
+  expiry: string;
+  cvv: string;
+  balance: number;
+}
+
+export interface KripicardTransaction {
+  date: string;
+  type: string;
+  merchant: string;
+  amount: number;
+  success: boolean;
+}
+
+export async function issueKripicardCard(
+  walletAddress: string,
+  params: { amount: number; bin: string; nameOnCard: string; email?: string; dateOfBirth?: string }
+): Promise<{ cardId: string; last4: string; bin: string; amount: number; fee: number; totalCharged: number }> {
+  const base = getPublicApiBase();
+  const res = await fetch(`${base}/cards/kc/issue`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ walletAddress, ...params }),
+    signal: AbortSignal.timeout(30_000),
+  });
+  const data = await res.json() as { error?: string };
+  if (!res.ok) throw new Error(data.error ?? "Failed to issue card");
+  return data as never;
+}
+
+export async function fundKripicardCard(
+  walletAddress: string,
+  amount: number
+): Promise<{ cardId: string; amount: number; fee: number; totalDebited: number }> {
+  const base = getPublicApiBase();
+  const res = await fetch(`${base}/cards/kc/fund`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ walletAddress, amount }),
+    signal: AbortSignal.timeout(15_000),
+  });
+  const data = await res.json() as { error?: string };
+  if (!res.ok) throw new Error(data.error ?? "Failed to fund card");
+  return data as never;
+}
+
+export async function getKripicardDetails(walletAddress: string): Promise<KripicardDetails> {
+  const base = getPublicApiBase();
+  const res = await fetch(`${base}/cards/kc/details`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ walletAddress }),
+    signal: AbortSignal.timeout(15_000),
+  });
+  const data = await res.json() as { error?: string };
+  if (!res.ok) throw new Error(data.error ?? "Failed to get card details");
+  return data as never;
+}
+
+export async function freezeKripicardCard(
+  walletAddress: string,
+  action: "freeze" | "unfreeze"
+): Promise<{ action: string; status: string }> {
+  const base = getPublicApiBase();
+  const res = await fetch(`${base}/cards/kc/freeze`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ walletAddress, action }),
+    signal: AbortSignal.timeout(10_000),
+  });
+  const data = await res.json() as { error?: string };
+  if (!res.ok) throw new Error(data.error ?? "Failed to freeze/unfreeze card");
+  return data as never;
+}
+
+export async function getKripicardTransactions(walletAddress: string): Promise<{
+  cardId: string; balance: number; totalTransactions: number;
+  transactions: KripicardTransaction[];
+}> {
+  const base = getPublicApiBase();
+  const res = await fetch(`${base}/cards/kc/transactions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ walletAddress }),
+    signal: AbortSignal.timeout(15_000),
+  });
+  const data = await res.json() as { error?: string };
+  if (!res.ok) throw new Error(data.error ?? "Failed to get transactions");
+  return data as never;
 }

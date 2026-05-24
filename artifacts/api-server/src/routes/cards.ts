@@ -92,6 +92,10 @@ export async function ensureCardsTables(): Promise<void> {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
     CREATE INDEX IF NOT EXISTS card_deposits_wallet_idx ON card_deposits(wallet_address);
+    ALTER TABLE card_accounts ADD COLUMN IF NOT EXISTS kripicard_card_id TEXT;
+    ALTER TABLE card_accounts ADD COLUMN IF NOT EXISTS kripicard_last4 TEXT;
+    ALTER TABLE card_accounts ADD COLUMN IF NOT EXISTS kripicard_bin TEXT;
+    ALTER TABLE card_accounts ADD COLUMN IF NOT EXISTS kripicard_status TEXT;
   `);
 }
 
@@ -431,6 +435,229 @@ router.post("/cards/freeze", async (req, res): Promise<void> => {
     res.json({ frozen });
   } catch {
     res.status(500).json({ error: "Failed to update freeze status" });
+  }
+});
+
+// ── KripiCard helpers ─────────────────────────────────────────────────────────
+const KC_BASE = "https://kripicard.com/api/external";
+
+function getKcKey(): string {
+  const key = process.env["KRIPICARD_API_KEY"];
+  if (!key) throw new Error("KRIPICARD_API_KEY is not configured");
+  return key;
+}
+
+async function kcPost<T>(path: string, body: Record<string, unknown>): Promise<T> {
+  const res = await fetch(`${KC_BASE}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json() as Record<string, unknown>;
+  if (!data["success"]) throw new Error((data["message"] as string) ?? "KripiCard API error");
+  return data as T;
+}
+
+// ── POST /cards/kc/issue ──────────────────────────────────────────────────────
+router.post("/cards/kc/issue", async (req, res): Promise<void> => {
+  const { walletAddress, amount, bin, nameOnCard, email, dateOfBirth } =
+    req.body as {
+      walletAddress?: string; amount?: unknown; bin?: string;
+      nameOnCard?: string; email?: string; dateOfBirth?: string;
+    };
+  if (!walletAddress || !amount || !bin || !nameOnCard) {
+    res.status(400).json({ error: "walletAddress, amount, bin, nameOnCard required" });
+    return;
+  }
+  if (Number(amount) < 10) {
+    res.status(400).json({ error: "Minimum amount is $10" });
+    return;
+  }
+  const addr = walletAddress.toLowerCase();
+  try {
+    const accountRes = await pool.query(
+      "SELECT id, kripicard_card_id FROM card_accounts WHERE wallet_address = $1",
+      [addr]
+    );
+    if (accountRes.rows.length === 0) {
+      res.status(404).json({ error: "Card account not found. Activate your card first." });
+      return;
+    }
+    if ((accountRes.rows[0] as { kripicard_card_id: string | null }).kripicard_card_id) {
+      res.status(409).json({ error: "A KripiCard has already been issued for this wallet." });
+      return;
+    }
+
+    const apiKey = getKcKey();
+    const payload: Record<string, unknown> = {
+      api_key: apiKey, bin, amount: Number(amount), name_on_card: nameOnCard,
+    };
+    if (email) payload["email"] = email;
+    if (dateOfBirth) payload["dateOfBirth"] = dateOfBirth;
+
+    const data = await kcPost<{
+      success: boolean; message: string; card_id: string; last_4: string;
+      bin: string; amount: number; fee: number; total_charged: number;
+    }>("/cards/createcard", payload);
+
+    await pool.query(
+      `UPDATE card_accounts
+       SET kripicard_card_id = $1, kripicard_last4 = $2, kripicard_bin = $3,
+           kripicard_status = 'active', updated_at = NOW()
+       WHERE wallet_address = $4`,
+      [data.card_id, data.last_4, String(bin), addr]
+    );
+
+    res.json({
+      cardId: data.card_id, last4: data.last_4, bin: data.bin,
+      amount: data.amount, fee: data.fee, totalCharged: data.total_charged,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : "Failed to issue card" });
+  }
+});
+
+// ── POST /cards/kc/fund ───────────────────────────────────────────────────────
+router.post("/cards/kc/fund", async (req, res): Promise<void> => {
+  const { walletAddress, amount } = req.body as { walletAddress?: string; amount?: unknown };
+  if (!walletAddress || !amount) {
+    res.status(400).json({ error: "walletAddress and amount required" });
+    return;
+  }
+  if (Number(amount) < 10) {
+    res.status(400).json({ error: "Minimum top-up is $10" });
+    return;
+  }
+  const addr = walletAddress.toLowerCase();
+  try {
+    const accountRes = await pool.query(
+      "SELECT kripicard_card_id FROM card_accounts WHERE wallet_address = $1",
+      [addr]
+    );
+    const row = accountRes.rows[0] as { kripicard_card_id: string | null } | undefined;
+    if (!row?.kripicard_card_id) {
+      res.status(404).json({ error: "No KripiCard found for this wallet" });
+      return;
+    }
+    const apiKey = getKcKey();
+    const data = await kcPost<{
+      success: boolean; message: string;
+      data: { card_id: string; amount: number; fee: number; total_debited: number };
+    }>("/cards/fundcard", { api_key: apiKey, card_id: row.kripicard_card_id, amount: Number(amount) });
+
+    res.json({
+      cardId: data.data.card_id, amount: data.data.amount,
+      fee: data.data.fee, totalDebited: data.data.total_debited,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : "Failed to fund card" });
+  }
+});
+
+// ── POST /cards/kc/details ────────────────────────────────────────────────────
+router.post("/cards/kc/details", async (req, res): Promise<void> => {
+  const { walletAddress } = req.body as { walletAddress?: string };
+  if (!walletAddress) { res.status(400).json({ error: "walletAddress required" }); return; }
+  const addr = walletAddress.toLowerCase();
+  try {
+    const accountRes = await pool.query(
+      "SELECT kripicard_card_id, kripicard_last4, kripicard_bin, kripicard_status FROM card_accounts WHERE wallet_address = $1",
+      [addr]
+    );
+    const row = accountRes.rows[0] as {
+      kripicard_card_id: string | null; kripicard_last4: string | null;
+      kripicard_bin: string | null; kripicard_status: string | null;
+    } | undefined;
+    if (!row?.kripicard_card_id) {
+      res.status(404).json({ error: "No KripiCard found" });
+      return;
+    }
+    const apiKey = getKcKey();
+    const data = await kcPost<{
+      success: boolean; card_number: string; expiry: string;
+      cvv: string; balance: number; status: string;
+    }>("/cards/carddetails", { api_key: apiKey, card_id: row.kripicard_card_id });
+
+    if (data.status) {
+      await pool.query(
+        "UPDATE card_accounts SET kripicard_status = $1 WHERE wallet_address = $2",
+        [data.status, addr]
+      );
+    }
+    res.json({
+      cardId: row.kripicard_card_id, last4: row.kripicard_last4,
+      bin: row.kripicard_bin, status: data.status || row.kripicard_status,
+      cardNumber: data.card_number, expiry: data.expiry, cvv: data.cvv, balance: data.balance,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : "Failed to get card details" });
+  }
+});
+
+// ── POST /cards/kc/freeze ─────────────────────────────────────────────────────
+router.post("/cards/kc/freeze", async (req, res): Promise<void> => {
+  const { walletAddress, action } = req.body as { walletAddress?: string; action?: string };
+  if (!walletAddress || !action || !["freeze", "unfreeze"].includes(action)) {
+    res.status(400).json({ error: "walletAddress and action (freeze|unfreeze) required" });
+    return;
+  }
+  const addr = walletAddress.toLowerCase();
+  try {
+    const accountRes = await pool.query(
+      "SELECT kripicard_card_id FROM card_accounts WHERE wallet_address = $1",
+      [addr]
+    );
+    const row = accountRes.rows[0] as { kripicard_card_id: string | null } | undefined;
+    if (!row?.kripicard_card_id) {
+      res.status(404).json({ error: "No KripiCard found" });
+      return;
+    }
+    const apiKey = getKcKey();
+    await kcPost("/premium/Freeze_Unfreeze", { api_key: apiKey, card_id: row.kripicard_card_id, action });
+
+    const newStatus = action === "freeze" ? "frozen" : "active";
+    await pool.query(
+      "UPDATE card_accounts SET kripicard_status = $1 WHERE wallet_address = $2",
+      [newStatus, addr]
+    );
+    res.json({ action, status: newStatus });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : "Failed to freeze/unfreeze card" });
+  }
+});
+
+// ── POST /cards/kc/transactions ───────────────────────────────────────────────
+router.post("/cards/kc/transactions", async (req, res): Promise<void> => {
+  const { walletAddress } = req.body as { walletAddress?: string };
+  if (!walletAddress) { res.status(400).json({ error: "walletAddress required" }); return; }
+  const addr = walletAddress.toLowerCase();
+  try {
+    const accountRes = await pool.query(
+      "SELECT kripicard_card_id FROM card_accounts WHERE wallet_address = $1",
+      [addr]
+    );
+    const row = accountRes.rows[0] as { kripicard_card_id: string | null } | undefined;
+    if (!row?.kripicard_card_id) {
+      res.status(404).json({ error: "No KripiCard found" });
+      return;
+    }
+    const apiKey = getKcKey();
+    const data = await kcPost<{
+      success: boolean;
+      data: {
+        card_id: string; balance: number; total_transactions: number;
+        transactions: Array<{ date: string; type: string; merchant: string; amount: number; success: boolean }>;
+      };
+    }>("/cards/transactions", { api_key: apiKey, card_id: row.kripicard_card_id });
+
+    res.json({
+      cardId: data.data.card_id,
+      balance: data.data.balance,
+      totalTransactions: data.data.total_transactions,
+      transactions: data.data.transactions,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : "Failed to get transactions" });
   }
 });
 
