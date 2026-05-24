@@ -13,9 +13,10 @@ import {
 import { LinearGradient } from "expo-linear-gradient";
 import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Animated,
   Platform,
   ScrollView,
   StyleSheet,
@@ -25,7 +26,6 @@ import {
   View,
 } from "react-native";
 
-// ── BIN options ───────────────────────────────────────────────────────────────
 const BINS = [
   { bin: "539502", label: "Global Standard", flag: "🌍", needsDob: false },
   { bin: "525847", label: "Global Premium", flag: "🌐", needsDob: false },
@@ -34,20 +34,23 @@ const BINS = [
   { bin: "246001", label: "United Kingdom", flag: "🇬🇧", needsDob: true },
 ];
 
+const FEATURES = [
+  { icon: "card-outline", text: "Spend USDT at any Mastercard merchant" },
+  { icon: "flash-outline", text: "Instant top-ups from your USDT balance" },
+  { icon: "globe-outline", text: "Works globally — online & in-store" },
+  { icon: "lock-closed-outline", text: "Freeze & unfreeze anytime" },
+];
+
 function binLabel(bin: string | null): string {
   return BINS.find((b) => b.bin === bin)?.label ?? bin ?? "";
 }
 
-// ── Masked card number display ────────────────────────────────────────────────
 function formatCardNumber(num: string | null | undefined, last4: string | null): string {
-  if (num && num.length >= 12) {
-    return num.replace(/(\d{4})/g, "$1 ").trim();
-  }
+  if (num && num.length >= 12) return num.replace(/(\d{4})/g, "$1 ").trim();
   if (last4) return `•••• •••• •••• ${last4}`;
   return "•••• •••• •••• ••••";
 }
 
-// ── Transaction row ───────────────────────────────────────────────────────────
 function TxnRow({ txn, colors }: { txn: KripicardTransaction; colors: ReturnType<typeof useColors> }) {
   const date = new Date(txn.date);
   const dateStr = date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
@@ -85,7 +88,6 @@ function TxnRow({ txn, colors }: { txn: KripicardTransaction; colors: ReturnType
   );
 }
 
-// ── Main component ────────────────────────────────────────────────────────────
 interface Props {
   ethAddress: string;
   account: CardAccount;
@@ -99,6 +101,16 @@ export default function KripicardModule({ ethAddress, account, onAccountUpdated,
   const hasCard = !!account.kripicard_card_id;
   const kcStatus = account.kripicard_status ?? "none";
 
+  // ── Onboarding state ───────────────────────────────────────────────────────
+  const [showIssueForm, setShowIssueForm] = useState(false);
+  const formAnim = useRef(new Animated.Value(0)).current;
+
+  const openForm = () => {
+    setShowIssueForm(true);
+    Animated.spring(formAnim, { toValue: 1, useNativeDriver: true, tension: 60, friction: 10 }).start();
+    if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+  };
+
   // ── Issue form state ───────────────────────────────────────────────────────
   const [issueAmt, setIssueAmt] = useState("20");
   const [issueName, setIssueName] = useState("");
@@ -106,25 +118,20 @@ export default function KripicardModule({ ethAddress, account, onAccountUpdated,
   const [issueBin, setIssueBin] = useState("539502");
   const [issueDob, setIssueDob] = useState("");
   const [issuing, setIssuing] = useState(false);
-
   const selectedBinObj = BINS.find((b) => b.bin === issueBin) ?? BINS[0]!;
 
-  // ── Card management state ─────────────────────────────────────────────────
+  // ── Card management state ──────────────────────────────────────────────────
   const [details, setDetails] = useState<KripicardDetails | null>(null);
   const [showDetails, setShowDetails] = useState(false);
   const [loadingDetails, setLoadingDetails] = useState(false);
-
   const [txns, setTxns] = useState<KripicardTransaction[]>([]);
   const [txnBalance, setTxnBalance] = useState<number | null>(null);
   const [showTxns, setShowTxns] = useState(false);
   const [loadingTxns, setLoadingTxns] = useState(false);
-
   const [freezing, setFreezing] = useState(false);
-
   const [showFund, setShowFund] = useState(false);
   const [fundAmt, setFundAmt] = useState("20");
   const [funding, setFunding] = useState(false);
-
   const [copiedField, setCopiedField] = useState<string | null>(null);
 
   const copyField = async (val: string, field: string) => {
@@ -240,8 +247,7 @@ export default function KripicardModule({ ethAddress, account, onAccountUpdated,
       color: colors.mutedForeground, letterSpacing: 1.5, marginBottom: 16,
     },
     card: {
-      borderRadius: 18, overflow: "hidden",
-      aspectRatio: 1.586,
+      borderRadius: 18, overflow: "hidden", aspectRatio: 1.586,
       shadowColor: "#7C3AED", shadowOpacity: 0.25,
       shadowRadius: 20, shadowOffset: { width: 0, height: 8 },
       elevation: 12, marginBottom: 16,
@@ -279,14 +285,14 @@ export default function KripicardModule({ ethAddress, account, onAccountUpdated,
 
   const isFrozen = kcStatus === "frozen";
 
-  // ── No card issued — show issue form ──────────────────────────────────────
+  // ── No card — onboarding CTA ───────────────────────────────────────────────
   if (!hasCard) {
     return (
-      <View style={{ marginTop: 28 }}>
-        <Text style={s.sectionLabel}>USDT SPENDING CARD</Text>
+      <View style={{ marginTop: 28, marginBottom: 8 }}>
+        <Text style={s.sectionLabel}>KRIPICARD · USDT SPENDING</Text>
 
-        {/* Preview card */}
-        <View style={[s.card, { opacity: 0.7 }]}>
+        {/* Promo card */}
+        <View style={[s.card, showIssueForm && { opacity: 0.6 }]}>
           <LinearGradient
             colors={["#1e0b3a", "#4C1D95", "#7C3AED"]}
             start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
@@ -311,126 +317,198 @@ export default function KripicardModule({ ethAddress, account, onAccountUpdated,
           </LinearGradient>
         </View>
 
-        {/* Issue form */}
-        <View style={s.panel}>
-          <Text style={{ fontSize: 15, fontFamily: "Inter_700Bold", color: colors.foreground, marginBottom: 4 }}>
-            Issue Your USDT Card
-          </Text>
-          <Text style={{ fontSize: 13, fontFamily: "Inter_400Regular", color: colors.mutedForeground, lineHeight: 20, marginBottom: 20 }}>
-            Spend USDT directly at any Mastercard merchant — no fiat conversion.
-          </Text>
+        {/* If form not open — show CTA panel */}
+        {!showIssueForm && (
+          <View style={s.panel}>
+            <Text style={{ fontSize: 17, fontFamily: "Inter_700Bold", color: colors.foreground, marginBottom: 6 }}>
+              Get Your USDT Card
+            </Text>
+            <Text style={{ fontSize: 13, fontFamily: "Inter_400Regular", color: colors.mutedForeground, lineHeight: 20, marginBottom: 20 }}>
+              A real Mastercard funded directly from your USDT. No bank account needed.
+            </Text>
 
-          <Text style={s.label}>CARD TYPE</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 14 }}>
-            <View style={{ flexDirection: "row", gap: 8 }}>
-              {BINS.map((b) => (
-                <TouchableOpacity
-                  key={b.bin}
-                  onPress={() => setIssueBin(b.bin)}
-                  activeOpacity={0.75}
-                  style={{
-                    paddingHorizontal: 14, paddingVertical: 10,
-                    borderRadius: 12, borderWidth: 1.5,
-                    borderColor: issueBin === b.bin ? "#7C3AED" : colors.border,
-                    backgroundColor: issueBin === b.bin ? "#7C3AED18" : colors.background,
-                    alignItems: "center", gap: 4, minWidth: 90,
-                  }}
-                >
-                  <Text style={{ fontSize: 18 }}>{b.flag}</Text>
-                  <Text style={{ fontSize: 11, fontFamily: "Inter_600SemiBold",
-                    color: issueBin === b.bin ? "#7C3AED" : colors.mutedForeground,
-                    textAlign: "center" }}>
-                    {b.label}
-                  </Text>
-                  {b.needsDob && (
-                    <Text style={{ fontSize: 9, fontFamily: "Inter_400Regular", color: "#F59E0B" }}>+DOB req.</Text>
-                  )}
-                </TouchableOpacity>
-              ))}
-            </View>
-          </ScrollView>
+            {/* Feature list */}
+            {FEATURES.map((f, i) => (
+              <View key={i} style={{ flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 14 }}>
+                <View style={{ width: 36, height: 36, borderRadius: 10,
+                  backgroundColor: "#7C3AED15", borderWidth: 1, borderColor: "#7C3AED30",
+                  alignItems: "center", justifyContent: "center" }}>
+                  <Icon name={f.icon} size={18} color="#7C3AED" />
+                </View>
+                <Text style={{ flex: 1, fontSize: 13, fontFamily: "Inter_400Regular", color: colors.foreground, lineHeight: 19 }}>
+                  {f.text}
+                </Text>
+              </View>
+            ))}
 
-          <Text style={s.label}>NAME ON CARD</Text>
-          <TextInput
-            style={s.input}
-            placeholder="e.g. John Smith"
-            placeholderTextColor={colors.mutedForeground}
-            value={issueName}
-            onChangeText={setIssueName}
-            autoCapitalize="words"
-          />
-
-          <Text style={s.label}>INITIAL LOAD (USD, min $10)</Text>
-          <TextInput
-            style={s.input}
-            placeholder="20"
-            placeholderTextColor={colors.mutedForeground}
-            value={issueAmt}
-            onChangeText={setIssueAmt}
-            keyboardType="decimal-pad"
-          />
-
-          <Text style={s.label}>EMAIL (optional)</Text>
-          <TextInput
-            style={s.input}
-            placeholder="your@email.com"
-            placeholderTextColor={colors.mutedForeground}
-            value={issueEmail}
-            onChangeText={setIssueEmail}
-            keyboardType="email-address"
-            autoCapitalize="none"
-          />
-
-          {selectedBinObj.needsDob && (
-            <>
-              <Text style={s.label}>DATE OF BIRTH (YYYY-MM-DD)</Text>
-              <TextInput
-                style={s.input}
-                placeholder="1990-01-15"
-                placeholderTextColor={colors.mutedForeground}
-                value={issueDob}
-                onChangeText={setIssueDob}
-              />
-            </>
-          )}
-
-          <TouchableOpacity
-            style={{ borderRadius: 14, overflow: "hidden", opacity: issuing ? 0.7 : 1 }}
-            activeOpacity={0.85}
-            onPress={handleIssue}
-            disabled={issuing}
-          >
-            <LinearGradient
-              colors={["#7C3AED", "#6D28D9"]}
-              style={{ paddingVertical: 16, alignItems: "center",
-                flexDirection: "row", justifyContent: "center", gap: 8 }}
-            >
-              {issuing
-                ? <ActivityIndicator color="#FFF" size="small" />
-                : <Icon name="card-outline" size={20} color="#FFF" />
-              }
-              <Text style={{ fontSize: 15, fontFamily: "Inter_700Bold", color: "#FFF" }}>
-                {issuing ? "Issuing Card…" : "Issue Card"}
+            {/* Fees note */}
+            <View style={{ flexDirection: "row", gap: 8, alignItems: "flex-start",
+              backgroundColor: "#F59E0B10", borderRadius: 12, borderWidth: 1,
+              borderColor: "#F59E0B30", padding: 12, marginBottom: 20 }}>
+              <Icon name="information-circle-outline" size={16} color="#F59E0B" />
+              <Text style={{ flex: 1, fontSize: 12, fontFamily: "Inter_400Regular", color: "#F59E0B", lineHeight: 18 }}>
+                One-time issuance fee + $1 per top-up (4% load fee) charged by KripiCard.
               </Text>
-            </LinearGradient>
-          </TouchableOpacity>
+            </View>
 
-          <Text style={{ fontSize: 11, fontFamily: "Inter_400Regular",
-            color: colors.mutedForeground, textAlign: "center", marginTop: 12, lineHeight: 17 }}>
-            A service fee is charged by KripiCard. Funds are loaded instantly.
-          </Text>
-        </View>
+            <TouchableOpacity
+              style={{ borderRadius: 14, overflow: "hidden" }}
+              activeOpacity={0.85}
+              onPress={openForm}
+            >
+              <LinearGradient
+                colors={["#7C3AED", "#6D28D9"]}
+                style={{ paddingVertical: 16, alignItems: "center",
+                  flexDirection: "row", justifyContent: "center", gap: 8 }}
+              >
+                <Icon name="card-outline" size={20} color="#FFF" />
+                <Text style={{ fontSize: 15, fontFamily: "Inter_700Bold", color: "#FFF" }}>
+                  Get Your KripiCard
+                </Text>
+              </LinearGradient>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Issue form — shown after tapping CTA */}
+        {showIssueForm && (
+          <Animated.View style={[s.panel, {
+            opacity: formAnim,
+            transform: [{ translateY: formAnim.interpolate({ inputRange: [0, 1], outputRange: [20, 0] }) }],
+          }]}>
+            {/* Header row with back button */}
+            <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 16, gap: 10 }}>
+              <TouchableOpacity
+                onPress={() => setShowIssueForm(false)}
+                style={{ width: 32, height: 32, borderRadius: 16,
+                  backgroundColor: colors.background, borderWidth: 1, borderColor: colors.border,
+                  alignItems: "center", justifyContent: "center" }}
+                activeOpacity={0.7}
+              >
+                <Icon name="arrow-back" size={16} color={colors.foreground} />
+              </TouchableOpacity>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 15, fontFamily: "Inter_700Bold", color: colors.foreground }}>
+                  Issue Your KripiCard
+                </Text>
+                <Text style={{ fontSize: 11, fontFamily: "Inter_400Regular", color: colors.mutedForeground, marginTop: 1 }}>
+                  Minimum initial load: $10
+                </Text>
+              </View>
+            </View>
+
+            <Text style={s.label}>CARD TYPE</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 14 }}>
+              <View style={{ flexDirection: "row", gap: 8 }}>
+                {BINS.map((b) => (
+                  <TouchableOpacity
+                    key={b.bin}
+                    onPress={() => setIssueBin(b.bin)}
+                    activeOpacity={0.75}
+                    style={{
+                      paddingHorizontal: 14, paddingVertical: 10,
+                      borderRadius: 12, borderWidth: 1.5,
+                      borderColor: issueBin === b.bin ? "#7C3AED" : colors.border,
+                      backgroundColor: issueBin === b.bin ? "#7C3AED18" : colors.background,
+                      alignItems: "center", gap: 4, minWidth: 90,
+                    }}
+                  >
+                    <Text style={{ fontSize: 18 }}>{b.flag}</Text>
+                    <Text style={{ fontSize: 11, fontFamily: "Inter_600SemiBold",
+                      color: issueBin === b.bin ? "#7C3AED" : colors.mutedForeground,
+                      textAlign: "center" }}>
+                      {b.label}
+                    </Text>
+                    {b.needsDob && (
+                      <Text style={{ fontSize: 9, fontFamily: "Inter_400Regular", color: "#F59E0B" }}>+DOB req.</Text>
+                    )}
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </ScrollView>
+
+            <Text style={s.label}>NAME ON CARD</Text>
+            <TextInput
+              style={s.input}
+              placeholder="e.g. John Smith"
+              placeholderTextColor={colors.mutedForeground}
+              value={issueName}
+              onChangeText={setIssueName}
+              autoCapitalize="words"
+            />
+
+            <Text style={s.label}>INITIAL LOAD (USD)</Text>
+            <TextInput
+              style={s.input}
+              placeholder="20"
+              placeholderTextColor={colors.mutedForeground}
+              value={issueAmt}
+              onChangeText={setIssueAmt}
+              keyboardType="decimal-pad"
+            />
+
+            <Text style={s.label}>EMAIL (optional)</Text>
+            <TextInput
+              style={s.input}
+              placeholder="your@email.com"
+              placeholderTextColor={colors.mutedForeground}
+              value={issueEmail}
+              onChangeText={setIssueEmail}
+              keyboardType="email-address"
+              autoCapitalize="none"
+            />
+
+            {selectedBinObj.needsDob && (
+              <>
+                <Text style={s.label}>DATE OF BIRTH (YYYY-MM-DD)</Text>
+                <TextInput
+                  style={s.input}
+                  placeholder="1990-01-15"
+                  placeholderTextColor={colors.mutedForeground}
+                  value={issueDob}
+                  onChangeText={setIssueDob}
+                />
+              </>
+            )}
+
+            <TouchableOpacity
+              style={{ borderRadius: 14, overflow: "hidden", opacity: issuing ? 0.7 : 1 }}
+              activeOpacity={0.85}
+              onPress={handleIssue}
+              disabled={issuing}
+            >
+              <LinearGradient
+                colors={["#7C3AED", "#6D28D9"]}
+                style={{ paddingVertical: 16, alignItems: "center",
+                  flexDirection: "row", justifyContent: "center", gap: 8 }}
+              >
+                {issuing
+                  ? <ActivityIndicator color="#FFF" size="small" />
+                  : <Icon name="card-outline" size={20} color="#FFF" />
+                }
+                <Text style={{ fontSize: 15, fontFamily: "Inter_700Bold", color: "#FFF" }}>
+                  {issuing ? "Issuing Card…" : "Issue Card"}
+                </Text>
+              </LinearGradient>
+            </TouchableOpacity>
+
+            <Text style={{ fontSize: 11, fontFamily: "Inter_400Regular",
+              color: colors.mutedForeground, textAlign: "center", marginTop: 12, lineHeight: 17 }}>
+              Funds are loaded instantly. A service fee is charged by KripiCard.
+            </Text>
+          </Animated.View>
+        )}
       </View>
     );
   }
 
-  // ── Card issued — management UI ───────────────────────────────────────────
+  // ── Card active — management UI ───────────────────────────────────────────
   const displayNum = showDetails ? details?.cardNumber : null;
   const displayLast4 = account.kripicard_last4;
 
   return (
     <View style={{ marginTop: 28 }}>
-      <Text style={s.sectionLabel}>USDT SPENDING CARD</Text>
+      <Text style={s.sectionLabel}>KRIPICARD · USDT SPENDING</Text>
 
       {/* Card visual */}
       <View style={[s.card, isFrozen && { opacity: 0.65 }]}>
@@ -504,8 +582,7 @@ export default function KripicardModule({ ethAddress, account, onAccountUpdated,
           activeOpacity={0.7}
           onPress={() => setShowFund((v) => !v)}
         >
-          <Icon name="add-circle-outline" size={20}
-            color={showFund ? "#22C55E" : colors.foreground} />
+          <Icon name="add-circle-outline" size={20} color={showFund ? "#22C55E" : colors.foreground} />
           <Text style={[s.btnText, showFund && { color: "#22C55E" }]}>Top Up</Text>
         </TouchableOpacity>
 
@@ -533,43 +610,21 @@ export default function KripicardModule({ ethAddress, account, onAccountUpdated,
         >
           {loadingTxns
             ? <ActivityIndicator size="small" color="#F59E0B" />
-            : <Icon name="receipt-outline" size={20}
-                color={showTxns ? "#F59E0B" : colors.foreground} />
+            : <Icon name="receipt-outline" size={20} color={showTxns ? "#F59E0B" : colors.foreground} />
           }
-          <Text style={[s.btnText, showTxns && { color: "#F59E0B" }]}>History</Text>
+          <Text style={[s.btnText, showTxns && { color: "#F59E0B" }]}>Spending</Text>
         </TouchableOpacity>
       </View>
 
-      {/* Live card details panel */}
-      {showDetails && details && (
-        <View style={[s.panel, { marginBottom: 16 }]}>
-          <Text style={[s.sectionLabel, { marginBottom: 10 }]}>LIVE CARD DETAILS</Text>
-          {[
-            { label: "CARD NUMBER", val: details.cardNumber, field: "number" },
-            { label: "EXPIRY", val: details.expiry, field: "expiry" },
-            { label: "CVV", val: details.cvv, field: "cvv" },
-            { label: "BALANCE", val: `$${details.balance.toFixed(2)} USDT`, field: "balance" },
-            { label: "STATUS", val: details.status.toUpperCase(), field: "status" },
-          ].map((item) => (
-            <TouchableOpacity key={item.field} style={s.detailRow} activeOpacity={0.7}
-              onPress={() => copyField(item.val, item.field)}>
-              <Text style={s.detailLabel}>{item.label}</Text>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                <Text style={s.detailVal}>{item.val}</Text>
-                <Icon
-                  name={copiedField === item.field ? "checkmark-circle-outline" : "copy-outline"}
-                  size={14} color={copiedField === item.field ? "#22C55E" : colors.mutedForeground}
-                />
-              </View>
-            </TouchableOpacity>
-          ))}
-        </View>
-      )}
-
-      {/* Top-up panel */}
+      {/* Fund panel */}
       {showFund && (
         <View style={[s.panel, { marginBottom: 16 }]}>
-          <Text style={[s.sectionLabel, { marginBottom: 10 }]}>TOP UP CARD</Text>
+          <Text style={{ fontSize: 14, fontFamily: "Inter_700Bold", color: colors.foreground, marginBottom: 4 }}>
+            Top Up KripiCard
+          </Text>
+          <Text style={{ fontSize: 12, fontFamily: "Inter_400Regular", color: colors.mutedForeground, marginBottom: 14 }}>
+            Fee: $1 + 4% of amount
+          </Text>
           <Text style={s.label}>AMOUNT (USD, min $10)</Text>
           <TextInput
             style={s.input}
@@ -579,53 +634,78 @@ export default function KripicardModule({ ethAddress, account, onAccountUpdated,
             onChangeText={setFundAmt}
             keyboardType="decimal-pad"
           />
-          <Text style={{ fontSize: 12, fontFamily: "Inter_400Regular",
-            color: colors.mutedForeground, marginBottom: 14, lineHeight: 18 }}>
-            Fee: $1.00 + 4% of amount. Funds appear within minutes.
-          </Text>
           <TouchableOpacity
-            style={{ borderRadius: 13, overflow: "hidden", opacity: funding ? 0.7 : 1 }}
+            style={{ borderRadius: 12, overflow: "hidden", opacity: funding ? 0.7 : 1 }}
             activeOpacity={0.85}
             onPress={handleFund}
             disabled={funding}
           >
             <LinearGradient
               colors={["#22C55E", "#16A34A"]}
-              style={{ paddingVertical: 14, flexDirection: "row",
-                alignItems: "center", justifyContent: "center", gap: 8 }}
+              style={{ paddingVertical: 14, alignItems: "center",
+                flexDirection: "row", justifyContent: "center", gap: 8 }}
             >
               {funding
                 ? <ActivityIndicator color="#FFF" size="small" />
                 : <Icon name="add-circle-outline" size={18} color="#FFF" />
               }
               <Text style={{ fontSize: 14, fontFamily: "Inter_700Bold", color: "#FFF" }}>
-                {funding ? "Processing…" : "Confirm Top Up"}
+                {funding ? "Processing…" : "Top Up Now"}
               </Text>
             </LinearGradient>
           </TouchableOpacity>
         </View>
       )}
 
+      {/* Card details panel */}
+      {showDetails && details && (
+        <View style={[s.panel, { marginBottom: 16 }]}>
+          <Text style={{ fontSize: 13, fontFamily: "Inter_700Bold", color: colors.mutedForeground, letterSpacing: 1.2, marginBottom: 12 }}>
+            CARD DETAILS
+          </Text>
+          {[
+            { label: "CARD NUMBER", val: details.cardNumber ?? `•••• •••• •••• ${displayLast4}` },
+            { label: "EXPIRY", val: details.expiry },
+            { label: "CVV", val: details.cvv },
+            { label: "BALANCE", val: `$${details.balance.toFixed(2)} USDT` },
+          ].map(({ label, val }) => (
+            <TouchableOpacity
+              key={label}
+              style={s.detailRow}
+              activeOpacity={val ? 0.6 : 1}
+              onPress={() => val && copyField(val, label)}
+            >
+              <Text style={s.detailLabel}>{label}</Text>
+              <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
+                <Text style={s.detailVal}>{val ?? "—"}</Text>
+                {val && (
+                  <Icon name={copiedField === label ? "checkmark-outline" : "copy-outline"}
+                    size={14} color={copiedField === label ? "#22C55E" : colors.mutedForeground} />
+                )}
+              </View>
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
+
       {/* Transactions panel */}
       {showTxns && (
-        <View style={s.panel}>
+        <View style={[s.panel, { marginBottom: 16 }]}>
           <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-            <Text style={s.sectionLabel}>SPENDING HISTORY</Text>
+            <Text style={{ fontSize: 13, fontFamily: "Inter_700Bold", color: colors.mutedForeground, letterSpacing: 1.2 }}>
+              SPENDING HISTORY
+            </Text>
             {txnBalance !== null && (
               <Text style={{ fontSize: 13, fontFamily: "Inter_700Bold", color: "#7C3AED" }}>
-                ${txnBalance.toFixed(2)} left
+                ${txnBalance.toFixed(2)} bal
               </Text>
             )}
           </View>
           {txns.length === 0 ? (
-            <View style={{ alignItems: "center", paddingVertical: 32, gap: 10 }}>
-              <View style={{ width: 52, height: 52, borderRadius: 26,
-                backgroundColor: colors.border, alignItems: "center", justifyContent: "center" }}>
-                <Icon name="receipt-outline" size={22} color={colors.mutedForeground} />
-              </View>
-              <Text style={{ fontSize: 13, fontFamily: "Inter_400Regular",
-                color: colors.mutedForeground, textAlign: "center" }}>
-                No transactions yet.
+            <View style={{ alignItems: "center", paddingVertical: 28, gap: 8 }}>
+              <Icon name="receipt-outline" size={28} color={colors.mutedForeground} />
+              <Text style={{ fontSize: 13, fontFamily: "Inter_400Regular", color: colors.mutedForeground }}>
+                No transactions yet
               </Text>
             </View>
           ) : (
