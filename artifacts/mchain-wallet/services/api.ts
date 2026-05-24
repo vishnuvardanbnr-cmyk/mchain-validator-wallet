@@ -519,11 +519,14 @@ export const api = {
     return res.json();
   },
 
-  addSubWallet: async (validatorAddress: string, subWalletAddress: string, label?: string): Promise<{ subWallet: SubWallet }> => {
+  addSubWallet: async (validatorAddress: string, subWalletAddress: string, label?: string, adminKey?: string): Promise<{ subWallet: SubWallet }> => {
     const base = getPublicApiBase();
     const res = await fetch(`${base}/validators/${encodeURIComponent(validatorAddress)}/sub-wallets`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...(adminKey ? { "x-admin-key": adminKey } : {}),
+      },
       body: JSON.stringify({ subWalletAddress, ...(label ? { label } : {}) }),
       signal: AbortSignal.timeout(12_000),
     });
@@ -532,13 +535,16 @@ export const api = {
     return data;
   },
 
-  removeSubWallet: async (validatorAddress: string, subWalletAddress: string): Promise<{ ok: boolean }> => {
+  removeSubWallet: async (validatorAddress: string, subWalletAddress: string, adminKey?: string): Promise<{ ok: boolean }> => {
     const base = getPublicApiBase();
     const res = await fetch(
       `${base}/validators/${encodeURIComponent(validatorAddress)}/sub-wallets`,
       {
         method: "DELETE",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(adminKey ? { "x-admin-key": adminKey } : {}),
+        },
         body: JSON.stringify({ subWalletAddress }),
         signal: AbortSignal.timeout(8_000),
       }

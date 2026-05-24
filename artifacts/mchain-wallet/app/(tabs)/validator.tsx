@@ -1,4 +1,5 @@
 import { Icon } from "@/components/Icon";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
@@ -228,8 +229,10 @@ export default function ValidatorScreen() {
   }, [openEpoch, isRegistered, refetchSubWallets]);
 
   const addSubWalletMutation = useMutation({
-    mutationFn: ({ addr, label }: { addr: string; label: string }) =>
-      api.addSubWallet(mxcAddress!, addr, label || undefined),
+    mutationFn: async ({ addr, label }: { addr: string; label: string }) => {
+      const adminKey = (await AsyncStorage.getItem("mchain_admin_key")) ?? undefined;
+      return api.addSubWallet(mxcAddress!, addr, label || undefined, adminKey);
+    },
     onSuccess: () => {
       setNewSubWallet("");
       setNewSubWalletLabel("");
@@ -244,7 +247,10 @@ export default function ValidatorScreen() {
   });
 
   const removeSubWalletMutation = useMutation({
-    mutationFn: (addr: string) => api.removeSubWallet(mxcAddress!, addr),
+    mutationFn: async (addr: string) => {
+      const adminKey = (await AsyncStorage.getItem("mchain_admin_key")) ?? undefined;
+      return api.removeSubWallet(mxcAddress!, addr, adminKey);
+    },
     onSuccess: () => {
       void refetchSubWallets();
       setToast("Sub wallet removed");

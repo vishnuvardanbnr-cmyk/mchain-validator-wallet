@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, type Request, type Response, type NextFunction } from "express";
 import { db, pool } from "@workspace/db";
 import { validatorSubWallets } from "@workspace/db";
 import { eq, and, count } from "drizzle-orm";
@@ -8,6 +8,15 @@ const CHAIN_BASE = "https://node.mymchain.com/api";
 const MAX_SUB_WALLETS = 10;
 
 const router = Router();
+
+// ── Admin key guard (same secret as other admin routes) ───────────────────────
+function adminAuth(req: Request, res: Response, next: NextFunction): void {
+  const secret = process.env["ADMIN_SECRET"];
+  if (!secret) { res.status(503).json({ error: "Admin secret not configured" }); return; }
+  const key = req.headers["x-admin-key"];
+  if (!key || key !== secret) { res.status(401).json({ error: "Unauthorized" }); return; }
+  next();
+}
 
 // ── Table migrations ──────────────────────────────────────────────────────────
 
@@ -162,8 +171,8 @@ router.get("/validators/:address/sub-wallets", async (req, res) => {
   }
 });
 
-// POST /validators/:address/sub-wallets
-router.post("/validators/:address/sub-wallets", async (req, res) => {
+// POST /validators/:address/sub-wallets  (requires X-Admin-Key)
+router.post("/validators/:address/sub-wallets", adminAuth, async (req, res) => {
   try {
     const validatorAddress = decodeURIComponent(req.params["address"] ?? "").toLowerCase();
     const body = req.body as { subWalletAddress?: string; label?: string };
@@ -244,8 +253,8 @@ router.post("/validators/:address/sub-wallets", async (req, res) => {
   }
 });
 
-// DELETE /validators/:address/sub-wallets  (body: { subWalletAddress })
-router.delete("/validators/:address/sub-wallets", async (req, res) => {
+// DELETE /validators/:address/sub-wallets  (body: { subWalletAddress }, requires X-Admin-Key)
+router.delete("/validators/:address/sub-wallets", adminAuth, async (req, res) => {
   try {
     const validatorAddress = decodeURIComponent(req.params["address"] ?? "").toLowerCase();
     const body = req.body as { subWalletAddress?: string };

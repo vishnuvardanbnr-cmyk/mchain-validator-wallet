@@ -315,7 +315,10 @@ export default function SendScreen() {
     dismissPin();
     try {
       if (!account?.ethAddress) throw new Error("Account not loaded — wait a moment and retry");
-      const nonce = account.nonce;
+
+      // Fetch a fresh nonce immediately before signing to avoid stale-nonce rejections
+      const freshAccount = await api.getAccount(mxcAddress!);
+      const nonce = freshAccount.nonce;
 
       const privateKey = await getPrivateKey();
       if (!privateKey) throw new Error("Could not retrieve private key — please unlock your wallet and retry");

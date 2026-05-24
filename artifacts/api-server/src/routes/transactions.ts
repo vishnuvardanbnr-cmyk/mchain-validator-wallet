@@ -1,21 +1,39 @@
 import { Router } from "express";
 import { recoverMessageAddress } from "viem";
+import { bech32 } from "bech32";
 
 const router = Router();
 
 const CHAIN_BASE = "https://node.mymchain.com/api";
 
+// ── Address normalisation ─────────────────────────────────────────────────────
+// recoverMessageAddress always returns a 0x ETH hex address.
+// fromAddress in the body may arrive as either mxc1... or 0x...
+// We normalise to 0x for comparison only; the message is built with the raw string.
+function mxcToEth(addr: string): string {
+  if (!addr.startsWith("mxc1")) return addr.toLowerCase();
+  try {
+    const { words } = bech32.decode(addr);
+    const bytes = Uint8Array.from(bech32.fromWords(words));
+    return "0x" + Array.from(bytes).map(b => b.toString(16).padStart(2, "0")).join("");
+  } catch {
+    return addr.toLowerCase();
+  }
+}
+
 // ── Build the canonical message that the client must sign ─────────────────────
+// • toAddress: use the exact string from the body; if absent/empty, use "null"
+// • fromAddress: use the exact string from the body (mxc1... or 0x...) — do NOT convert
 function buildTransferMessage(params: {
   fromAddress: string;
-  toAddress: string;
+  toAddress: string | null | undefined;
   amount: string;
   nonce: number;
 }): string {
   return [
     "MChain Transfer",
     `from: ${params.fromAddress}`,
-    `to: ${params.toAddress}`,
+    `to: ${params.toAddress || "null"}`,
     `amount: ${params.amount}`,
     `nonce: ${params.nonce}`,
   ].join("\n");
@@ -32,9 +50,10 @@ router.post("/transactions", async (req, res): Promise<void> => {
   };
 
   // ── Validate required fields ──────────────────────────────────────────────
-  if (!fromAddress || !toAddress || !amount || nonce === undefined || !signature) {
+  // toAddress is optional (absent for contract deploys) — use "null" in message when missing
+  if (!fromAddress || !amount || nonce === undefined || !signature) {
     res.status(400).json({
-      error: "Missing required fields: fromAddress, toAddress, amount, nonce, signature",
+      error: "Missing required fields: fromAddress, amount, nonce, signature",
     });
     return;
   }
@@ -55,6 +74,8 @@ router.post("/transactions", async (req, res): Promise<void> => {
   }
 
   // ── Verify signature ──────────────────────────────────────────────────────
+  // The message is built using the exact address strings from the body.
+  // Comparison is done on 0x-normalised addresses so mxc1... senders work too.
   try {
     const message = buildTransferMessage({ fromAddress, toAddress, amount, nonce });
 
@@ -63,8 +84,9 @@ router.post("/transactions", async (req, res): Promise<void> => {
       signature: signature as `0x${string}`,
     });
 
-    if (recovered.toLowerCase() !== fromAddress.toLowerCase()) {
-      req.log.warn({ recovered, fromAddress }, "signature mismatch");
+    const fromNorm = mxcToEth(fromAddress);
+    if (recovered.toLowerCase() !== fromNorm.toLowerCase()) {
+      req.log.warn({ recovered, fromAddress, fromNorm }, "signature mismatch");
       res.status(401).json({
         error: "Signature verification failed — recovered address does not match sender",
         recovered,
@@ -82,7 +104,7 @@ router.post("/transactions", async (req, res): Promise<void> => {
     const upstream = await fetch(`${CHAIN_BASE}/transactions`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify({ fromAddress, toAddress, amount, nonce, signature }),
+      body: JSON.stringify({ fromAddress, toAddress: toAddress || null, amount, nonce, signature }),
       signal: AbortSignal.timeout(15_000),
     });
 
