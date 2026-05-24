@@ -12,7 +12,7 @@ export function getPublicApiBase(): string {
     return "/api";
   }
   // Native fallback — should always be set via EXPO_PUBLIC_API_URL at build time
-  return "https://wallet.mymchain.com/api";
+  return "https://api.mwalletpay.com/api";
 }
 
 function getBaseUrl(): string {
