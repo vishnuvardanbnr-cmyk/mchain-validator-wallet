@@ -316,6 +316,10 @@ export default function SendScreen() {
     try {
       if (!account?.ethAddress) throw new Error("Account not loaded — wait a moment and retry");
       const nonce = account.nonce;
+
+      const privateKey = await getPrivateKey();
+      if (!privateKey) throw new Error("Could not retrieve private key — please unlock your wallet and retry");
+
       let result: { txHash: string };
 
       if (isToken && selectedToken) {
@@ -328,6 +332,7 @@ export default function SendScreen() {
           data,
           txType: "contract_call",
           nonce,
+          privateKey,
         });
       } else {
         const weiAmount = mcToWei(amount);
@@ -336,6 +341,7 @@ export default function SendScreen() {
           toAddress: recipient.trim(),
           amount: weiAmount,
           nonce,
+          privateKey,
         });
       }
       setTxHash(result.txHash);

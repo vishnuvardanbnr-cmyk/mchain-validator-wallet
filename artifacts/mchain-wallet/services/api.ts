@@ -410,18 +410,36 @@ export const api = {
     rpcRequest<string>("eth_sendRawTransaction", [signedTx])
       .then(hash => ({ txHash: hash as string })),
 
-  sendTransaction: (params: {
+  sendTransaction: async (params: {
     fromAddress: string;
     toAddress: string;
     amount: string;
     nonce: number;
+    privateKey: string;
     data?: string;
     txType?: string;
-  }) =>
-    request<{ txHash?: string; hash?: string }>("/transactions", {
+  }): Promise<{ txHash: string }> => {
+    const { privateKey, ...rest } = params;
+
+    // Build the canonical message the server expects
+    const message = [
+      "MChain Transfer",
+      `from: ${params.fromAddress}`,
+      `to: ${params.toAddress}`,
+      `amount: ${params.amount}`,
+      `nonce: ${params.nonce}`,
+    ].join("\n");
+
+    // Sign with personal_sign (eth_sign with Ethereum prefix)
+    const { signPersonalMessage } = await import("./crypto");
+    const signature = signPersonalMessage(message, privateKey);
+
+    const r = await request<{ txHash?: string; hash?: string }>("/transactions", {
       method: "POST",
-      body: JSON.stringify(params),
-    }).then(r => ({ txHash: (r.txHash ?? r.hash ?? "") as string })),
+      body: JSON.stringify({ ...rest, signature }),
+    });
+    return { txHash: (r.txHash ?? r.hash ?? "") as string };
+  },
 
   getTransactionReceipt: (txHash: string) =>
     rpcRequest<Record<string, unknown> | null>("eth_getTransactionReceipt", [txHash]),
