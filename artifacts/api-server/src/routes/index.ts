@@ -14,6 +14,7 @@ import tradingRouter, { ensureTradingTables } from "./trading";
 import botRouter, { ensureBotTables, startBotLoop, startPricePoll } from "./bot";
 import backtestRouter, { ensureBacktestTable } from "./backtest";
 import validatorsRouter, { ensureValidatorsTable, ensureValidatorBalancesTable } from "./validators";
+import transactionsRouter from "./transactions";
 
 const router: IRouter = Router();
 
@@ -32,6 +33,7 @@ router.use(tradingRouter);
 router.use(botRouter);
 router.use(backtestRouter);
 router.use(validatorsRouter);
+router.use(transactionsRouter);
 
 export {
   ensureDappsTable, ensureTokensTable, ensurePricesTable,
