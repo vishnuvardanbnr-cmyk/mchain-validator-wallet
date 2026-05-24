@@ -324,7 +324,7 @@ export default function SendScreen() {
         result = await api.sendTransaction({
           fromAddress: mxcAddress,
           toAddress: selectedToken.contractAddress,
-          amount: "0",
+          amount: amountRaw.toString(),
           data,
           txType: "contract_call",
           nonce,
@@ -391,6 +391,7 @@ export default function SendScreen() {
     setStep("input"); setRecipient(""); setAmount(""); setMemo(""); setTxHash("");
     setError(""); setShowRecent(false); setShowScanner(false);
     setRecipientFocused(false); setAmountFocused(false);
+    setLoading(false); setSelectedAsset({ kind: "native" }); setShowAssetPicker(false);
     requestAnimationFrame(() => { scrollRef.current?.scrollTo({ y: 0, animated: false }); });
   }
 

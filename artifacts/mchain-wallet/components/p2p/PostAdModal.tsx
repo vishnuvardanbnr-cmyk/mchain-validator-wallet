@@ -180,7 +180,7 @@ export function PostAdModal({ visible, onClose, onPosted }: Props) {
           result = await api.sendTransaction({
             fromAddress: mxcAddress,
             toAddress: contractAddr,
-            amount: "0",
+            amount: amount.toString(),
             data,
             txType: "contract_call",
             nonce,

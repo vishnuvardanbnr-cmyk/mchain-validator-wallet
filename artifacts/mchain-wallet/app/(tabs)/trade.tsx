@@ -340,7 +340,7 @@ function DepositModal({ visible, onClose, address, tradingBalance, onSuccess }: 
       const { txHash } = await api.sendTransaction({
         fromAddress: address,
         toAddress: USDT_CONTRACT,
-        amount: "0",
+        amount: amountRaw.toString(),
         data,
         txType: "contract_call",
         nonce,
