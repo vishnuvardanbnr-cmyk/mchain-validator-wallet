@@ -9,7 +9,19 @@ const MAX_SUB_WALLETS = 10;
 
 const router = Router();
 
-// ── Table migration ───────────────────────────────────────────────────────────
+// ── Table migrations ──────────────────────────────────────────────────────────
+
+export async function ensureValidatorBalancesTable() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS validator_balances (
+      validator_address TEXT        PRIMARY KEY,
+      package_tier      TEXT,
+      frozen_balance    TEXT        NOT NULL DEFAULT '0',
+      available_balance TEXT        NOT NULL DEFAULT '0',
+      updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+}
 
 export async function ensureValidatorsTable() {
   // Create with full schema if not exists
@@ -271,6 +283,41 @@ router.delete("/validators/:address/sub-wallets", async (req, res) => {
     res.json({ ok: true });
   } catch {
     res.status(500).json({ error: "Failed to remove sub wallet" });
+  }
+});
+
+// ── GET /validators/:address/balance (non-admin, wallet reads its own balance) ──
+
+router.get("/validators/:address/balance", async (req, res) => {
+  try {
+    const validatorAddress = decodeURIComponent(req.params["address"] ?? "").toLowerCase();
+
+    const { rows } = await pool.query<{
+      frozen_balance: string;
+      available_balance: string;
+      package_tier: string | null;
+    }>(
+      "SELECT frozen_balance, available_balance, package_tier FROM validator_balances WHERE validator_address = $1",
+      [validatorAddress]
+    );
+
+    const row = rows[0];
+    const frozenWei   = row?.frozen_balance    ?? "0";
+    const availableWei = row?.available_balance ?? "0";
+    const packageTier  = row?.package_tier      ?? null;
+
+    const fmt = (wei: string) => (parseFloat(wei) / 1e18).toFixed(6);
+
+    res.json({
+      validatorAddress,
+      packageTier,
+      frozenBalanceWei:    frozenWei,
+      frozenBalanceMc:     fmt(frozenWei),
+      availableBalanceWei: availableWei,
+      availableBalanceMc:  fmt(availableWei),
+    });
+  } catch {
+    res.status(500).json({ error: "Failed to fetch validator balance" });
   }
 });
 

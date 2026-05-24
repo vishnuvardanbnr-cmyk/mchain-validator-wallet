@@ -13,7 +13,7 @@ import cardsRouter, { ensureCardsTables } from "./cards";
 import tradingRouter, { ensureTradingTables } from "./trading";
 import botRouter, { ensureBotTables, startBotLoop, startPricePoll } from "./bot";
 import backtestRouter, { ensureBacktestTable } from "./backtest";
-import validatorsRouter, { ensureValidatorsTable } from "./validators";
+import validatorsRouter, { ensureValidatorsTable, ensureValidatorBalancesTable } from "./validators";
 
 const router: IRouter = Router();
 
@@ -36,7 +36,7 @@ router.use(validatorsRouter);
 export {
   ensureDappsTable, ensureTokensTable, ensurePricesTable,
   ensureCardsTables, ensureTradingTables, ensureBotTables, ensureBacktestTable,
-  ensureValidatorsTable,
+  ensureValidatorsTable, ensureValidatorBalancesTable,
   startBotLoop, startPricePoll,
 };
 export default router;

@@ -689,6 +689,218 @@ router.put("/admin/api-keys/:keyName", async (req, res): Promise<void> => {
   }
 });
 
+// ── Validator balance endpoints (sections 7–8 of spec) ───────────────────────
+
+const CHAIN_BASE_ADMIN = "https://node.mymchain.com/api";
+
+async function getDirectCount(mxcAddress: string): Promise<number> {
+  try {
+    const res = await fetch(`${CHAIN_BASE_ADMIN}/accounts/${encodeURIComponent(mxcAddress)}`, {
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (res.ok) {
+      const data = await res.json() as Record<string, unknown>;
+      const acc = (data.account ?? data) as Record<string, unknown>;
+      for (const key of ["directCount", "directReferrals", "referralCount", "direct_count", "direct_referrals", "referral_count"]) {
+        const v = acc[key];
+        if (typeof v === "number") return v;
+        if (typeof v === "string") { const n = parseInt(v, 10); if (!isNaN(n)) return n; }
+      }
+    }
+  } catch { /* ignore */ }
+  return 0;
+}
+
+function fmtMc(wei: string): string {
+  return (parseFloat(wei) / 1e18).toFixed(6);
+}
+function fmtWei(mc: number): string {
+  return BigInt(Math.floor(mc * 1e18)).toString();
+}
+
+// GET /admin/validators/:address/balances
+router.get("/admin/validators/:address/balances", async (req, res): Promise<void> => {
+  try {
+    const address = (req.params["address"] ?? "").toLowerCase();
+    const directCount = await getDirectCount(address);
+    const { rows } = await pool.query<{ frozen_balance: string; available_balance: string; package_tier: string | null }>(
+      "SELECT frozen_balance, available_balance, package_tier FROM validator_balances WHERE validator_address = $1",
+      [address]
+    );
+    const row = rows[0];
+    const frozenWei    = row?.frozen_balance    ?? "0";
+    const availableWei = row?.available_balance ?? "0";
+    const packageTier  = row?.package_tier      ?? null;
+
+    const referralReleasePerDirectMc = 10;
+    const totalUnlockableMc = directCount * referralReleasePerDirectMc;
+    const availableMc = parseFloat(availableWei) / 1e18;
+    const canReleaseNowMc = Math.max(0, Math.min(parseFloat(frozenWei) / 1e18, totalUnlockableMc - availableMc));
+
+    res.json({
+      address,
+      packageTier,
+      directCount,
+      frozenBalanceWei:          frozenWei,
+      frozenBalanceMc:           fmtMc(frozenWei),
+      availableBalanceWei:       availableWei,
+      availableBalanceMc:        fmtMc(availableWei),
+      referralReleasePerDirectMc: referralReleasePerDirectMc.toFixed(6),
+      totalUnlockableMc:         totalUnlockableMc.toFixed(6),
+      canReleaseNowMc:           canReleaseNowMc.toFixed(6),
+    });
+  } catch {
+    res.status(500).json({ error: "Failed to fetch validator balances" });
+  }
+});
+
+// POST /admin/validators/:address/release-balance
+router.post("/admin/validators/:address/release-balance", async (req, res): Promise<void> => {
+  try {
+    const address = (req.params["address"] ?? "").toLowerCase();
+    const directCount = await getDirectCount(address);
+
+    const { rows } = await pool.query<{ frozen_balance: string; available_balance: string }>(
+      "INSERT INTO validator_balances (validator_address) VALUES ($1) ON CONFLICT (validator_address) DO NOTHING; SELECT frozen_balance, available_balance FROM validator_balances WHERE validator_address = $1",
+      [address]
+    );
+
+    // Re-query after upsert
+    const { rows: balRows } = await pool.query<{ frozen_balance: string; available_balance: string }>(
+      "SELECT frozen_balance, available_balance FROM validator_balances WHERE validator_address = $1",
+      [address]
+    );
+
+    const row = balRows[0] ?? { frozen_balance: "0", available_balance: "0" };
+    const frozenMc    = parseFloat(row.frozen_balance)    / 1e18;
+    const availableMc = parseFloat(row.available_balance) / 1e18;
+    const totalUnlockable = directCount * 10;
+    const canRelease = Math.max(0, Math.min(frozenMc, totalUnlockable - availableMc));
+
+    if (canRelease <= 0) {
+      res.json({
+        ok: true,
+        released: "0",
+        message: "No additional balance to release based on current referral count",
+      });
+      return;
+    }
+
+    const releasedWei    = fmtWei(canRelease);
+    const newFrozenWei   = fmtWei(Math.max(0, frozenMc    - canRelease));
+    const newAvailWei    = fmtWei(availableMc + canRelease);
+
+    await pool.query(
+      "UPDATE validator_balances SET frozen_balance = $1, available_balance = $2, updated_at = NOW() WHERE validator_address = $3",
+      [newFrozenWei, newAvailWei, address]
+    );
+
+    res.json({
+      ok: true,
+      releasedWei,
+      releasedMc:       canRelease.toFixed(6),
+      frozenBalanceMc:  fmtMc(newFrozenWei),
+      availableBalanceMc: fmtMc(newAvailWei),
+      directCount,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to release validator balance" });
+  }
+});
+
+// GET /admin/validators/:validatorAddress/sub-wallets/:subAddress/balances
+router.get("/admin/validators/:validatorAddress/sub-wallets/:subAddress/balances", async (req, res): Promise<void> => {
+  try {
+    const validatorAddress = (req.params["validatorAddress"] ?? "").toLowerCase();
+    const subAddress       = (req.params["subAddress"]       ?? "").toLowerCase();
+    const directCount = await getDirectCount(subAddress);
+
+    const { rows } = await pool.query<{
+      frozen_balance: string; available_balance: string; package_tier: string | null;
+    }>(
+      "SELECT frozen_balance, available_balance, package_tier FROM validator_sub_wallets WHERE validator_address = $1 AND (sub_wallet_address = $2 OR sub_wallet_eth_address = $2)",
+      [validatorAddress, subAddress]
+    );
+
+    const row = rows[0];
+    if (!row) { res.status(404).json({ error: "Sub-wallet not found" }); return; }
+
+    const frozenWei    = row.frozen_balance;
+    const availableWei = row.available_balance;
+    const packageTier  = row.package_tier;
+    const referralReleasePerDirectMc = 10;
+    const totalUnlockableMc = directCount * referralReleasePerDirectMc;
+    const availableMc = parseFloat(availableWei) / 1e18;
+    const canReleaseNowMc = Math.max(0, Math.min(parseFloat(frozenWei) / 1e18, totalUnlockableMc - availableMc));
+
+    res.json({
+      address: subAddress,
+      validatorAddress,
+      packageTier,
+      directCount,
+      frozenBalanceWei:          frozenWei,
+      frozenBalanceMc:           fmtMc(frozenWei),
+      availableBalanceWei:       availableWei,
+      availableBalanceMc:        fmtMc(availableWei),
+      referralReleasePerDirectMc: referralReleasePerDirectMc.toFixed(6),
+      totalUnlockableMc:         totalUnlockableMc.toFixed(6),
+      canReleaseNowMc:           canReleaseNowMc.toFixed(6),
+    });
+  } catch {
+    res.status(500).json({ error: "Failed to fetch sub-wallet balances" });
+  }
+});
+
+// POST /admin/validators/:validatorAddress/sub-wallets/:subAddress/release-balance
+router.post("/admin/validators/:validatorAddress/sub-wallets/:subAddress/release-balance", async (req, res): Promise<void> => {
+  try {
+    const validatorAddress = (req.params["validatorAddress"] ?? "").toLowerCase();
+    const subAddress       = (req.params["subAddress"]       ?? "").toLowerCase();
+    const directCount = await getDirectCount(subAddress);
+
+    const { rows } = await pool.query<{
+      id: string; frozen_balance: string; available_balance: string;
+    }>(
+      "SELECT id, frozen_balance, available_balance FROM validator_sub_wallets WHERE validator_address = $1 AND (sub_wallet_address = $2 OR sub_wallet_eth_address = $2)",
+      [validatorAddress, subAddress]
+    );
+
+    const row = rows[0];
+    if (!row) { res.status(404).json({ error: "Sub-wallet not found" }); return; }
+
+    const frozenMc    = parseFloat(row.frozen_balance)    / 1e18;
+    const availableMc = parseFloat(row.available_balance) / 1e18;
+    const totalUnlockable = directCount * 10;
+    const canRelease = Math.max(0, Math.min(frozenMc, totalUnlockable - availableMc));
+
+    if (canRelease <= 0) {
+      res.json({ ok: true, released: "0", message: "No additional balance to release based on current referral count" });
+      return;
+    }
+
+    const releasedWei  = fmtWei(canRelease);
+    const newFrozenWei = fmtWei(Math.max(0, frozenMc    - canRelease));
+    const newAvailWei  = fmtWei(availableMc + canRelease);
+
+    await pool.query(
+      "UPDATE validator_sub_wallets SET frozen_balance = $1, available_balance = $2 WHERE id = $3",
+      [newFrozenWei, newAvailWei, row.id]
+    );
+
+    res.json({
+      ok: true,
+      releasedWei,
+      releasedMc:         canRelease.toFixed(6),
+      frozenBalanceMc:    fmtMc(newFrozenWei),
+      availableBalanceMc: fmtMc(newAvailWei),
+      directCount,
+    });
+  } catch {
+    res.status(500).json({ error: "Failed to release sub-wallet balance" });
+  }
+});
+
 router.delete("/admin/api-keys/:keyName", async (req, res): Promise<void> => {
   const keyName = req.params["keyName"] as AllowedKeyName;
   if (!ALLOWED_API_KEYS.find((k) => k.name === keyName)) {

@@ -28,8 +28,10 @@ import {
   type GasReward,
   type SubWallet,
   type TreasuryReward,
+  type ValidatorBalance,
   type ValidatorBlock,
 } from "@/services/api";
+import { usePinContext } from "@/context/PinContext";
 import { formatUptime, shortenAddress, weiToMc } from "@/services/crypto";
 import {
   registerHeartbeatTask,
@@ -90,6 +92,7 @@ export default function ValidatorScreen() {
   } = useWallet();
 
   const { openEpoch } = useHeartbeat();
+  const { requestPin, dismissPin } = usePinContext();
   const flatListRef = useRef<FlatList>(null);
 
   useFocusEffect(
@@ -109,6 +112,14 @@ export default function ValidatorScreen() {
   const [monikerFocused, setMonikerFocused] = useState(false);
   const [restartLoading, setRestartLoading] = useState(false);
   const [toast, setToast] = useState("");
+
+  // ── Claim state ──────────────────────────────────────────────────────────────
+  const [showClaimForm, setShowClaimForm]       = useState(false);
+  const [claimToAddress, setClaimToAddress]     = useState("");
+  const [claimToFocused, setClaimToFocused]     = useState(false);
+  const [claimLoading, setClaimLoading]         = useState(false);
+  const [claimTxHash, setClaimTxHash]           = useState<string | null>(null);
+  const [claimError, setClaimError]             = useState("");
 
   // ── Sub-wallet state ────────────────────────────────────────────────────────
   const [showAddSubWallet, setShowAddSubWallet] = useState(false);
@@ -185,6 +196,15 @@ export default function ValidatorScreen() {
   const isBanned = validator?.status === "banned";
   const earnings = earningsData?.earnings;
   const stats = earningsData?.stats;
+
+  // ── Validator balance query (frozen / available) ─────────────────────────────
+  const { data: validatorBalance, refetch: refetchValidatorBalance } = useQuery({
+    queryKey: ["validatorBalance", mxcAddress],
+    queryFn: () => api.getValidatorBalance(mxcAddress!),
+    enabled: !!mxcAddress && isRegistered,
+    staleTime: 60_000,
+    refetchInterval: 2 * 60 * 1000,
+  });
 
   // ── Sub-wallets query + mutations ────────────────────────────────────────────
   const { data: subWalletsData, refetch: refetchSubWallets } = useQuery({
@@ -291,6 +311,39 @@ export default function ValidatorScreen() {
   });
 
   // ── Helpers ─────────────────────────────────────────────────────────────────
+  // ── Claim handler (requires PIN) ─────────────────────────────────────────────
+  async function handleClaim() {
+    if (!mxcAddress) return;
+    setClaimLoading(true);
+    dismissPin();
+    try {
+      const toAddr = claimToAddress.trim() || mxcAddress;
+      const amount = validatorBalance?.availableBalanceWei ?? "0";
+      if (amount === "0" || amount === "") {
+        setClaimError("No available balance to claim");
+        return;
+      }
+      const accountInfo = await api.getAccount(mxcAddress);
+      const result = await api.sendTransaction({
+        fromAddress: mxcAddress,
+        toAddress: toAddr,
+        amount,
+        nonce: accountInfo.nonce,
+      });
+      setClaimTxHash(result.txHash);
+      setShowClaimForm(false);
+      setClaimToAddress("");
+      setClaimError("");
+      void refetchValidatorBalance();
+      qc.invalidateQueries({ queryKey: ["account", mxcAddress] });
+      setToast("Claim submitted — check your transaction history");
+    } catch (err) {
+      setClaimError(err instanceof Error ? err.message : "Claim failed");
+    } finally {
+      setClaimLoading(false);
+    }
+  }
+
   async function handleRestartSession() {
     if (!mxcAddress) return;
     setRestartLoading(true);
@@ -812,6 +865,92 @@ export default function ValidatorScreen() {
     subWalletError: {
       fontSize: 12, fontFamily: "Inter_400Regular", color: "#EF4444",
     },
+    // ── Balance card ──────────────────────────────────────────────────────────
+    balanceCard: {
+      marginHorizontal: 16, marginBottom: 12, borderRadius: 16,
+      overflow: "hidden", borderWidth: 1, borderColor: "rgba(14,165,233,0.15)",
+    },
+    balanceGrad: { padding: 16, gap: 12 },
+    balanceHeader: {
+      flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    },
+    balanceTitle: {
+      fontSize: 11, fontFamily: "Inter_700Bold",
+      color: "rgba(255,255,255,0.75)", letterSpacing: 1.2,
+    },
+    claimToggleBtn: {
+      flexDirection: "row", alignItems: "center", gap: 4,
+      backgroundColor: "#10B98120", borderRadius: 10,
+      paddingHorizontal: 10, paddingVertical: 4,
+      borderWidth: 1, borderColor: "#10B98140",
+    },
+    claimToggleText: {
+      fontSize: 12, fontFamily: "Inter_600SemiBold", color: "#10B981",
+    },
+    balanceRow: { flexDirection: "row", gap: 10 },
+    balanceBox: {
+      flex: 1, backgroundColor: "rgba(255,255,255,0.04)",
+      borderRadius: 10, padding: 12,
+      borderWidth: 1, borderColor: "rgba(255,255,255,0.07)",
+    },
+    balanceBoxHighlighted: {
+      borderColor: "rgba(16,185,129,0.25)",
+      backgroundColor: "rgba(16,185,129,0.06)",
+    },
+    balanceBoxLabel: {
+      fontSize: 9, fontFamily: "Inter_700Bold",
+      color: "rgba(255,255,255,0.4)", letterSpacing: 1.2,
+    },
+    balanceBoxValue: {
+      fontSize: 22, fontFamily: "Inter_700Bold",
+      color: "rgba(255,255,255,0.9)", lineHeight: 26,
+    },
+    balanceBoxUnit: {
+      fontSize: 10, fontFamily: "Inter_400Regular",
+      color: "rgba(255,255,255,0.35)", marginTop: 1,
+    },
+    balanceHint: {
+      fontSize: 11, fontFamily: "Inter_400Regular",
+      color: "rgba(255,255,255,0.3)", lineHeight: 15,
+    },
+    // ── Claim form ────────────────────────────────────────────────────────────
+    claimForm: {
+      borderTopWidth: 1, borderTopColor: "rgba(255,255,255,0.08)",
+      paddingTop: 14, gap: 10,
+    },
+    claimFormTitle: {
+      fontSize: 13, fontFamily: "Inter_600SemiBold",
+      color: "rgba(255,255,255,0.85)",
+    },
+    claimFormAmount: {
+      fontSize: 20, fontFamily: "Inter_700Bold", color: "#10B981",
+    },
+    claimInput: {
+      backgroundColor: "rgba(255,255,255,0.05)",
+      borderRadius: 10, borderWidth: 1, borderColor: "rgba(255,255,255,0.12)",
+      paddingHorizontal: 14, paddingVertical: 11,
+      fontSize: 13, fontFamily: "Inter_400Regular",
+      color: "rgba(255,255,255,0.85)",
+    },
+    claimInputFocused: { borderColor: "#10B981" },
+    claimError: {
+      fontSize: 12, fontFamily: "Inter_400Regular", color: "#EF4444",
+    },
+    claimSuccessWrap: {
+      flexDirection: "row", alignItems: "center", gap: 6,
+    },
+    claimSuccess: {
+      flex: 1, fontSize: 12, fontFamily: "Inter_400Regular", color: "#10B981",
+    },
+    claimBtn: { borderRadius: 10, overflow: "hidden" },
+    claimBtnGrad: {
+      paddingVertical: 13, flexDirection: "row",
+      alignItems: "center", justifyContent: "center", gap: 8,
+    },
+    claimBtnText: {
+      fontSize: 14, fontFamily: "Inter_600SemiBold", color: "#FFFFFF",
+    },
+
     subWalletPendingHint: {
       fontSize: 10, fontFamily: "Inter_400Regular",
       color: "#F59E0B", marginTop: 1,
@@ -1147,6 +1286,114 @@ export default function ValidatorScreen() {
     </View>
   ) : null;
 
+  // ── Rewards balance card (frozen / available / claim) ────────────────────────
+  const hasBalance = validatorBalance &&
+    (parseFloat(validatorBalance.frozenBalanceWei) > 0 ||
+     parseFloat(validatorBalance.availableBalanceWei) > 0);
+
+  const canClaim = validatorBalance &&
+    parseFloat(validatorBalance.availableBalanceWei) > 0;
+
+  const BalanceCard = (hasBalance || showClaimForm) ? (
+    <View style={s.balanceCard}>
+      <LinearGradient colors={["#071A2E", "#040F1C"]} style={s.balanceGrad}>
+        <View style={s.balanceHeader}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 7 }}>
+            <Icon name="lock-closed-outline" size={13} color="#0EA5E9" />
+            <Text style={s.balanceTitle}>REWARDS BALANCE</Text>
+          </View>
+          {canClaim && (
+            <TouchableOpacity
+              onPress={() => { setShowClaimForm(v => !v); setClaimError(""); setClaimTxHash(null); }}
+              activeOpacity={0.7}
+            >
+              <View style={s.claimToggleBtn}>
+                <Icon name={showClaimForm ? "close-outline" : "arrow-down-circle-outline"} size={13} color="#10B981" />
+                <Text style={s.claimToggleText}>{showClaimForm ? "Cancel" : "Claim"}</Text>
+              </View>
+            </TouchableOpacity>
+          )}
+        </View>
+
+        <View style={s.balanceRow}>
+          <View style={s.balanceBox}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 5, marginBottom: 4 }}>
+              <Icon name="lock-closed-outline" size={10} color="rgba(255,255,255,0.4)" />
+              <Text style={s.balanceBoxLabel}>FROZEN</Text>
+            </View>
+            <Text style={s.balanceBoxValue}>{parseFloat(validatorBalance?.frozenBalanceMc ?? "0").toFixed(4)}</Text>
+            <Text style={s.balanceBoxUnit}>MC locked</Text>
+          </View>
+          <View style={[s.balanceBox, s.balanceBoxHighlighted]}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 5, marginBottom: 4 }}>
+              <Icon name="checkmark-circle-outline" size={10} color="#10B981" />
+              <Text style={[s.balanceBoxLabel, { color: "#10B981" }]}>AVAILABLE</Text>
+            </View>
+            <Text style={[s.balanceBoxValue, { color: "#10B981" }]}>{parseFloat(validatorBalance?.availableBalanceMc ?? "0").toFixed(4)}</Text>
+            <Text style={s.balanceBoxUnit}>MC ready</Text>
+          </View>
+        </View>
+
+        <Text style={s.balanceHint}>
+          Frozen balance unlocks based on your referral count. Contact admin to release.
+        </Text>
+
+        {showClaimForm && (
+          <View style={s.claimForm}>
+            <Text style={s.claimFormTitle}>Withdraw Available Balance</Text>
+            <Text style={s.claimFormAmount}>
+              {parseFloat(validatorBalance?.availableBalanceMc ?? "0").toFixed(6)} MC
+            </Text>
+            <TextInput
+              style={[s.claimInput, claimToFocused && s.claimInputFocused]}
+              value={claimToAddress}
+              onChangeText={(t) => { setClaimToAddress(t); setClaimError(""); }}
+              onFocus={() => setClaimToFocused(true)}
+              onBlur={() => setClaimToFocused(false)}
+              placeholder={`Destination address (default: your wallet)`}
+              placeholderTextColor="rgba(255,255,255,0.25)"
+              autoCapitalize="none"
+              autoCorrect={false}
+              editable={!claimLoading}
+            />
+            {claimError ? <Text style={s.claimError}>{claimError}</Text> : null}
+            {claimTxHash ? (
+              <View style={s.claimSuccessWrap}>
+                <Icon name="checkmark-circle" size={14} color="#10B981" />
+                <Text style={s.claimSuccess} numberOfLines={1}>
+                  TX: {claimTxHash.substring(0, 20)}…
+                </Text>
+              </View>
+            ) : null}
+            <TouchableOpacity
+              style={[s.claimBtn, (!canClaim || claimLoading) && { opacity: 0.55 }]}
+              disabled={!canClaim || claimLoading}
+              activeOpacity={0.85}
+              onPress={() => void requestPin({
+                title: "Confirm Withdrawal",
+                subtitle: `Withdraw ${parseFloat(validatorBalance?.availableBalanceMc ?? "0").toFixed(4)} MC. Enter your PIN to sign.`,
+                onSuccess: handleClaim,
+                onCancel: () => {},
+              })}
+            >
+              <LinearGradient colors={["#059669", "#047857"]} style={s.claimBtnGrad}>
+                {claimLoading
+                  ? <ActivityIndicator color="#fff" size="small" />
+                  : (
+                    <>
+                      <Icon name="lock-open-outline" size={14} color="#fff" />
+                      <Text style={s.claimBtnText}>Withdraw with PIN</Text>
+                    </>
+                  )
+                }
+              </LinearGradient>
+            </TouchableOpacity>
+          </View>
+        )}
+      </LinearGradient>
+    </View>
+  ) : null;
+
   // ── Register form ───────────────────────────────────────────────────────────
   const RegisterForm = (
     <View style={s.registerCard}>
@@ -1245,6 +1492,7 @@ export default function ValidatorScreen() {
           {HeroCard}
           {EpochCard}
           {EarningsCard}
+          {BalanceCard}
 
           {/* Sub Wallets */}
           <View style={s.subWalletsCard}>

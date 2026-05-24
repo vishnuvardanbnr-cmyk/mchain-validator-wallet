@@ -167,6 +167,18 @@ export interface ValidatorInfo {
   joinedAt: string;
   sessionStartedAt?: string;
   createdAt: string;
+  packageTier?: string | null;
+  frozenBalance?: string;
+  availableBalance?: string;
+}
+
+export interface ValidatorBalance {
+  validatorAddress: string;
+  packageTier: string | null;
+  frozenBalanceWei: string;
+  frozenBalanceMc: string;
+  availableBalanceWei: string;
+  availableBalanceMc: string;
 }
 
 export interface HeartbeatRecord {
@@ -469,6 +481,23 @@ export const api = {
       signal: AbortSignal.timeout(8_000),
     });
     if (!res.ok) return { subWallets: [] };
+    return res.json();
+  },
+
+  getValidatorBalance: async (validatorAddress: string): Promise<ValidatorBalance> => {
+    const base = getPublicApiBase();
+    const res = await fetch(
+      `${base}/validators/${encodeURIComponent(validatorAddress)}/balance`,
+      { signal: AbortSignal.timeout(8_000) }
+    );
+    if (!res.ok) {
+      return {
+        validatorAddress,
+        packageTier: null,
+        frozenBalanceWei: "0", frozenBalanceMc: "0.000000",
+        availableBalanceWei: "0", availableBalanceMc: "0.000000",
+      };
+    }
     return res.json();
   },
 
