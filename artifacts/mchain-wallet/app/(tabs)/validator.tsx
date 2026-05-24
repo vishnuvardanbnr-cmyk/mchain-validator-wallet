@@ -113,7 +113,9 @@ export default function ValidatorScreen() {
   // ── Sub-wallet state ────────────────────────────────────────────────────────
   const [showAddSubWallet, setShowAddSubWallet] = useState(false);
   const [newSubWallet, setNewSubWallet] = useState("");
+  const [newSubWalletLabel, setNewSubWalletLabel] = useState("");
   const [subWalletFocused, setSubWalletFocused] = useState(false);
+  const [subWalletLabelFocused, setSubWalletLabelFocused] = useState(false);
   const [subWalletError, setSubWalletError] = useState("");
 
   // ── Sub-tab state ───────────────────────────────────────────────────────────
@@ -189,14 +191,28 @@ export default function ValidatorScreen() {
     queryKey: ["validatorSubWallets", mxcAddress],
     queryFn: () => api.getSubWallets(mxcAddress!),
     enabled: !!mxcAddress && isRegistered,
-    staleTime: 30_000,
+    staleTime: 60_000,
+    refetchInterval: 2 * 60 * 1000, // re-check every 2 min so pending badges auto-update
+    refetchOnWindowFocus: true,
   });
   const subWallets: SubWallet[] = subWalletsData?.subWallets ?? [];
 
+  // Refetch sub-wallets whenever a new epoch arrives (i.e. after each heartbeat)
+  const prevEpochNumRef = useRef<number | null>(null);
+  useEffect(() => {
+    const num = openEpoch?.epochNumber ?? null;
+    if (num !== null && num !== prevEpochNumRef.current && isRegistered) {
+      prevEpochNumRef.current = num;
+      void refetchSubWallets();
+    }
+  }, [openEpoch, isRegistered, refetchSubWallets]);
+
   const addSubWalletMutation = useMutation({
-    mutationFn: (addr: string) => api.addSubWallet(mxcAddress!, addr),
+    mutationFn: ({ addr, label }: { addr: string; label: string }) =>
+      api.addSubWallet(mxcAddress!, addr, label || undefined),
     onSuccess: () => {
       setNewSubWallet("");
+      setNewSubWalletLabel("");
       setShowAddSubWallet(false);
       setSubWalletError("");
       void refetchSubWallets();
@@ -796,6 +812,17 @@ export default function ValidatorScreen() {
     subWalletError: {
       fontSize: 12, fontFamily: "Inter_400Regular", color: "#EF4444",
     },
+    subWalletPendingHint: {
+      fontSize: 10, fontFamily: "Inter_400Regular",
+      color: "#F59E0B", marginTop: 1,
+    },
+    subWalletHintWrap: {
+      flexDirection: "row", alignItems: "flex-start", gap: 5,
+    },
+    subWalletHintText: {
+      flex: 1, fontSize: 11, fontFamily: "Inter_400Regular",
+      color: colors.mutedForeground, lineHeight: 15,
+    },
     subWalletAddBtn: { borderRadius: 10, overflow: "hidden" },
     subWalletAddBtnGrad: {
       paddingVertical: 12, alignItems: "center", justifyContent: "center",
@@ -1227,7 +1254,12 @@ export default function ValidatorScreen() {
                 <Text style={s.subWalletsSub}>Each verified sub wallet earns rewards in parallel</Text>
               </View>
               <TouchableOpacity
-                onPress={() => { setShowAddSubWallet(v => !v); setSubWalletError(""); }}
+                onPress={() => {
+                  setShowAddSubWallet(v => !v);
+                  setSubWalletError("");
+                  setNewSubWallet("");
+                  setNewSubWalletLabel("");
+                }}
                 activeOpacity={0.7}
               >
                 <Icon
@@ -1237,38 +1269,53 @@ export default function ValidatorScreen() {
               </TouchableOpacity>
             </View>
 
-            {subWallets.map((sw) => (
-              <View key={sw.id} style={s.subWalletRow}>
-                <Icon name="wallet-outline" size={15} color={colors.primary} />
-                <Text style={s.subWalletAddr} numberOfLines={1}>
-                  {shortenAddress(sw.subWalletAddress, 10)}
-                </Text>
-                <View style={s.subWalletBadge}>
-                  <Icon name="checkmark-circle" size={11} color="#10B981" />
-                  <Text style={s.subWalletBadgeText}>Verified</Text>
+            {subWallets.map((sw) => {
+              const isPending = sw.packageTier === null;
+              const badgeColor = isPending ? "#F59E0B" : "#10B981";
+              const badgeBg = isPending ? "#F59E0B15" : "#10B98115";
+              const badgeBorder = isPending ? "#F59E0B40" : "#10B98140";
+              const badgeIcon = isPending ? "time-outline" : "checkmark-circle";
+              const badgeLabel = isPending ? "Pending" : `$${sw.packageTier} pkg`;
+              return (
+                <View key={sw.id} style={s.subWalletRow}>
+                  <Icon name="wallet-outline" size={15} color={colors.primary} />
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={s.subWalletAddr} numberOfLines={1}>
+                      {sw.label ? `${sw.label} · ` : ""}{shortenAddress(sw.subWalletAddress, 8)}
+                    </Text>
+                    {isPending && (
+                      <Text style={s.subWalletPendingHint}>
+                        Buy a package on-chain to start earning
+                      </Text>
+                    )}
+                  </View>
+                  <View style={[s.subWalletBadge, { backgroundColor: badgeBg, borderColor: badgeBorder }]}>
+                    <Icon name={badgeIcon} size={11} color={badgeColor} />
+                    <Text style={[s.subWalletBadgeText, { color: badgeColor }]}>{badgeLabel}</Text>
+                  </View>
+                  <TouchableOpacity
+                    onPress={() => {
+                      Alert.alert(
+                        "Remove Sub Wallet",
+                        `Remove ${shortenAddress(sw.subWalletAddress, 8)}?\nIt will stop earning rewards.`,
+                        [
+                          { text: "Cancel", style: "cancel" },
+                          {
+                            text: "Remove",
+                            style: "destructive",
+                            onPress: () => removeSubWalletMutation.mutate(sw.subWalletAddress),
+                          },
+                        ]
+                      );
+                    }}
+                    activeOpacity={0.7}
+                    disabled={removeSubWalletMutation.isPending}
+                  >
+                    <Icon name="trash-outline" size={16} color="#EF4444" />
+                  </TouchableOpacity>
                 </View>
-                <TouchableOpacity
-                  onPress={() => {
-                    Alert.alert(
-                      "Remove Sub Wallet",
-                      `Remove ${shortenAddress(sw.subWalletAddress, 8)}?\nIt will stop earning rewards.`,
-                      [
-                        { text: "Cancel", style: "cancel" },
-                        {
-                          text: "Remove",
-                          style: "destructive",
-                          onPress: () => removeSubWalletMutation.mutate(sw.subWalletAddress),
-                        },
-                      ]
-                    );
-                  }}
-                  activeOpacity={0.7}
-                  disabled={removeSubWalletMutation.isPending}
-                >
-                  <Icon name="trash-outline" size={16} color="#EF4444" />
-                </TouchableOpacity>
-              </View>
-            ))}
+              );
+            })}
 
             {subWallets.length === 0 && !showAddSubWallet && (
               <Text style={s.subWalletsEmpty}>
@@ -1284,15 +1331,33 @@ export default function ValidatorScreen() {
                   onChangeText={(t) => { setNewSubWallet(t); setSubWalletError(""); }}
                   onFocus={() => setSubWalletFocused(true)}
                   onBlur={() => setSubWalletFocused(false)}
-                  placeholder="mxc1... or 0x..."
+                  placeholder="mxc1... or 0x... address"
                   placeholderTextColor={colors.mutedForeground}
                   autoCapitalize="none"
                   autoCorrect={false}
                   editable={!addSubWalletMutation.isPending}
                 />
+                <TextInput
+                  style={[s.subWalletInput, subWalletLabelFocused && s.subWalletInputFocused]}
+                  value={newSubWalletLabel}
+                  onChangeText={setNewSubWalletLabel}
+                  onFocus={() => setSubWalletLabelFocused(true)}
+                  onBlur={() => setSubWalletLabelFocused(false)}
+                  placeholder="Label (optional, e.g. Trading wallet)"
+                  placeholderTextColor={colors.mutedForeground}
+                  autoCorrect={false}
+                  maxLength={40}
+                  editable={!addSubWalletMutation.isPending}
+                />
                 {subWalletError ? (
                   <Text style={s.subWalletError}>{subWalletError}</Text>
                 ) : null}
+                <View style={s.subWalletHintWrap}>
+                  <Icon name="information-circle-outline" size={12} color={colors.mutedForeground} />
+                  <Text style={s.subWalletHintText}>
+                    Can be added before buying a package — it will show as "Pending" until activated on-chain.
+                  </Text>
+                </View>
                 <TouchableOpacity
                   style={[s.subWalletAddBtn, addSubWalletMutation.isPending && { opacity: 0.65 }]}
                   onPress={() => {
@@ -1303,7 +1368,7 @@ export default function ValidatorScreen() {
                       setSubWalletError("Enter a valid mxc1... or 0x... address");
                       return;
                     }
-                    addSubWalletMutation.mutate(addr);
+                    addSubWalletMutation.mutate({ addr, label: newSubWalletLabel.trim() });
                   }}
                   disabled={addSubWalletMutation.isPending}
                   activeOpacity={0.85}
