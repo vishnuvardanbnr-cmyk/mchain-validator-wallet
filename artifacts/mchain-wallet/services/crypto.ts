@@ -6,6 +6,17 @@ import { keccak_256 } from "@noble/hashes/sha3";
 import { sha256 } from "@noble/hashes/sha256";
 import { bech32 } from "bech32";
 
+/**
+ * Convert a decimal string amount to its integer BigInt representation.
+ * Uses pure string arithmetic — no floating point, no precision loss.
+ * e.g. parseUnits("0.3", 18) => 300000000000000000n (not 299999999999999988n)
+ */
+export function parseUnits(value: string, decimals: number): bigint {
+  const [intPart = "0", rawFrac = ""] = value.split(".");
+  const frac = rawFrac.padEnd(decimals, "0").slice(0, decimals);
+  return BigInt(intPart) * (10n ** BigInt(decimals)) + BigInt(frac || "0");
+}
+
 export function bytesToHex(bytes: Uint8Array): string {
   return Array.from(bytes)
     .map((b) => b.toString(16).padStart(2, "0"))

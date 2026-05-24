@@ -9,6 +9,7 @@ import {
   buildErc20TransferDataHex,
   mcToWei,
   mxcAddressToEthAddress,
+  parseUnits,
   shortenAddress,
   weiToMc,
 } from "@/services/crypto";
@@ -318,8 +319,7 @@ export default function SendScreen() {
       let result: { txHash: string };
 
       if (isToken && selectedToken) {
-        const decimals = selectedToken.decimals;
-        const amountRaw = BigInt(Math.round(parseFloat(amount) * Math.pow(10, decimals)));
+        const amountRaw = parseUnits(amount, selectedToken.decimals);
         const data = buildErc20TransferDataHex(recipient.trim(), amountRaw);
         result = await api.sendTransaction({
           fromAddress: mxcAddress,
