@@ -41,12 +41,14 @@ function buildTransferMessage(params: {
 
 // ── POST /transactions ────────────────────────────────────────────────────────
 router.post("/transactions", async (req, res): Promise<void> => {
-  const { fromAddress, toAddress, amount, nonce, signature } = req.body as {
+  const { fromAddress, toAddress, amount, nonce, signature, data, txType } = req.body as {
     fromAddress?: string;
     toAddress?: string;
     amount?: string;
     nonce?: number;
     signature?: string;
+    data?: string;
+    txType?: string;
   };
 
   // ── Validate required fields ──────────────────────────────────────────────
@@ -104,7 +106,7 @@ router.post("/transactions", async (req, res): Promise<void> => {
     const upstream = await fetch(`${CHAIN_BASE}/transactions`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify({ fromAddress, toAddress: toAddress || null, amount, nonce, signature }),
+      body: JSON.stringify({ fromAddress, toAddress: toAddress || null, amount, nonce, signature, ...(data ? { data } : {}), ...(txType ? { txType } : {}) }),
       signal: AbortSignal.timeout(15_000),
     });
 
