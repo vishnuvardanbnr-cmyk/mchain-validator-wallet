@@ -331,7 +331,7 @@ export default function SendScreen() {
         result = await api.sendTransaction({
           fromAddress: mxcAddress,
           toAddress: selectedToken.contractAddress,
-          amount: "1",
+          amount: "0",
           data,
           txType: "contract_call",
           nonce,
