@@ -70,6 +70,12 @@ router.post("/transactions", async (req, res): Promise<void> => {
     return;
   }
 
+  // Native transfers require amount > 0; contract calls may legitimately send 0
+  if (amount === "0" && txType !== "contract_call") {
+    res.status(400).json({ error: "amount must be greater than 0 for native transfers" });
+    return;
+  }
+
   if (!/^0x[0-9a-fA-F]{130}$/.test(signature)) {
     res.status(400).json({ error: "signature must be a valid 65-byte hex string (0x...)" });
     return;
