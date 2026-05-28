@@ -112,7 +112,18 @@ router.post("/transactions", async (req, res): Promise<void> => {
     const upstream = await fetch(`${CHAIN_BASE}/transactions`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify({ fromAddress, toAddress: toAddress || null, amount, nonce, signature, ...(data ? { data } : {}), ...(txType ? { txType } : {}) }),
+      body: JSON.stringify({
+        // both naming conventions — chain docs use from/to; legacy accepts fromAddress/toAddress
+        from: fromAddress,
+        fromAddress,
+        to: toAddress || null,
+        toAddress: toAddress || null,
+        amount,
+        nonce,
+        signature,
+        ...(txType ? { txType } : {}),
+        ...(data   ? { data }   : {}),
+      }),
       signal: AbortSignal.timeout(15_000),
     });
 
