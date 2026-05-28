@@ -130,6 +130,8 @@ export interface Transaction {
   blockHeight: number;
   status: string;
   txType: string;
+  tokenContract?: string;
+  tokenAmount?: string;
 }
 
 export interface TokenTransfer {

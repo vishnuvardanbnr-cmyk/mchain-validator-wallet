@@ -1,8 +1,8 @@
 import { Icon } from "@/components/Icon";
 import { TxRowSkeleton } from "@/components/Skeleton";
 import { useColors } from "@/hooks/useColors";
-import { api, type TokenTransfer, type Transaction } from "@/services/api";
-import { ethAddressToMxc, shortenAddress } from "@/services/crypto";
+import { api, type Transaction } from "@/services/api";
+import { ethAddressToMxc, mxcAddressToEthAddress, shortenAddress } from "@/services/crypto";
 import type { CustomToken } from "@/services/tokens";
 import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
@@ -51,6 +51,11 @@ function ethToMxcSafe(addr: string): string {
   try { return ethAddressToMxc(addr); } catch { return addr; }
 }
 
+function mxcToEthSafe(addr: string): string {
+  if (!addr || !addr.startsWith("mxc1")) return addr;
+  try { return mxcAddressToEthAddress(addr); } catch { return addr; }
+}
+
 function formatAmount(raw: string, decimals: number): string {
   try {
     const bn = BigInt(raw);
@@ -87,20 +92,29 @@ function normalizeNative(tx: Transaction): NormalizedTx {
   };
 }
 
-function normalizeToken(t: TokenTransfer, symbol: string, decimals: number): NormalizedTx {
+// For contract_call transactions the chain sets toEth = contract address and
+// toMxc = decoded token recipient. We fix toEth so TxRow can compare correctly.
+function normalizeTokenTx(tx: Transaction, symbol: string, decimals: number): NormalizedTx {
+  const recipientMxc = tx.toMxc || tx.toAddress || "";
+  const recipientEth = mxcToEthSafe(recipientMxc);
   return {
-    hash: t.hash,
-    fromEth: t.fromEth,
-    toEth: t.toEth,
-    fromMxc: ethToMxcSafe(t.fromEth),
-    toMxc: ethToMxcSafe(t.toEth),
-    amountRaw: t.value || "0",
+    hash: tx.hash,
+    fromEth: tx.fromEth || "",
+    toEth: recipientEth,
+    fromMxc: tx.fromMxc || tx.fromAddress || "",
+    toMxc: recipientMxc,
+    amountRaw: tx.tokenAmount || tx.amount || "0",
     symbol,
     decimals,
-    dateStr: `Block #${t.blockNumber.toLocaleString()}`,
-    blockHeight: t.blockNumber,
-    nonce: undefined,
-    status: "confirmed",
+    dateStr: tx.createdAt
+      ? new Date(tx.createdAt).toLocaleDateString(undefined, {
+          month: "short", day: "numeric",
+          hour: "2-digit", minute: "2-digit",
+        })
+      : "—",
+    blockHeight: tx.blockHeight,
+    nonce: tx.nonce,
+    status: tx.status,
   };
 }
 
@@ -394,6 +408,9 @@ export function AssetDetailModal({
   const tokenSymbol = isToken ? (asset as Extract<AssetItem, { kind: "token" }>).token.symbol : "MC";
   const tokenDecimals = isToken ? (asset as Extract<AssetItem, { kind: "token" }>).token.decimals : 18;
 
+  // For token queries we need the user's MXC address (chain indexes by mxc address)
+  const tokenQueryMxcAddr = isToken && ethAddr ? ethToMxcSafe(ethAddr) : "";
+
   // Native MC transaction history
   const { data: nativeData, isLoading: nativeLoading } = useQuery({
     queryKey: ["assetTxHistory", mxcAddr],
@@ -403,11 +420,20 @@ export function AssetDetailModal({
     refetchInterval: 30_000,
   });
 
-  // Token transfer history via eth_getLogs
+  // Token transfer history: use getTransactions filtered by txType + tokenContract.
+  // eth_getLogs is unreliable on this chain; the chain's transaction API includes
+  // tokenContract and tokenAmount on decoded contract_call entries.
   const { data: tokenData, isLoading: tokenLoading } = useQuery({
-    queryKey: ["tokenTxHistory", contractAddr, ethAddr],
-    queryFn: () => api.getTokenTransfers(contractAddr, ethAddr),
-    enabled: !!contractAddr && !!ethAddr && visible && isToken,
+    queryKey: ["tokenTxHistory", contractAddr, tokenQueryMxcAddr],
+    queryFn: async () => {
+      const result = await api.getTransactions(tokenQueryMxcAddr, 200);
+      return result.transactions.filter(
+        (tx) =>
+          tx.txType === "contract_call" &&
+          tx.tokenContract?.toLowerCase() === contractAddr.toLowerCase(),
+      );
+    },
+    enabled: !!contractAddr && !!tokenQueryMxcAddr && visible && isToken,
     staleTime: 20_000,
     refetchInterval: 30_000,
   });
@@ -416,7 +442,7 @@ export function AssetDetailModal({
 
   // Normalize all entries to the same display format
   const allEntries: NormalizedTx[] = isToken
-    ? (tokenData ?? []).map((t) => normalizeToken(t, tokenSymbol, tokenDecimals))
+    ? (tokenData ?? []).map((t) => normalizeTokenTx(t, tokenSymbol, tokenDecimals))
     : (nativeData?.transactions ?? []).map(normalizeNative);
 
   // For token txs we match by ETH address; for native we match by MXC address directly.
