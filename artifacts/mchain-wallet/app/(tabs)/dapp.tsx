@@ -5,6 +5,7 @@ import { getNodeUrl } from "@/services/node";
 import { api, type FeaturedDapp } from "@/services/api";
 import { useQuery } from "@tanstack/react-query";
 import {
+  hexToBytes,
   signEvmTransaction,
   signPersonalMessage,
   weiToMc,
@@ -569,12 +570,14 @@ export default function DAppScreen() {
       case "eth_sendTransaction": {
         if (!ethAddress) { rejectRequest(id); return; }
         const tx = (params as Record<string, string>[])[0] ?? {};
+        // DApps may send gasLimit (EIP-1559 name) or gas (legacy name) — accept both.
+        // Fall back to a generous default (600 000) suitable for contract calls.
         setSendTxReq({
           id,
           to: tx.to ?? "",
           value: tx.value ?? "0x0",
           data: tx.data ?? "0x",
-          gas: tx.gas ?? "0x5208",
+          gas: tx.gasLimit ?? tx.gas ?? "0x927C0",
           origin,
         });
         break;
@@ -688,8 +691,12 @@ export default function DAppScreen() {
       const nonce = parseInt(nonceRes.result, 16);
 
       const valueWei = BigInt(sendTxReq.value === "0x" ? "0x0" : sendTxReq.value);
+      // Convert hex calldata to bytes; ignore "0x" / empty
+      const dataHex = sendTxReq.data && sendTxReq.data !== "0x" ? sendTxReq.data : "";
+      const dataBytes = dataHex ? hexToBytes(dataHex.replace(/^0x/i, "")) : new Uint8Array(0);
       const signed = signEvmTransaction(sendTxReq.to, valueWei, nonce, pk, {
-        gasLimit: BigInt(parseInt(sendTxReq.gas || "0x5208", 16)),
+        gasLimit: BigInt(parseInt(sendTxReq.gas || "0x927C0", 16)),
+        data: dataBytes,
       });
 
       const sendRes = await fetch(rpcUrl, {
