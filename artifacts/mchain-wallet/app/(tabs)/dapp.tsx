@@ -112,6 +112,17 @@ function buildProviderScript(ethAddress: string | null, rpcUrl: string): string 
     emit(event, data);
   };
 
+  // MChain blocks have a bech32 miner field (e.g. "mxc1qqq...") instead of
+  // a standard 0x address. Viem/ethers crash when they try to parse it.
+  // Normalize it to a zero address so block-fetching calls never throw.
+  function normalizeBlock(block) {
+    if (!block || typeof block !== 'object') return block;
+    if (typeof block.miner === 'string' && block.miner.indexOf('0x') !== 0) {
+      block.miner = '0x0000000000000000000000000000000000000000';
+    }
+    return block;
+  }
+
   function rpcFetch(method, params) {
     return fetch(RPC_URL, {
       method: 'POST',
@@ -125,7 +136,14 @@ function buildProviderScript(ethAddress: string | null, rpcUrl: string): string 
         e.code = res.error.code;
         throw e;
       }
-      return res.result;
+      var result = res.result;
+      if (method === 'eth_getBlockByNumber' || method === 'eth_getBlockByHash') {
+        result = normalizeBlock(result);
+      }
+      if (method === 'eth_getBlockReceipts' && Array.isArray(result)) {
+        result = result.map(normalizeBlock);
+      }
+      return result;
     });
   }
 
