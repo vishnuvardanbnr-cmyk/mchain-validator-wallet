@@ -661,6 +661,9 @@ export default function DAppScreen() {
     setCanGoBack(nav.canGoBack);
     setCanGoForward(nav.canGoForward);
     if (nav.url) setDisplayUrl(nav.url);
+    // Keep spinner in sync with the WebView's actual loading state.
+    // onLoadEnd alone misses redirects and client-side navigation events.
+    setLoading(nav.loading);
   }
 
   function handleClose() {
