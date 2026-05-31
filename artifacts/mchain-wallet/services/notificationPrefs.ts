@@ -1,6 +1,18 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
+
+// expo-notifications removed Android push notifications from Expo Go in SDK 53+.
+// A top-level import throws immediately on affected devices, crashing the whole
+// module. Use a synchronous require() wrapped in try/catch so the module still
+// loads when the native bridge is unavailable. All call sites already have
+// their own try/catch, so null here is handled transparently.
+let Notifications: typeof import("expo-notifications") | null = null;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  Notifications = require("expo-notifications");
+} catch {
+  Notifications = null;
+}
 
 export type NotifKey =
   | "notif_validator_paused"
@@ -43,9 +55,9 @@ export async function getAllNotifPrefs(): Promise<Record<NotifKey, boolean>> {
 export async function requestNotificationPermission(): Promise<boolean> {
   if (Platform.OS === "web") return false;
   try {
-    const { status: existing } = await Notifications.getPermissionsAsync();
+    const { status: existing } = await Notifications!.getPermissionsAsync();
     if (existing === "granted") return true;
-    const { status } = await Notifications.requestPermissionsAsync();
+    const { status } = await Notifications!.requestPermissionsAsync();
     return status === "granted";
   } catch {
     return false;
@@ -55,7 +67,7 @@ export async function requestNotificationPermission(): Promise<boolean> {
 export async function getNotificationPermissionStatus(): Promise<"granted" | "denied" | "undetermined"> {
   if (Platform.OS === "web") return "denied";
   try {
-    const { status } = await Notifications.getPermissionsAsync();
+    const { status } = await Notifications!.getPermissionsAsync();
     return status as "granted" | "denied" | "undetermined";
   } catch {
     return "undetermined";
@@ -71,9 +83,9 @@ export async function sendNotifIfEnabled(
   try {
     const enabled = await getNotifPref(key);
     if (!enabled) return;
-    const { status } = await Notifications.getPermissionsAsync();
+    const { status } = await Notifications!.getPermissionsAsync();
     if (status !== "granted") return;
-    await Notifications.scheduleNotificationAsync({
+    await Notifications!.scheduleNotificationAsync({
       content: { title, body },
       trigger: null,
     });
