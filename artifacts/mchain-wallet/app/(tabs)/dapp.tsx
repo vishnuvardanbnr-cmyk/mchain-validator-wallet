@@ -6,7 +6,7 @@ import { api, type FeaturedDapp } from "@/services/api";
 import { useQuery } from "@tanstack/react-query";
 import {
   hexToBytes,
-  signEvmTransaction,
+  signLegacyTransaction,
   signPersonalMessage,
   weiToMc,
 } from "@/services/crypto";
@@ -709,7 +709,10 @@ export default function DAppScreen() {
       // Convert hex calldata to bytes; ignore "0x" / empty
       const dataHex = sendTxReq.data && sendTxReq.data !== "0x" ? sendTxReq.data : "";
       const dataBytes = dataHex ? hexToBytes(dataHex.replace(/^0x/i, "")) : new Uint8Array(0);
-      const signed = signEvmTransaction(sendTxReq.to, valueWei, nonce, pk, {
+      // Use legacy (Type 0) EIP-155 transaction — universally supported on all
+      // EVM chains including Cosmos-based ones that reject EIP-1559 Type-2 txs.
+      // gasPrice = 2 Gwei (covers MChain's 1 Gwei base fee + 1 Gwei tip).
+      const signed = signLegacyTransaction(sendTxReq.to, valueWei, nonce, pk, {
         gasLimit: BigInt(parseInt(sendTxReq.gas || "0x927C0", 16)),
         data: dataBytes,
       });

@@ -162,9 +162,68 @@ function rlpList(items: Uint8Array[]): Uint8Array {
   return out;
 }
 
+// ── EVM transaction signer (Legacy / Type 0, EIP-155) ────────────────────────
+// Used for DApp browser transactions. Legacy format is universally supported on
+// all EVM chains, including Cosmos-EVM chains that nominally expose EIP-1559
+// but reject Type-2 raw transactions at the mempool level.
+// gasPrice = 2 Gwei covers MChain's 1 Gwei base fee + 1 Gwei miner tip.
+
+export function signLegacyTransaction(
+  toAddress: string,   // mxc1... bech32 or 0x ETH address — both accepted
+  valueWei: bigint,
+  nonce: number,
+  privateKeyHex: string,
+  options?: { gasPrice?: bigint; gasLimit?: bigint; chainId?: number; data?: Uint8Array }
+): string {
+  const {
+    gasPrice = 2_000_000_000n, // 2 Gwei (1 Gwei base fee + 1 Gwei tip)
+    gasLimit = 21_000n,
+    chainId  = 1888,
+    data     = new Uint8Array(0),
+  } = options ?? {};
+
+  const resolved = toAddress.startsWith("mxc1") ? mxcAddressToEthAddress(toAddress) : toAddress;
+  const toBytes  = resolved
+    ? hexToBytes(resolved.startsWith("0x") ? resolved.slice(2) : resolved)
+    : new Uint8Array(0);
+  const privBytes = hexToBytes(privateKeyHex);
+
+  // EIP-155: signing payload = RLP([nonce, gasPrice, gasLimit, to, value, data, chainId, 0, 0])
+  const signingFields = [
+    rlpItem(bigintToMinimalBytes(BigInt(nonce))),
+    rlpItem(bigintToMinimalBytes(gasPrice)),
+    rlpItem(bigintToMinimalBytes(gasLimit)),
+    rlpItem(toBytes),
+    rlpItem(bigintToMinimalBytes(valueWei)),
+    rlpItem(data),
+    rlpItem(bigintToMinimalBytes(BigInt(chainId))),
+    rlpItem(bigintToMinimalBytes(0n)), // 0
+    rlpItem(bigintToMinimalBytes(0n)), // 0
+  ];
+  const signingRlp = rlpList(signingFields);
+  const hash = keccak_256(signingRlp);
+  const sig  = secp256k1.sign(hash, privBytes);
+
+  // EIP-155 replay-protection: v = recovery + chainId * 2 + 35
+  const v = BigInt(sig.recovery ?? 0) + BigInt(chainId) * 2n + 35n;
+
+  const signedFields = [
+    rlpItem(bigintToMinimalBytes(BigInt(nonce))),
+    rlpItem(bigintToMinimalBytes(gasPrice)),
+    rlpItem(bigintToMinimalBytes(gasLimit)),
+    rlpItem(toBytes),
+    rlpItem(bigintToMinimalBytes(valueWei)),
+    rlpItem(data),
+    rlpItem(bigintToMinimalBytes(v)),
+    rlpItem(bigintToMinimalBytes(sig.r)),
+    rlpItem(bigintToMinimalBytes(sig.s)),
+  ];
+  return "0x" + bytesToHex(rlpList(signedFields));
+}
+
 // ── EVM transaction signer (EIP-1559, Type 2) ────────────────────────────────
+// Kept for reference / future use when the chain fully supports Type-2 txs.
 // Matches MetaMask's default format: maxFeePerGas = maxPriorityFeePerGas = 1 Gwei
-// (MChain has base fee = 0, so these values are identical to gasPrice)
 
 /** Build ABI-encoded calldata for ERC-20 transfer(address,uint256).
  *  toAddress: mxc1... bech32 or 0x ETH hex — both accepted. */
