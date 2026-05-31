@@ -10,6 +10,24 @@ import {
   signPersonalMessage,
   weiToMc,
 } from "@/services/crypto";
+
+/** Format a wei amount as MC with enough decimals to always show non-zero.
+ *  Rules: ≥1 → 4dp | ≥0.0001 → 6dp | ≥0.000001 → 8dp | smaller → 10dp */
+function formatMcAuto(wei: bigint): string {
+  try {
+    const divisor = 1_000_000_000_000_000_000n;
+    const whole = Number(wei / divisor);
+    const frac  = Number(wei % divisor) / 1e18;
+    const total = whole + frac;
+    if (total === 0) return "0";
+    if (total >= 1)       return total.toFixed(4);
+    if (total >= 0.0001)  return total.toFixed(6);
+    if (total >= 0.000001) return total.toFixed(8);
+    return total.toFixed(10);
+  } catch {
+    return "0";
+  }
+}
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
 import { BlurView } from "expo-blur";
@@ -1028,7 +1046,17 @@ export default function DAppScreen() {
                 <View style={s.infoRow}>
                   <Text style={s.infoRowLabel}>Amount</Text>
                   <Text style={s.infoRowValue}>
-                    {sendTxReq ? weiToMc(BigInt(sendTxReq.value === "0x" || !sendTxReq.value ? "0" : sendTxReq.value).toString()) : "0"} MC
+                    {sendTxReq
+                      ? formatMcAuto(BigInt(sendTxReq.value === "0x" || !sendTxReq.value ? "0" : sendTxReq.value))
+                      : "0"} MC
+                  </Text>
+                </View>
+                <View style={s.infoRow}>
+                  <Text style={s.infoRowLabel}>Gas Fee (est.)</Text>
+                  <Text style={s.infoRowValue}>
+                    {sendTxReq
+                      ? formatMcAuto(BigInt(parseInt(sendTxReq.gas || "0x927C0", 16)) * 2_000_000_000n)
+                      : "0"} MC
                   </Text>
                 </View>
                 <View style={[s.infoRow, s.infoRowLast]}>
