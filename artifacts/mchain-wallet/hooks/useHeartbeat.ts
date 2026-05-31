@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AppState, type AppStateStatus, Platform } from "react-native";
-import * as SecureStore from "expo-secure-store";
+import * as SecureStore from "@/services/secureStore";
 import NetInfo from "@react-native-community/netinfo";
 import { useWallet } from "@/context/WalletContext";
 import { api, type OpenEpoch } from "@/services/api";

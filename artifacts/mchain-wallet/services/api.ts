@@ -16,12 +16,13 @@ export function getPublicApiBase(): string {
 }
 
 function getBaseUrl(): string {
+  // EXPO_PUBLIC_API_URL takes priority on all platforms (points to VPS directly)
+  const apiUrl = typeof process !== "undefined" ? process.env.EXPO_PUBLIC_API_URL : undefined;
+  if (apiUrl) return apiUrl.replace(/\/$/, "");
   if (Platform.OS === "web") {
     const domain =
       typeof process !== "undefined" ? process.env.EXPO_PUBLIC_DOMAIN : undefined;
-    if (domain) {
-      return `https://${domain}/api/chain-proxy`;
-    }
+    if (domain) return `https://${domain}/api/chain-proxy`;
     return "/api/chain-proxy";
   }
   // Native: use the user-configured node URL directly
@@ -29,6 +30,9 @@ function getBaseUrl(): string {
 }
 
 function getRpcUrl(): string {
+  // EXPO_PUBLIC_API_URL takes priority on all platforms (points to VPS directly)
+  const apiUrl = typeof process !== "undefined" ? process.env.EXPO_PUBLIC_API_URL : undefined;
+  if (apiUrl) return `${apiUrl.replace(/\/$/, "")}/rpc`;
   if (Platform.OS === "web") {
     const domain =
       typeof process !== "undefined" ? process.env.EXPO_PUBLIC_DOMAIN : undefined;

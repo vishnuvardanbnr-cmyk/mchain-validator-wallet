@@ -1,6 +1,6 @@
 import * as BackgroundFetch from "expo-background-fetch";
 import * as TaskManager from "expo-task-manager";
-import * as SecureStore from "expo-secure-store";
+import * as SecureStore from "./secureStore";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Platform } from "react-native";
 import { signEpochBlockHash } from "./crypto";
