@@ -523,22 +523,47 @@ router.post("/admin/escrow/migrate", async (req, res) => {
     return;
   }
 
-  const {
-    isEscrowConfigured, getEscrowAddress, getEscrowPrivateKey,
-    normalizeAddress, broadcastMcTransaction, broadcastUsdtTransaction,
-    mcToWei, saveEscrowConfig,
-  } = await import("../escrow");
+  let isEscrowConfigured: () => boolean,
+      getEscrowAddress: () => string,
+      getEscrowPrivateKey: () => string,
+      normalizeAddress: (a: string) => `0x${string}`,
+      broadcastMcTransaction: (...a: unknown[]) => Promise<string>,
+      broadcastUsdtTransaction: (...a: unknown[]) => Promise<string>,
+      mcToWei: (a: string) => string,
+      saveEscrowConfig: (a: string, b: string) => void;
+
+  try {
+    ({
+      isEscrowConfigured, getEscrowAddress, getEscrowPrivateKey,
+      normalizeAddress, broadcastMcTransaction, broadcastUsdtTransaction,
+      mcToWei, saveEscrowConfig,
+    } = await import("../escrow") as never);
+  } catch (e) {
+    res.status(500).json({ error: `Failed to load escrow module: ${e instanceof Error ? e.message : String(e)}` });
+    return;
+  }
 
   // If no existing config, just save the new one directly
   if (!isEscrowConfigured()) {
-    saveEscrowConfig(newAddress.trim(), newPrivateKey.trim());
+    try {
+      saveEscrowConfig(newAddress.trim(), newPrivateKey.trim());
+    } catch (e) {
+      res.status(500).json({ error: `Failed to save escrow config: ${e instanceof Error ? e.message : String(e)}` });
+      return;
+    }
     res.json({ migrated: false, newAddress: newAddress.trim(), message: "Escrow wallet saved — no prior wallet to migrate from." });
     return;
   }
 
-  const oldAddress = getEscrowAddress();
-  const oldPk      = getEscrowPrivateKey();
-  const oldEth     = normalizeAddress(oldAddress);
+  let oldAddress: string, oldPk: string, oldEth: `0x${string}`;
+  try {
+    oldAddress = getEscrowAddress();
+    oldPk      = getEscrowPrivateKey();
+    oldEth     = normalizeAddress(oldAddress);
+  } catch (e) {
+    res.status(500).json({ error: `Failed to read existing escrow config: ${e instanceof Error ? e.message : String(e)}` });
+    return;
+  }
 
   // ── Fetch current balances ────────────────────────────────────────────────
   const { createPublicClient, http, formatEther, parseAbi } = await import("viem");
@@ -597,7 +622,12 @@ router.post("/admin/escrow/migrate", async (req, res) => {
   }
 
   // ── Persist new config ────────────────────────────────────────────────────
-  saveEscrowConfig(newAddress.trim(), newPrivateKey.trim());
+  try {
+    saveEscrowConfig(newAddress.trim(), newPrivateKey.trim());
+  } catch (e) {
+    res.status(500).json({ error: `Failed to save new escrow config: ${e instanceof Error ? e.message : String(e)}`, partialTxHashes: txHashes });
+    return;
+  }
 
   res.json({
     migrated: true,

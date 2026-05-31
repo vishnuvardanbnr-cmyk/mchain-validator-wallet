@@ -1,4 +1,6 @@
 import { bech32 } from "bech32";
+import { secp256k1 } from "@noble/curves/secp256k1";
+import { keccak_256 } from "@noble/hashes/sha3";
 import {
   createWalletClient, http, parseUnits,
   type WalletClient, type Chain,
