@@ -16,29 +16,30 @@ export function getPublicApiBase(): string {
 }
 
 function getBaseUrl(): string {
-  // EXPO_PUBLIC_API_URL takes priority on all platforms (points to VPS directly)
+  // EXPO_PUBLIC_API_URL (e.g. "https://node.mymchain.com") → add /api suffix
   const apiUrl = typeof process !== "undefined" ? process.env.EXPO_PUBLIC_API_URL : undefined;
-  if (apiUrl) return apiUrl.replace(/\/$/, "");
+  if (apiUrl) return `${apiUrl.replace(/\/$/, "")}/api`;
   if (Platform.OS === "web") {
     const domain =
       typeof process !== "undefined" ? process.env.EXPO_PUBLIC_DOMAIN : undefined;
     if (domain) return `https://${domain}/api/chain-proxy`;
     return "/api/chain-proxy";
   }
-  // Native: use the user-configured node URL directly
+  // Native without override: user-configured node URL already includes /api
   return getNodeUrl();
 }
 
 function getRpcUrl(): string {
-  // EXPO_PUBLIC_API_URL takes priority on all platforms (points to VPS directly)
+  // EXPO_PUBLIC_API_URL (e.g. "https://node.mymchain.com") → /api/rpc
   const apiUrl = typeof process !== "undefined" ? process.env.EXPO_PUBLIC_API_URL : undefined;
-  if (apiUrl) return `${apiUrl.replace(/\/$/, "")}/rpc`;
+  if (apiUrl) return `${apiUrl.replace(/\/$/, "")}/api/rpc`;
   if (Platform.OS === "web") {
     const domain =
       typeof process !== "undefined" ? process.env.EXPO_PUBLIC_DOMAIN : undefined;
     if (domain) return `https://${domain}/api/rpc`;
     return "/api/rpc";
   }
+  // Native without override: getNodeUrl() already includes /api
   return `${getNodeUrl()}/rpc`;
 }
 
