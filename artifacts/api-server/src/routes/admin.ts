@@ -560,8 +560,16 @@ router.post("/admin/escrow/migrate", async (req, res) => {
     oldAddress = getEscrowAddress();
     oldPk      = getEscrowPrivateKey();
     oldEth     = normalizeAddress(oldAddress);
-  } catch (e) {
-    res.status(500).json({ error: `Failed to read existing escrow config: ${e instanceof Error ? e.message : String(e)}` });
+  } catch {
+    // Old config exists but has an invalid/placeholder address — treat as unconfigured
+    // and just save the new wallet directly with no migration needed.
+    try {
+      saveEscrowConfig(newAddress.trim(), newPrivateKey.trim());
+    } catch (e2) {
+      res.status(500).json({ error: `Failed to save escrow config: ${e2 instanceof Error ? e2.message : String(e2)}` });
+      return;
+    }
+    res.json({ migrated: false, newAddress: newAddress.trim(), message: "Escrow wallet saved — previous config was invalid, nothing to migrate." });
     return;
   }
 
