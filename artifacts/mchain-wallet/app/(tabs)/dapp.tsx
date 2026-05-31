@@ -725,38 +725,11 @@ export default function DAppScreen() {
       // Convert hex calldata to bytes; ignore "0x" / empty
       const dataHex = sendTxReq.data && sendTxReq.data !== "0x" ? sendTxReq.data : "";
       const dataBytes = dataHex ? hexToBytes(dataHex.replace(/^0x/i, "")) : new Uint8Array(0);
-
-      // ── Simulate via eth_estimateGas (catches reverts before broadcasting) ──
-      const estimateRes = await fetch(rpcUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          jsonrpc: "2.0", id: 3, method: "eth_estimateGas",
-          params: [{
-            from: ethAddress,
-            to:   sendTxReq.to || undefined,
-            value: "0x" + valueWei.toString(16),
-            data: dataHex || undefined,
-          }],
-        }),
-      }).then(r => r.json());
-
-      console.log("[DApp TX] estimateGas:", JSON.stringify(estimateRes));
-
-      if (estimateRes.error) {
-        // Extract human-readable revert reason if present
-        const raw = estimateRes.error.message ?? "Transaction would revert";
-        const match = raw.match(/revert(?:ed)?(.*)/i);
-        const reason = match?.[1]?.trim() || raw;
-        throw new Error(`Contract call would fail:\n${reason}`);
-      }
-
-      // Use a 25% gas buffer on top of the estimate
-      const estimatedGas = BigInt(estimateRes.result ?? sendTxReq.gas ?? "0x927C0");
-      const gasLimit = estimatedGas + estimatedGas / 4n;
-
+      // Use legacy (Type 0) EIP-155 transaction — universally supported on all
+      // EVM chains including Cosmos-based ones that reject EIP-1559 Type-2 txs.
+      // gasPrice = 2 Gwei (covers MChain's 1 Gwei base fee + 1 Gwei tip).
       const signed = signLegacyTransaction(sendTxReq.to, valueWei, nonce, pk, {
-        gasLimit,
+        gasLimit: BigInt(parseInt(sendTxReq.gas || "0x927C0", 16)),
         data: dataBytes,
       });
 
