@@ -79,7 +79,7 @@ function PinGate({ children }: { children: React.ReactNode }) {
     : pinRequest?.subtitle;
   const modalOnSuccess = isAppLocked
     ? unlockApp
-    : (pinRequest?.onSuccess ?? (() => {}));
+    : () => { dismissPin(); pinRequest?.onSuccess(); };
   const modalOnCancel = isAppLocked
     ? undefined
     : (pinRequest?.onCancel ?? dismissPin);
