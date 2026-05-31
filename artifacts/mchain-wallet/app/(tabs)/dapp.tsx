@@ -32,7 +32,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
 import { BlurView } from "expo-blur";
 import { LinearGradient } from "expo-linear-gradient";
-import { useFocusEffect, useNavigation } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -352,6 +352,8 @@ export default function DAppScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
+  const router = useRouter();
+  const { url: deepLinkUrl } = useLocalSearchParams<{ url?: string }>();
   const { ethAddress, getPrivateKey } = useWallet();
 
   const dappScrollRef = useRef<ScrollView>(null);
@@ -645,6 +647,15 @@ export default function DAppScreen() {
       saveToHistory(target, options.title ?? domain);
     }
   }
+
+  // ── Deep-link handler: mchain-wallet://dapp?url=https://... ──────────────────
+  useEffect(() => {
+    if (!deepLinkUrl) return;
+    const target = decodeURIComponent(deepLinkUrl);
+    openDApp(target, { saveHistory: true });
+    // Clear the param so re-focusing the tab doesn't re-trigger
+    router.setParams({ url: undefined });
+  }, [deepLinkUrl]);
 
   function handleNavStateChange(nav: WebViewNavigation) {
     setCanGoBack(nav.canGoBack);
