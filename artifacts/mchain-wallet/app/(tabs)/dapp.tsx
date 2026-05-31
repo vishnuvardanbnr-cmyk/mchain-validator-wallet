@@ -48,39 +48,20 @@ const CHAIN_ID_HEX = "0x760"; // 1888
 const CHAIN_ID_DEC = "1888";
 const CHAIN_NAME = "MChain";
 
-// ── Wallet-specific RPC methods that must go through RN ───────────────────────
-const WALLET_METHODS = new Set([
-  "eth_requestAccounts",
-  "eth_accounts",
-  "eth_sendTransaction",
-  "personal_sign",
-  "eth_sign",
-  "eth_signTypedData",
-  "eth_signTypedData_v1",
-  "eth_signTypedData_v3",
-  "eth_signTypedData_v4",
-  "wallet_requestPermissions",
-  "wallet_getPermissions",
-  "wallet_switchEthereumChain",
-  "wallet_addEthereumChain",
-]);
 
 // ── Injected provider script (runs before page JS) ────────────────────────────
-function buildProviderScript(ethAddress: string | null, rpcUrl: string): string {
+// ALL non-static calls are bridged to React Native via postMessage.
+// React Native owns the fetch to MChain's RPC — no WebView-side networking.
+// This avoids WebView network quirks and lets RN normalise every response.
+function buildProviderScript(ethAddress: string | null): string {
   const accounts = ethAddress ? JSON.stringify([ethAddress.toLowerCase()]) : "[]";
   return `
 (function() {
   if (window.ethereum && window.ethereum._isMChain) return;
 
   var _accounts = ${accounts};
-  var _pending = {};
+  var _pending  = {};
   var _listeners = {};
-  var RPC_URL = ${JSON.stringify(rpcUrl)};
-  var WALLET_METHODS = ${JSON.stringify([...WALLET_METHODS])};
-
-  function isWalletMethod(m) {
-    return WALLET_METHODS.indexOf(m) !== -1;
-  }
 
   function emit(event, data) {
     (_listeners[event] || []).forEach(function(fn) {
@@ -88,7 +69,7 @@ function buildProviderScript(ethAddress: string | null, rpcUrl: string): string 
     });
   }
 
-  // Called by React Native to resolve/reject a pending request
+  // ── Called by React Native ────────────────────────────────────────────────
   window.__mcResolve = function(id, result) {
     var cb = _pending[id];
     if (!cb) return;
@@ -99,11 +80,12 @@ function buildProviderScript(ethAddress: string | null, rpcUrl: string): string 
     var cb = _pending[id];
     if (!cb) return;
     delete _pending[id];
-    var err = new Error(message || 'User rejected the request.');
-    err.code = code || 4001;
+    // Build a proper EIP-1193 ProviderRpcError so viem can classify it.
+    var err = new Error(message || 'Request failed.');
+    err.code = typeof code === 'number' ? code : 4001;
+    err.data = { code: err.code, message: err.message };
     cb.reject(err);
   };
-  // Called by React Native to push events (accountsChanged, chainChanged)
   window.__mcEmit = function(event, data) {
     if (event === 'accountsChanged') {
       _accounts = data || [];
@@ -112,41 +94,18 @@ function buildProviderScript(ethAddress: string | null, rpcUrl: string): string 
     emit(event, data);
   };
 
-  // MChain blocks have a bech32 miner field (e.g. "mxc1qqq...") instead of
-  // a standard 0x address. Viem/ethers crash when they try to parse it.
-  // Normalize it to a zero address so block-fetching calls never throw.
-  function normalizeBlock(block) {
-    if (!block || typeof block !== 'object') return block;
-    if (typeof block.miner === 'string' && block.miner.indexOf('0x') !== 0) {
-      block.miner = '0x0000000000000000000000000000000000000000';
-    }
-    return block;
-  }
-
-  function rpcFetch(method, params) {
-    return fetch(RPC_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: method, params: params || [] }),
-    })
-    .then(function(r) { return r.json(); })
-    .then(function(res) {
-      if (res.error) {
-        var e = new Error(res.error.message || 'RPC error');
-        e.code = res.error.code;
-        throw e;
-      }
-      var result = res.result;
-      if (method === 'eth_getBlockByNumber' || method === 'eth_getBlockByHash') {
-        result = normalizeBlock(result);
-      }
-      if (method === 'eth_getBlockReceipts' && Array.isArray(result)) {
-        result = result.map(normalizeBlock);
-      }
-      return result;
+  // ── Bridge helper ─────────────────────────────────────────────────────────
+  function bridge(method, params) {
+    return new Promise(function(resolve, reject) {
+      var id = 'mc_' + Date.now() + '_' + Math.floor(Math.random() * 1e9);
+      _pending[id] = { resolve: resolve, reject: reject };
+      window.ReactNativeWebView.postMessage(
+        JSON.stringify({ id: id, method: method, params: params || [] })
+      );
     });
   }
 
+  // ── Provider object ───────────────────────────────────────────────────────
   var ethereum = {
     isMetaMask: true,
     isMChainWallet: true,
@@ -159,22 +118,13 @@ function buildProviderScript(ethAddress: string | null, rpcUrl: string): string 
       var method = payload.method;
       var params = payload.params || [];
 
-      // Handle statically (no user interaction needed)
-      if (method === 'eth_chainId') return Promise.resolve('${CHAIN_ID_HEX}');
-      if (method === 'net_version') return Promise.resolve('${CHAIN_ID_DEC}');
+      // Answered immediately — no bridge needed
+      if (method === 'eth_chainId')  return Promise.resolve('${CHAIN_ID_HEX}');
+      if (method === 'net_version')  return Promise.resolve('${CHAIN_ID_DEC}');
       if (method === 'eth_accounts') return Promise.resolve(_accounts.slice());
 
-      // Wallet methods → bridge to React Native
-      if (isWalletMethod(method)) {
-        return new Promise(function(resolve, reject) {
-          var id = 'mc_' + Date.now() + '_' + Math.floor(Math.random() * 1e9);
-          _pending[id] = { resolve: resolve, reject: reject };
-          window.ReactNativeWebView.postMessage(JSON.stringify({ id: id, method: method, params: params }));
-        });
-      }
-
-      // Everything else → direct RPC fetch
-      return rpcFetch(method, params);
+      // Everything else goes to React Native (wallet ops + RPC proxy)
+      return bridge(method, params);
     },
 
     on: function(event, fn) {
@@ -183,12 +133,13 @@ function buildProviderScript(ethAddress: string | null, rpcUrl: string): string 
       return this;
     },
     removeListener: function(event, fn) {
-      if (_listeners[event]) _listeners[event] = _listeners[event].filter(function(f) { return f !== fn; });
+      if (_listeners[event])
+        _listeners[event] = _listeners[event].filter(function(f) { return f !== fn; });
       return this;
     },
     off: function(event, fn) { return this.removeListener(event, fn); },
 
-    // Legacy
+    // Legacy compatibility
     enable: function() { return this.request({ method: 'eth_requestAccounts' }); },
     sendAsync: function(payload, cb) {
       this.request({ method: payload.method, params: payload.params || [] })
@@ -202,7 +153,6 @@ function buildProviderScript(ethAddress: string | null, rpcUrl: string): string 
   };
 
   window.ethereum = ethereum;
-  // Legacy web3 shim
   if (!window.web3) window.web3 = {};
   window.web3.currentProvider = ethereum;
 })();
@@ -601,9 +551,56 @@ export default function DAppScreen() {
         break;
       }
 
-      default:
-        // Forward to RPC — handled client-side in the injected script, should not reach here
-        rejectRequest(id, -32601, `Method ${method} not supported`);
+      default: {
+        // ── RPC proxy ─────────────────────────────────────────────────────────
+        // All non-wallet methods are proxied through React Native so we can:
+        //  • normalise non-standard MChain responses (bech32 miner field, etc.)
+        //  • fix eth_estimateGas always returning 21 000 for contract calls
+        //  • avoid WebView-side networking issues (CORS timing, SSL stack, etc.)
+        const rpcUrl = getNodeUrl() + "/rpc";
+        try {
+          const rpcRes = await fetch(rpcUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+          }).then(r => r.json());
+
+          if (rpcRes.error) {
+            rejectRequest(id, rpcRes.error.code ?? -32603, rpcRes.error.message ?? "RPC error");
+            return;
+          }
+
+          let result = rpcRes.result;
+
+          // ── Normalise MChain block format ────────────────────────────────────
+          // MChain returns miner as bech32 ("mxc1qqq…"). Viem/ethers expect 0x.
+          if (method === "eth_getBlockByNumber" || method === "eth_getBlockByHash") {
+            if (result && typeof result.miner === "string" && !result.miner.startsWith("0x")) {
+              result = { ...result, miner: "0x0000000000000000000000000000000000000000" };
+            }
+          }
+
+          // ── Fix eth_estimateGas always returning 21 000 ──────────────────────
+          // MChain's RPC never simulates gas — always returns the intrinsic
+          // minimum (21 000). For contract calls (non-empty data) this is far
+          // too low. Return 600 000 as a safe minimum so viem passes enough
+          // gas in eth_sendTransaction and the transaction doesn't revert OOG.
+          if (method === "eth_estimateGas") {
+            const reqTx = ((params as unknown[])[0] ?? {}) as Record<string, string>;
+            const hasData = reqTx.data && reqTx.data !== "0x";
+            const estimated = parseInt(String(result ?? "0x5208"), 16);
+            if (hasData && estimated <= 21000) {
+              result = "0x927C0"; // 600 000
+            }
+          }
+
+          resolveRequest(id, result);
+        } catch (e) {
+          console.error("[DApp RPC proxy]", method, e);
+          rejectRequest(id, -32603, e instanceof Error ? e.message : "Network error");
+        }
+        break;
+      }
     }
   }, [displayUrl, isConnected, ethAddress]);
 
@@ -840,8 +837,7 @@ export default function DAppScreen() {
   // ── In-app browser ────────────────────────────────────────────────────────────
   if (activeUrl) {
     const shortUrl = displayUrl.replace(/^https?:\/\//, "").replace(/\/$/, "");
-    const rpcUrl = getNodeUrl() + "/rpc";
-    const injectedJS = buildProviderScript(isConnected ? ethAddress : null, rpcUrl);
+    const injectedJS = buildProviderScript(isConnected ? ethAddress : null);
 
     return (
       <View style={s.container}>

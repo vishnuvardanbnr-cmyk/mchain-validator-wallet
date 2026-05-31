@@ -1,0 +1,1 @@
+- [DApp RPC proxy](dapp-rpc-proxy.md) — All WebView ethereum.request() proxied through RN fetch; fixes "Could not coalesce error" + MChain gas/miner quirks.
