@@ -697,13 +697,29 @@ export default function DAppScreen() {
       if (!pk) throw new Error("No private key");
       const rpcUrl = getNodeUrl() + "/rpc";
 
-      // Get nonce
-      const nonceRes = await fetch(rpcUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_getTransactionCount", params: [ethAddress, "latest"] }),
-      }).then(r => r.json());
-      const nonce = parseInt(nonceRes.result, 16);
+      // ── Diagnostic: verify account exists and has balance ─────────────────
+      const [nonceRes, balanceRes] = await Promise.all([
+        fetch(rpcUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_getTransactionCount", params: [ethAddress, "latest"] }),
+        }).then(r => r.json()),
+        fetch(rpcUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ jsonrpc: "2.0", id: 10, method: "eth_getBalance", params: [ethAddress, "latest"] }),
+        }).then(r => r.json()),
+      ]);
+      const nonce = parseInt(nonceRes.result ?? "0x0", 16);
+      const balanceWei = BigInt(balanceRes.result ?? "0x0");
+
+      console.log("[DApp TX] from:", ethAddress, "nonce:", nonce, "balance:", balanceWei.toString());
+
+      if (balanceWei === 0n) {
+        throw new Error(
+          `EVM account not funded.\n\nYour EVM address:\n${ethAddress}\n\nSend MXC to this address before sending DApp transactions.`
+        );
+      }
 
       const valueWei = BigInt(sendTxReq.value === "0x" ? "0x0" : sendTxReq.value);
       // Convert hex calldata to bytes; ignore "0x" / empty
@@ -717,13 +733,20 @@ export default function DAppScreen() {
         data: dataBytes,
       });
 
+      console.log("[DApp TX] signed:", signed.slice(0, 64), "...");
+
       const sendRes = await fetch(rpcUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ jsonrpc: "2.0", id: 2, method: "eth_sendRawTransaction", params: [signed] }),
       }).then(r => r.json());
 
-      if (sendRes.error) throw new Error(sendRes.error.message);
+      console.log("[DApp TX] sendRes:", JSON.stringify(sendRes));
+
+      if (sendRes.error) {
+        const detail = sendRes.error.data ? `\n\nData: ${JSON.stringify(sendRes.error.data)}` : "";
+        throw new Error(sendRes.error.message + detail);
+      }
       resolveRequest(sendTxReq.id, sendRes.result);
       if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setSendTxReq(null);
