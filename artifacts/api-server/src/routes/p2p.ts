@@ -5,11 +5,26 @@ import { cached, invalidate } from "../lib/redis";
 // ── Migration: add ad-level escrow columns if they don't exist ────────────────
 (async () => {
   try {
+    // Create the enum type first (idempotent)
+    await pool.query(`
+      DO $$ BEGIN
+        CREATE TYPE p2p_escrow_status AS ENUM ('none', 'locked', 'released', 'refunded');
+      EXCEPTION WHEN duplicate_object THEN NULL;
+      END $$;
+    `);
+    // Add columns only if missing
     await pool.query(`
       ALTER TABLE p2p_ads
         ADD COLUMN IF NOT EXISTS escrow_tx_hash    TEXT,
-        ADD COLUMN IF NOT EXISTS escrow_status     p2p_escrow_status NOT NULL DEFAULT 'none',
         ADD COLUMN IF NOT EXISTS escrow_locked_at  TIMESTAMPTZ;
+    `);
+    // escrow_status needs the enum — add separately so it can use a cast
+    await pool.query(`
+      DO $$ BEGIN
+        ALTER TABLE p2p_ads
+          ADD COLUMN escrow_status p2p_escrow_status NOT NULL DEFAULT 'none';
+      EXCEPTION WHEN duplicate_column THEN NULL;
+      END $$;
     `);
   } catch (e) {
     console.error("p2p_ads escrow migration failed:", e);
@@ -186,40 +201,45 @@ router.get("/p2p/ads", async (req, res) => {
 });
 
 router.post("/p2p/ads", async (req, res) => {
-  const v = validate(createAdRequestSchema, req.body);
-  if ("error" in v) { res.status(400).json({ error: v.error }); return; }
-  const body = v.data as z.infer<typeof createAdRequestSchema> & { ownerAddress?: string };
-  const ownerAddress = toEth((req.body as { ownerAddress?: string }).ownerAddress);
-  if (!ownerAddress) { res.status(400).json({ error: "ownerAddress required" }); return; }
-  // Sell ads must have escrow locked before posting
-  if (body.side === "sell" && !body.escrowTxHash && isEscrowConfigured()) {
-    res.status(400).json({ error: "Sell ads require escrow. Please lock funds in escrow first." }); return;
+  try {
+    const v = validate(createAdRequestSchema, req.body);
+    if ("error" in v) { res.status(400).json({ error: v.error }); return; }
+    const body = v.data as z.infer<typeof createAdRequestSchema> & { ownerAddress?: string };
+    const ownerAddress = toEth((req.body as { ownerAddress?: string }).ownerAddress);
+    if (!ownerAddress) { res.status(400).json({ error: "ownerAddress required" }); return; }
+    // Sell ads must have escrow locked before posting
+    if (body.side === "sell" && !body.escrowTxHash && isEscrowConfigured()) {
+      res.status(400).json({ error: "Sell ads require escrow. Please lock funds in escrow first." }); return;
+    }
+    await ensureProfile(ownerAddress);
+    const escrowLocked = !!body.escrowTxHash;
+    const [ad] = await db.insert(p2pAds).values({
+      ownerAddress,
+      token: body.token,
+      side: body.side,
+      price: body.price,
+      minAmount: body.minAmount,
+      maxAmount: body.maxAmount,
+      availableAmount: body.availableAmount,
+      paymentMethods: body.paymentMethods,
+      paymentWindow: body.paymentWindow,
+      terms: body.terms,
+      escrowTxHash: body.escrowTxHash ?? null,
+      escrowStatus: escrowLocked ? "locked" : "none",
+      escrowLockedAt: escrowLocked ? new Date() : null,
+    }).returning();
+    // New ad posted — bust all public ad feed cache keys
+    await Promise.all([
+      invalidate(adsCacheKey()), invalidate(adsCacheKey("MC")), invalidate(adsCacheKey("USDT")),
+      invalidate(adsCacheKey(undefined, "buy")), invalidate(adsCacheKey(undefined, "sell")),
+      invalidate(adsCacheKey("MC", "buy")), invalidate(adsCacheKey("MC", "sell")),
+      invalidate(adsCacheKey("USDT", "buy")), invalidate(adsCacheKey("USDT", "sell")),
+    ]);
+    res.status(201).json(ad);
+  } catch (e) {
+    console.error("POST /p2p/ads error:", e);
+    res.status(500).json({ error: e instanceof Error ? e.message : "Failed to create ad" });
   }
-  await ensureProfile(ownerAddress);
-  const escrowLocked = !!body.escrowTxHash;
-  const [ad] = await db.insert(p2pAds).values({
-    ownerAddress,
-    token: body.token,
-    side: body.side,
-    price: body.price,
-    minAmount: body.minAmount,
-    maxAmount: body.maxAmount,
-    availableAmount: body.availableAmount,
-    paymentMethods: body.paymentMethods,
-    paymentWindow: body.paymentWindow,
-    terms: body.terms,
-    escrowTxHash: body.escrowTxHash ?? null,
-    escrowStatus: escrowLocked ? "locked" : "none",
-    escrowLockedAt: escrowLocked ? new Date() : null,
-  }).returning();
-  // New ad posted — bust all public ad feed cache keys
-  await Promise.all([
-    invalidate(adsCacheKey()), invalidate(adsCacheKey("MC")), invalidate(adsCacheKey("USDT")),
-    invalidate(adsCacheKey(undefined, "buy")), invalidate(adsCacheKey(undefined, "sell")),
-    invalidate(adsCacheKey("MC", "buy")), invalidate(adsCacheKey("MC", "sell")),
-    invalidate(adsCacheKey("USDT", "buy")), invalidate(adsCacheKey("USDT", "sell")),
-  ]);
-  res.status(201).json(ad);
 });
 
 router.patch("/p2p/ads/:id/status", async (req, res) => {
