@@ -109,6 +109,11 @@ export function OrderModal({ visible, ad, onClose, onOrderPlaced }: Props) {
       }
 
       setStep("signing");
+      const privateKey = await getPrivateKey();
+      if (!privateKey) {
+        setToast("Could not retrieve private key — please unlock your wallet and retry");
+        setStep("idle"); return;
+      }
       const { nonce } = await api.getAccount(mxcAddress);
 
       let result: { txHash: string };
@@ -120,6 +125,7 @@ export function OrderModal({ visible, ad, onClose, onOrderPlaced }: Props) {
           toAddress: escrowInfo.escrowAddress,
           amount: amountWei,
           nonce,
+          privateKey,
         });
       } else {
         if (!escrowInfo.usdtContractAddress) {
@@ -138,6 +144,7 @@ export function OrderModal({ visible, ad, onClose, onOrderPlaced }: Props) {
           data,
           txType: "contract_call",
           nonce,
+          privateKey,
         });
       }
       const escrowTxHash = result.txHash;
