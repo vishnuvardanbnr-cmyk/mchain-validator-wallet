@@ -127,7 +127,7 @@ export function PostAdModal({ visible, onClose, onPosted }: Props) {
       return "Enter a valid price";
     if (parseFloat(minAmount) > parseFloat(maxAmount))
       return "Min must be ≤ Max";
-    if (parseFloat(maxAmount) > parseFloat(availableAmount))
+    if (side === "sell" && parseFloat(maxAmount) > parseFloat(availableAmount))
       return "Max cannot exceed available amount";
     if (paymentMethods.length === 0)
       return "Select at least one payment method";
@@ -407,8 +407,10 @@ export function PostAdModal({ visible, onClose, onPosted }: Props) {
 
               {/* Available amount */}
               <View style={s.labelRow}>
-                <Text style={[s.label, { marginBottom: 0 }]}>AVAILABLE AMOUNT ({token})</Text>
-                {walletBalance && (
+                <Text style={[s.label, { marginBottom: 0 }]}>
+                  {isSell ? `AVAILABLE AMOUNT (${token})` : `TOTAL AMOUNT TO BUY (${token})`}
+                </Text>
+                {isSell && walletBalance && (
                   <Text style={s.labelBalance}>
                     Balance: <Text style={s.labelBalanceVal}>
                       {token === "USDT"
