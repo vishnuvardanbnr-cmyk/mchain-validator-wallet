@@ -1,5 +1,6 @@
 import { Platform } from "react-native";
 import { getNodeUrl, isDefaultNode } from "./node";
+import { getWalletKey } from "./walletKey";
 
 /** Returns the base URL for public API endpoints (tokens, prices, dapps, p2p).
  *  Priority: EXPO_PUBLIC_API_URL → EXPO_PUBLIC_DOMAIN (web dev) → fallback */
@@ -69,6 +70,13 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     Platform.OS === "web" && !isDefaultNode()
       ? { "X-MChain-Node": getNodeUrl() }
       : {};
+
+  // Attach Wallet API Key for write operations (required by server)
+  const method = (options?.method ?? "GET").toUpperCase();
+  const walletKey = getWalletKey();
+  if (walletKey && ["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
+    extraHeaders["X-Wallet-Key"] = walletKey;
+  }
 
   const response = await fetch(`${base}${path}`, {
     headers: {
@@ -202,9 +210,13 @@ export interface HeartbeatRecord {
 /** Minimal epoch returned inside each heartbeat response */
 export interface OpenEpoch {
   epochNumber: number;
-  blockHeight: number;
-  blockHash: string;
-  signingWindowClosesAt: string;
+  startsAt: string;
+  endsAt: string;
+  signerCount: number;
+  // legacy fields — may still be present on older server versions
+  blockHeight?: number;
+  blockHash?: string;
+  signingWindowClosesAt?: string;
 }
 
 export interface EpochSigner {
@@ -594,6 +606,21 @@ export const api = {
   },
 
   healthCheck: () => request<{ status: string }>("/healthz"),
+
+  claimRewards: (address: string) =>
+    request<{ ok: boolean; txHash?: string; claimed: string; claimedWei: string; message?: string }>(
+      `/validators/${encodeURIComponent(address)}/claim-rewards`,
+      { method: "POST" }
+    ),
+
+  signEpoch: (epochNumber: number, validatorAddress: string, signature: string) =>
+    request<{ ok: boolean; nowFinalized: boolean }>(
+      `/epochs/${epochNumber}/sign`,
+      {
+        method: "POST",
+        body: JSON.stringify({ validatorAddress, signature }),
+      }
+    ),
 
   getValidatorEarnings: (address: string) =>
     request<ValidatorEarnings>(`/validators/${encodeURIComponent(address)}/earnings`),
