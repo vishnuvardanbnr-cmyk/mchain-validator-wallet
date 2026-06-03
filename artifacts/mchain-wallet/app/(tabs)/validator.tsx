@@ -323,26 +323,19 @@ export default function ValidatorScreen() {
     setClaimLoading(true);
     dismissPin();
     try {
-      const toAddr = claimToAddress.trim() || mxcAddress;
-      const amount = validatorBalance?.availableBalanceWei ?? "0";
-      if (amount === "0" || amount === "") {
+      const available = validatorBalance?.availableBalanceWei ?? "0";
+      if (available === "0" || available === "") {
         setClaimError("No available balance to claim");
         return;
       }
-      const accountInfo = await api.getAccount(mxcAddress);
-      const result = await api.sendTransaction({
-        fromAddress: mxcAddress,
-        toAddress: toAddr,
-        amount,
-        nonce: accountInfo.nonce,
-      });
-      setClaimTxHash(result.txHash);
+      const result = await api.claimRewards(mxcAddress);
+      setClaimTxHash(result.txHash ?? null);
       setShowClaimForm(false);
       setClaimToAddress("");
       setClaimError("");
       void refetchValidatorBalance();
       qc.invalidateQueries({ queryKey: ["account", mxcAddress] });
-      setToast("Claim submitted — check your transaction history");
+      setToast(`Claimed ${result.claimed} MC — check your balance`);
     } catch (err) {
       setClaimError(err instanceof Error ? err.message : "Claim failed");
     } finally {
@@ -1212,7 +1205,9 @@ export default function ValidatorScreen() {
 
   // ── Epoch checkpoint card (current open epoch from heartbeat) ────────────────
   const EpochCard = openEpoch ? (() => {
-    const windowClose = new Date(openEpoch.signingWindowClosesAt);
+    // Support both new (endsAt) and legacy (signingWindowClosesAt) field names
+    const closeTs = (openEpoch as any).signingWindowClosesAt ?? openEpoch.endsAt;
+    const windowClose = new Date(closeTs);
     const now = new Date();
     const secsLeft = Math.max(0, Math.floor((windowClose.getTime() - now.getTime()) / 1000));
     const minsLeft = Math.floor(secsLeft / 60);
@@ -1237,7 +1232,13 @@ export default function ValidatorScreen() {
           <View style={s.epochRow}>
             <View>
               <Text style={s.epochNumber}>#{openEpoch.epochNumber}</Text>
-              <Text style={s.epochSub}>Checkpoint block {openEpoch.blockHeight.toLocaleString()}</Text>
+              <Text style={s.epochSub}>
+                {openEpoch.signerCount !== undefined
+                  ? `${openEpoch.signerCount} signer${openEpoch.signerCount !== 1 ? "s" : ""}`
+                  : (openEpoch as any).blockHeight !== undefined
+                  ? `Block ${(openEpoch as any).blockHeight.toLocaleString()}`
+                  : ""}
+              </Text>
             </View>
             <View style={{ alignItems: "flex-end" }}>
               <Text style={[s.epochWindow, !windowOpen && { color: "#F59E0B" }]}>
@@ -1346,22 +1347,13 @@ export default function ValidatorScreen() {
 
         {showClaimForm && (
           <View style={s.claimForm}>
-            <Text style={s.claimFormTitle}>Withdraw Available Balance</Text>
+            <Text style={s.claimFormTitle}>Claim Available Rewards</Text>
             <Text style={s.claimFormAmount}>
               {parseFloat(validatorBalance?.availableBalanceMc ?? "0").toFixed(6)} MC
             </Text>
-            <TextInput
-              style={[s.claimInput, claimToFocused && s.claimInputFocused]}
-              value={claimToAddress}
-              onChangeText={(t) => { setClaimToAddress(t); setClaimError(""); }}
-              onFocus={() => setClaimToFocused(true)}
-              onBlur={() => setClaimToFocused(false)}
-              placeholder={`Destination address (default: your wallet)`}
-              placeholderTextColor="rgba(255,255,255,0.25)"
-              autoCapitalize="none"
-              autoCorrect={false}
-              editable={!claimLoading}
-            />
+            <Text style={{ fontSize: 11, fontFamily: "Inter_400Regular", color: "rgba(255,255,255,0.35)", marginBottom: 4 }}>
+              Rewards will be sent to your validator wallet address.
+            </Text>
             {claimError ? <Text style={s.claimError}>{claimError}</Text> : null}
             {claimTxHash ? (
               <View style={s.claimSuccessWrap}>
@@ -1376,8 +1368,8 @@ export default function ValidatorScreen() {
               disabled={!canClaim || claimLoading}
               activeOpacity={0.85}
               onPress={() => void requestPin({
-                title: "Confirm Withdrawal",
-                subtitle: `Withdraw ${parseFloat(validatorBalance?.availableBalanceMc ?? "0").toFixed(4)} MC. Enter your PIN to sign.`,
+                title: "Confirm Claim",
+                subtitle: `Claim ${parseFloat(validatorBalance?.availableBalanceMc ?? "0").toFixed(4)} MC rewards to your wallet. Enter your PIN to confirm.`,
                 onSuccess: handleClaim,
                 onCancel: () => {},
               })}
@@ -1387,8 +1379,8 @@ export default function ValidatorScreen() {
                   ? <ActivityIndicator color="#fff" size="small" />
                   : (
                     <>
-                      <Icon name="lock-open-outline" size={14} color="#fff" />
-                      <Text style={s.claimBtnText}>Withdraw with PIN</Text>
+                      <Icon name="gift-outline" size={14} color="#fff" />
+                      <Text style={s.claimBtnText}>Claim Rewards</Text>
                     </>
                   )
                 }
