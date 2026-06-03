@@ -58,6 +58,26 @@ app.use(cors());
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
+// ── Wallet API Key auth — protects write endpoints per docs ───────────────────
+const WALLET_API_KEY = process.env.WALLET_API_KEY;
+const WALLET_KEY_PATHS = ["/transactions", "/validators", "/names/register", "/epochs"];
+if (WALLET_API_KEY) {
+  app.use("/api", (req, res, next) => {
+    const isWrite = ["POST", "PUT", "PATCH", "DELETE"].includes(req.method);
+    const needsKey = isWrite && WALLET_KEY_PATHS.some(p => req.path.startsWith(p));
+    const isAdmin = req.path.startsWith("/admin");
+    const isP2P = req.path.startsWith("/p2p");
+    if (needsKey && !isAdmin && !isP2P) {
+      const key = req.headers["x-wallet-key"];
+      if (key !== WALLET_API_KEY) {
+        res.status(401).json({ error: "Unauthorized" });
+        return;
+      }
+    }
+    next();
+  });
+}
+
 app.use("/api/admin", adminLimiter);
 app.use("/api", apiLimiter);
 app.use("/api", router);

@@ -15,7 +15,7 @@ paths = [ "/" ]
 localPort = 20130
 
 [services.development]
-run = "pnpm --filter @workspace/mchain-wallet run dev"
+run = "EXPO_PUBLIC_WALLET_KEY=$WALLET_API_KEY pnpm --filter @workspace/mchain-wallet run dev"
 
 [services.production]
 build = [ "pnpm", "--filter", "@workspace/mchain-wallet", "run", "build" ]
