@@ -613,6 +613,12 @@ export const api = {
       { method: "POST" }
     ),
 
+  claimSubWalletRewards: (validatorAddress: string, subWalletAddress: string) =>
+    request<{ ok: boolean; txHash?: string; claimed: string; claimedWei: string; message?: string }>(
+      `/validators/${encodeURIComponent(validatorAddress)}/sub-wallets/${encodeURIComponent(subWalletAddress)}/claim-rewards`,
+      { method: "POST" }
+    ),
+
   signEpoch: (epochNumber: number, validatorAddress: string, signature: string) =>
     request<{ ok: boolean; nowFinalized: boolean }>(
       `/epochs/${epochNumber}/sign`,

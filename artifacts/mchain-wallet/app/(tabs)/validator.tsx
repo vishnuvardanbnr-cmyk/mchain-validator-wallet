@@ -328,14 +328,35 @@ export default function ValidatorScreen() {
         setClaimError("No available balance to claim");
         return;
       }
+
+      // 1. Claim main validator rewards
       const result = await api.claimRewards(mxcAddress);
+      let totalClaimed = parseFloat(result.claimed ?? "0");
+
+      // 2. Fetch sub-wallets and claim any with available balance
+      try {
+        const { subWallets: sws } = await api.getSubWallets(mxcAddress);
+        const claimable = sws.filter(sw => parseFloat(sw.availableBalance) > 0);
+        const subResults = await Promise.allSettled(
+          claimable.map(sw => api.claimSubWalletRewards(mxcAddress, sw.subWalletAddress))
+        );
+        for (const r of subResults) {
+          if (r.status === "fulfilled") {
+            totalClaimed += parseFloat(r.value.claimed ?? "0");
+          }
+        }
+      } catch {
+        // sub-wallet claims are best-effort; don't block the main claim success
+      }
+
       setClaimTxHash(result.txHash ?? null);
       setShowClaimForm(false);
       setClaimToAddress("");
       setClaimError("");
       void refetchValidatorBalance();
+      void refetchSubWallets();
       qc.invalidateQueries({ queryKey: ["account", mxcAddress] });
-      setToast(`Claimed ${result.claimed} MC — check your balance`);
+      setToast(`Claimed ${totalClaimed.toFixed(4)} MC — check your balance`);
     } catch (err) {
       setClaimError(err instanceof Error ? err.message : "Claim failed");
     } finally {
