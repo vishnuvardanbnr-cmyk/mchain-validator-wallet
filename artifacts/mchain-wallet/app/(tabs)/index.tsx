@@ -1,6 +1,7 @@
 import { AddTokenModal } from "@/components/AddTokenModal";
 import { AssetDetailModal, type AssetItem } from "@/components/AssetDetailModal";
 import { Icon } from "@/components/Icon";
+import { ImportWalletModal } from "@/components/ImportWalletModal";
 import { NewWalletModal } from "@/components/NewWalletModal";
 import { NfcWalletCard } from "@/components/NfcWalletCard";
 import { WalletSwitcherModal } from "@/components/WalletSwitcherModal";
@@ -16,6 +17,7 @@ import {
   ActivityIndicator,
   Animated,
   Image,
+  Modal,
   Platform,
   RefreshControl,
   ScrollView,
@@ -185,6 +187,8 @@ export default function DashboardScreen() {
   const [showScanner, setShowScanner] = React.useState(false);
   const [showNfcVault, setShowNfcVault] = React.useState(false);
   const [showNewWallet, setShowNewWallet] = React.useState(false);
+  const [showImportWallet, setShowImportWallet] = React.useState(false);
+  const [showWalletActions, setShowWalletActions] = React.useState(false);
   const [showSwitcher, setShowSwitcher] = React.useState(false);
   const [activeTab, setActiveTab] = React.useState<"assets" | "nft" | "approvals">("assets");
   const [showAddToken, setShowAddToken] = React.useState(false);
@@ -805,7 +809,7 @@ export default function DashboardScreen() {
             <TouchableOpacity style={s.headerIconBtn} onPress={() => setShowNfcVault(true)}>
               <Icon name="wifi-outline" size={18} color={colors.foreground} />
             </TouchableOpacity>
-            <TouchableOpacity style={s.headerIconBtn} onPress={() => setShowNewWallet(true)}>
+            <TouchableOpacity style={s.headerIconBtn} onPress={() => setShowWalletActions(true)}>
               <Icon name="wallet" size={18} color={colors.foreground} />
             </TouchableOpacity>
             <TouchableOpacity style={s.headerIconBtn} onPress={() => setShowScanner(true)}>
@@ -968,9 +972,69 @@ export default function DashboardScreen() {
         onClose={() => setShowSwitcher(false)}
         onAddWallet={() => setShowNewWallet(true)}
       />
+      {/* Wallet action chooser */}
+      <Modal
+        visible={showWalletActions}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowWalletActions(false)}
+        statusBarTranslucent
+      >
+        <TouchableOpacity
+          style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "flex-end" }}
+          activeOpacity={1}
+          onPress={() => setShowWalletActions(false)}
+        >
+          <View style={{
+            backgroundColor: colors.background,
+            borderTopLeftRadius: 24, borderTopRightRadius: 24,
+            borderTopWidth: 1, borderColor: colors.border,
+            paddingBottom: insets.bottom + 12, paddingTop: 8,
+          }}>
+            <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: "center", marginBottom: 16 }} />
+            <Text style={{ fontSize: 13, fontFamily: "Inter_600SemiBold", color: colors.mutedForeground, letterSpacing: 1.2, textAlign: "center", marginBottom: 12 }}>
+              WALLET
+            </Text>
+            <TouchableOpacity
+              onPress={() => { setShowWalletActions(false); setTimeout(() => setShowNewWallet(true), 200); }}
+              activeOpacity={0.75}
+              style={{ flexDirection: "row", alignItems: "center", gap: 14, paddingHorizontal: 24, paddingVertical: 16 }}
+            >
+              <View style={{ width: 42, height: 42, borderRadius: 21, backgroundColor: colors.primary + "22", borderWidth: 1, borderColor: colors.primary + "44", alignItems: "center", justifyContent: "center" }}>
+                <Icon name="add-circle-outline" size={20} color={colors.primary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 15, fontFamily: "Inter_600SemiBold", color: colors.foreground }}>Create New Wallet</Text>
+                <Text style={{ fontSize: 12, fontFamily: "Inter_400Regular", color: colors.mutedForeground, marginTop: 2 }}>Generate a fresh keypair</Text>
+              </View>
+              <Icon name="chevron-forward" size={16} color={colors.border} />
+            </TouchableOpacity>
+            <View style={{ height: 1, backgroundColor: colors.border, marginHorizontal: 24 }} />
+            <TouchableOpacity
+              onPress={() => { setShowWalletActions(false); setTimeout(() => setShowImportWallet(true), 200); }}
+              activeOpacity={0.75}
+              style={{ flexDirection: "row", alignItems: "center", gap: 14, paddingHorizontal: 24, paddingVertical: 16 }}
+            >
+              <View style={{ width: 42, height: 42, borderRadius: 21, backgroundColor: "#10B98122", borderWidth: 1, borderColor: "#10B98144", alignItems: "center", justifyContent: "center" }}>
+                <Icon name="download-outline" size={20} color="#10B981" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 15, fontFamily: "Inter_600SemiBold", color: colors.foreground }}>Import Wallet</Text>
+                <Text style={{ fontSize: 12, fontFamily: "Inter_400Regular", color: colors.mutedForeground, marginTop: 2 }}>Restore from seed phrase or private key</Text>
+              </View>
+              <Icon name="chevron-forward" size={16} color={colors.border} />
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
       <NewWalletModal
         visible={showNewWallet}
         onClose={() => setShowNewWallet(false)}
+      />
+      <ImportWalletModal
+        visible={showImportWallet}
+        onClose={() => setShowImportWallet(false)}
       />
       <AddTokenModal
         visible={showAddToken}

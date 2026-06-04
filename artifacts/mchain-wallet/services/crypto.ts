@@ -76,6 +76,14 @@ export function generateKeyPair(): KeyPair {
   return privKeyBytesToKeyPair(privKeyBytes);
 }
 
+export function privateKeyToKeyPair(privateKeyHex: string): KeyPair {
+  const hex = privateKeyHex.trim().replace(/^0x/i, "");
+  if (!/^[0-9a-fA-F]{64}$/.test(hex)) {
+    throw new Error("Invalid private key. Must be 64 hex characters (256 bits).");
+  }
+  return privKeyBytesToKeyPair(hexToBytes(hex));
+}
+
 export function deriveAddressFromPublicKey(publicKeyHex: string): string {
   let pubKeyBytes = hexToBytes(publicKeyHex);
   // If compressed (33 bytes with 02/03 prefix), decompress to 65-byte uncompressed form
