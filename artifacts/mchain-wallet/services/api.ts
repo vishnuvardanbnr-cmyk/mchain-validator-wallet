@@ -1,6 +1,6 @@
 import { Platform } from "react-native";
 import { getNodeUrl, isDefaultNode } from "./node";
-import { getWalletKey } from "./walletKey";
+import { getWalletKey, initWalletKey } from "./walletKey";
 
 /** Returns the base URL for public API endpoints (tokens, prices, dapps, p2p).
  *  Priority: EXPO_PUBLIC_API_URL → EXPO_PUBLIC_DOMAIN (web dev) → fallback */
@@ -70,6 +70,9 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     Platform.OS === "web" && !isDefaultNode()
       ? { "X-MChain-Node": getNodeUrl() }
       : {};
+
+  // Ensure AsyncStorage has been read before we check the key
+  await initWalletKey();
 
   // Attach Wallet API Key for write operations (required by server)
   const method = (options?.method ?? "GET").toUpperCase();
