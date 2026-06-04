@@ -48,7 +48,7 @@ task = "shell.exec"
 args = "PORT=3000 BASE_PATH=/ pnpm --filter @workspace/admin-panel run dev"
 
 [agent]
-stack = "PNPM_WORKSPACE"
+stack = "BEST_EFFORT_FALLBACK"
 expertMode = true
 integrations = ["github:1.0.0"]
 
@@ -90,5 +90,3 @@ channel = "stable-25_05"
 [userenv]
 
 [userenv.shared]
-TELEGRAM_BOT_TOKEN = "8788452379:AAFLj2IaMSkqrsqUgkREAuMa5OyrThPqxZQ"
-TELEGRAM_CHAT_ID = "1933523043"
