@@ -6,11 +6,12 @@ import { usePinContext } from "@/context/PinContext";
 import { useWallet } from "@/context/WalletContext";
 import { api } from "@/services/api";
 import {
-  buildErc20TransferDataHex,
+  buildErc20TransferData,
   mcToWei,
   mxcAddressToEthAddress,
   parseUnits,
   shortenAddress,
+  signEvmTransaction,
   weiToMc,
 } from "@/services/crypto";
 import {
@@ -326,26 +327,27 @@ export default function SendScreen() {
       let result: { txHash: string };
 
       if (isToken && selectedToken) {
+        // ERC-20: sign on-device, broadcast raw — no API key needed (same as MetaMask)
         const amountRaw = parseUnits(amount, selectedToken.decimals);
-        const data = buildErc20TransferDataHex(recipient.trim(), amountRaw);
-        result = await api.sendTransaction({
-          fromAddress: mxcAddress,
-          toAddress: selectedToken.contractAddress,
-          amount: "0",
-          data,
-          txType: "contract_call",
+        const data = buildErc20TransferData(recipient.trim(), amountRaw);
+        const rawTx = signEvmTransaction(
+          selectedToken.contractAddress,
+          0n,
           nonce,
           privateKey,
-        });
+          { data, gasLimit: 65_000n },
+        );
+        result = await api.sendRawTransaction(rawTx);
       } else {
+        // Native MC: sign on-device, broadcast raw — no API key needed
         const weiAmount = mcToWei(amount);
-        result = await api.sendTransaction({
-          fromAddress: mxcAddress,
-          toAddress: recipient.trim(),
-          amount: weiAmount,
+        const rawTx = signEvmTransaction(
+          recipient.trim(),
+          BigInt(weiAmount),
           nonce,
           privateKey,
-        });
+        );
+        result = await api.sendRawTransaction(rawTx);
       }
       setTxHash(result.txHash);
       await saveRecent(recipient);
