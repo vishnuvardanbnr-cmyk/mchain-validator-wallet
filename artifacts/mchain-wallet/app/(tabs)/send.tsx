@@ -6,12 +6,11 @@ import { usePinContext } from "@/context/PinContext";
 import { useWallet } from "@/context/WalletContext";
 import { api } from "@/services/api";
 import {
-  buildErc20TransferData,
+  buildErc20TransferDataHex,
   mcToWei,
   mxcAddressToEthAddress,
   parseUnits,
   shortenAddress,
-  signEvmTransaction,
   weiToMc,
 } from "@/services/crypto";
 import {
