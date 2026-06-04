@@ -109,9 +109,14 @@ router.post("/transactions", async (req, res): Promise<void> => {
 
   // ── Forward to chain node ─────────────────────────────────────────────────
   try {
+    const walletKey = req.headers["x-wallet-key"];
     const upstream = await fetch(`${CHAIN_BASE}/transactions`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        ...(walletKey ? { "X-Wallet-Key": String(walletKey) } : {}),
+      },
       body: JSON.stringify({
         // both naming conventions — chain docs use from/to; legacy accepts fromAddress/toAddress
         from: fromAddress,
