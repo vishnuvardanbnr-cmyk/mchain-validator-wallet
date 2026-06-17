@@ -39,10 +39,16 @@ function buildTransferMessage(params: {
   ].join("\n");
 }
 
-// ── POST /transactions ────────────────────────────────────────────────────────
-router.post("/transactions", async (req, res): Promise<void> => {
-  const { fromAddress, toAddress, amount, nonce, signature, data, txType } = req.body as {
+// ── Shared handler ────────────────────────────────────────────────────────────
+async function handleTransaction(
+  req: import("express").Request,
+  res: import("express").Response,
+  walletKeyOverride?: string,
+): Promise<void> {
+  const body = req.body as {
+    from?: string;
     fromAddress?: string;
+    to?: string;
     toAddress?: string;
     amount?: string;
     nonce?: number;
@@ -51,11 +57,15 @@ router.post("/transactions", async (req, res): Promise<void> => {
     txType?: string;
   };
 
+  // Accept both from/to (chain docs) and fromAddress/toAddress (legacy)
+  const fromAddress = body.from ?? body.fromAddress;
+  const toAddress   = body.to   ?? body.toAddress;
+  const { amount, nonce, signature, data, txType } = body;
+
   // ── Validate required fields ──────────────────────────────────────────────
-  // toAddress is optional (absent for contract deploys) — use "null" in message when missing
   if (!fromAddress || !amount || nonce === undefined || !signature) {
     res.status(400).json({
-      error: "Missing required fields: fromAddress, amount, nonce, signature",
+      error: "Missing required fields: from (or fromAddress), amount, nonce, signature",
     });
     return;
   }
@@ -66,7 +76,7 @@ router.post("/transactions", async (req, res): Promise<void> => {
   }
 
   if (!/^\d+$/.test(amount)) {
-    res.status(400).json({ error: "amount must be a numeric string (in base units)" });
+    res.status(400).json({ error: "amount must be a numeric string (in base units / wei)" });
     return;
   }
 
@@ -77,13 +87,11 @@ router.post("/transactions", async (req, res): Promise<void> => {
   }
 
   if (!/^0x[0-9a-fA-F]{130}$/.test(signature)) {
-    res.status(400).json({ error: "signature must be a valid 65-byte hex string (0x...)" });
+    res.status(400).json({ error: "signature must be a valid 65-byte hex string (0x + 130 hex chars)" });
     return;
   }
 
   // ── Verify signature ──────────────────────────────────────────────────────
-  // The message is built using the exact address strings from the body.
-  // Comparison is done on 0x-normalised addresses so mxc1... senders work too.
   try {
     const message = buildTransferMessage({ fromAddress, toAddress, amount, nonce });
 
@@ -109,7 +117,7 @@ router.post("/transactions", async (req, res): Promise<void> => {
 
   // ── Forward to chain node ─────────────────────────────────────────────────
   try {
-    const walletKey = req.headers["x-wallet-key"];
+    const walletKey = walletKeyOverride ?? req.headers["x-wallet-key"];
     const upstream = await fetch(`${CHAIN_BASE}/transactions`, {
       method: "POST",
       headers: {
@@ -118,7 +126,7 @@ router.post("/transactions", async (req, res): Promise<void> => {
         ...(walletKey ? { "X-Wallet-Key": String(walletKey) } : {}),
       },
       body: JSON.stringify({
-        // both naming conventions — chain docs use from/to; legacy accepts fromAddress/toAddress
+        // Send both naming conventions — chain node accepts either
         from: fromAddress,
         fromAddress,
         to: toAddress || null,
@@ -141,6 +149,12 @@ router.post("/transactions", async (req, res): Promise<void> => {
     req.log.error({ err }, "transaction forward failed");
     res.status(502).json({ error: "Chain node unavailable" });
   }
-});
+}
+
+// ── POST /transactions — requires X-Wallet-Key header (if WALLET_API_KEY is set) ──
+router.post("/transactions", (req, res) => handleTransaction(req, res));
+
+// ── POST /transactions/send — no wallet key required ─────────────────────────
+router.post("/transactions/send", (req, res) => handleTransaction(req, res));
 
 export default router;
