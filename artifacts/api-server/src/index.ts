@@ -28,11 +28,12 @@ async function start() {
   // Previously these ran fire-and-forget, causing race conditions where the
   // first API requests would fail with "relation does not exist".
   logger.info("Initialising database tables…");
+  // ensureCardsTables must run first — ensureBotTables inserts a row into card_accounts
+  await ensureCardsTables();
   await Promise.all([
     ensureDappsTable(),
     ensureTokensTable(),
     ensurePricesTable(),
-    ensureCardsTables(),
     ensureTradingTables(),
     ensureBotTables(),
     ensureBacktestTable(),
