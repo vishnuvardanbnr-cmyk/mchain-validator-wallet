@@ -117,7 +117,12 @@ async function handleTransaction(
 
   // ── Forward to chain node ─────────────────────────────────────────────────
   try {
-    const walletKey = walletKeyOverride ?? req.headers["x-wallet-key"];
+    // Use server-side WALLET_API_KEY env var to authenticate with the chain node.
+    // This means the mobile app never needs to know the key — the backend injects it.
+    const walletKey =
+      process.env["WALLET_API_KEY"] ??
+      walletKeyOverride ??
+      req.headers["x-wallet-key"];
     const upstream = await fetch(`${CHAIN_BASE}/transactions`, {
       method: "POST",
       headers: {
