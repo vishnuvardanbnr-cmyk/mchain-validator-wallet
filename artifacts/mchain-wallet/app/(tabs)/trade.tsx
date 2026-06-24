@@ -337,13 +337,16 @@ function DepositModal({ visible, onClose, address, tradingBalance, onSuccess }: 
       const amountRaw = BigInt(Math.round(amt * Math.pow(10, USDT_DECIMALS)));
       const { nonce } = await api.getAccount(address);
       const data      = buildErc20TransferDataHex(depositAddr, amountRaw);
+      const privateKey = await getPrivateKey();
+      if (!privateKey) throw new Error("Could not retrieve private key — please unlock your wallet and retry");
       const { txHash } = await api.sendTransaction({
         fromAddress: address,
         toAddress: USDT_CONTRACT,
-        amount: "1",
+        amount: "0",
         data,
         txType: "contract_call",
         nonce,
+        privateKey,
       });
 
       setStep("confirming");

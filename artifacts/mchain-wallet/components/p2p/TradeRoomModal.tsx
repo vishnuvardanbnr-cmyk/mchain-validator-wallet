@@ -179,11 +179,14 @@ export function TradeRoomModal({ visible, orderId, onClose }: Props) {
 
       const { nonce } = await api.getAccount(mxcAddress);
       const amountWei = mcToWei(order.cryptoAmount);
+      const privateKey = await getPrivateKey();
+      if (!privateKey) throw new Error("Could not retrieve private key — please unlock your wallet and retry");
       const result = await api.sendTransaction({
         fromAddress: mxcAddress,
         toAddress: escrowInfo.escrowAddress,
         amount: amountWei,
         nonce,
+        privateKey,
       });
       await api.waitForReceipt(result.txHash);
       await p2pApi.lockEscrow(orderId, mxcAddress, result.txHash);

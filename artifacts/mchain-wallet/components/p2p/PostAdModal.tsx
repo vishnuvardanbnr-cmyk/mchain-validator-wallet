@@ -184,9 +184,9 @@ export function PostAdModal({ visible, onClose, onPosted }: Props) {
             : mxcAddressToEthAddress(escrowInfo.usdtContractAddress);
           setStep("broadcasting");
           result = await api.sendTransaction({
-            fromAddress: mxcAddress,
+            fromAddress: ethAddress,
             toAddress: contractAddr,
-            amount: "1",
+            amount: "0",
             data,
             txType: "contract_call",
             nonce,

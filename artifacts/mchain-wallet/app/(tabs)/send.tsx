@@ -329,7 +329,7 @@ export default function SendScreen() {
         const amountRaw = parseUnits(amount, selectedToken.decimals);
         const data = buildErc20TransferDataHex(recipient.trim(), amountRaw);
         result = await api.sendTransaction({
-          fromAddress: mxcAddress,
+          fromAddress: account.ethAddress,
           toAddress: selectedToken.contractAddress,
           amount: "0",
           data,
