@@ -33,7 +33,7 @@ import { useWallet } from "@/context/WalletContext";
 import { useHeartbeat } from "@/hooks/useHeartbeat";
 import { api } from "@/services/api";
 import { formatDate, formatUptime, shortenAddress, weiToMc } from "@/services/crypto";
-import { fetchTokenBalance, getCustomTokens, removeCustomToken, type CustomToken } from "@/services/tokens";
+import { fetchTokenBalance, getCustomTokens, removeCustomToken, type CustomToken, DEFAULT_ASSETS, type DefaultAsset, fetchDefaultAssetBalance } from "@/services/tokens";
 import { PulsingDot } from "@/components/PulsingDot";
 import { SessionTimer } from "@/components/SessionTimer";
 import { Toast } from "@/components/Toast";
@@ -162,6 +162,100 @@ function TokenBalanceRow({
         <Icon name="chevron-forward" size={14} color={colors.border} />
       </TouchableOpacity>
     </Swipeable>
+  );
+}
+
+function DefaultAssetRow({
+  asset,
+  userEthAddress,
+  price,
+  onPress,
+  onBalanceChange,
+}: {
+  asset: DefaultAsset;
+  userEthAddress: string | null;
+  price?: number;
+  onPress: () => void;
+  onBalanceChange?: (bal: string) => void;
+}) {
+  const colors = useColors();
+  const s = StyleSheet.create({
+    row: {
+      flexDirection: "row",
+      alignItems: "center",
+      minHeight: 72,
+      paddingHorizontal: 16,
+      paddingVertical: 14,
+      gap: 12,
+      backgroundColor: colors.background,
+    },
+    logoImg: { width: 44, height: 44, borderRadius: 22 },
+    info: { flex: 1, justifyContent: "center", gap: 3 },
+    name: { fontSize: 14, fontFamily: "Inter_600SemiBold", color: colors.foreground, lineHeight: 18 },
+    sub: { fontSize: 11, fontFamily: "Inter_400Regular", color: colors.mutedForeground, lineHeight: 15 },
+    amountCol: { alignItems: "flex-end", justifyContent: "center", gap: 2, flexShrink: 0 },
+    amount: { fontSize: 14, fontFamily: "Inter_600SemiBold", color: colors.foreground, lineHeight: 18 },
+    networkBadge: {
+      paddingHorizontal: 5,
+      paddingVertical: 1,
+      borderRadius: 5,
+      backgroundColor: asset.chain === "bsc" ? "#F0B90B15" : colors.primary + "15",
+      borderWidth: 1,
+      borderColor: asset.chain === "bsc" ? "#F0B90B40" : colors.primary + "40",
+    },
+    networkText: {
+      fontSize: 9,
+      fontFamily: "Inter_700Bold",
+      color: asset.chain === "bsc" ? "#F0B90B" : colors.primary,
+    },
+  });
+
+  const { data: balance, isLoading } = useQuery({
+    queryKey: ["defaultAssetBalance", asset.id, userEthAddress],
+    queryFn: () =>
+      userEthAddress
+        ? fetchDefaultAssetBalance(asset, userEthAddress)
+        : Promise.resolve("0"),
+    enabled: !!userEthAddress,
+    refetchInterval: 30_000,
+    staleTime: 15_000,
+  });
+
+  const prevBalRef = React.useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (balance !== undefined && balance !== prevBalRef.current) {
+      prevBalRef.current = balance;
+      onBalanceChange?.(balance);
+    }
+  }, [balance, onBalanceChange]);
+
+  const usdValue = price && balance ? parseFloat(balance.replace(/,/g, "")) * price : 0;
+
+  return (
+    <TouchableOpacity style={s.row} onPress={onPress} activeOpacity={0.8}>
+      <Image source={{ uri: asset.logoUrl }} style={s.logoImg} />
+      <View style={s.info}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+          <Text style={s.name}>{asset.symbol}</Text>
+          <View style={s.networkBadge}>
+            <Text style={s.networkText}>{asset.networkLabel}</Text>
+          </View>
+        </View>
+        <Text style={s.sub} numberOfLines={1}>{asset.name}</Text>
+      </View>
+      <View style={s.amountCol}>
+        {isLoading ? (
+          <ActivityIndicator size="small" color={colors.primary} style={{ marginBottom: 4 }} />
+        ) : (
+          <Text style={[s.amount, balance && balance !== "0" ? {} : { color: colors.mutedForeground }]}>
+            {balance ?? "—"}
+          </Text>
+        )}
+        <Text style={s.sub}>{asset.symbol}</Text>
+        {usdValue > 0 && <Text style={s.sub}>$ {usdValue.toFixed(2)}</Text>}
+      </View>
+      <Icon name="chevron-forward" size={14} color={colors.border} />
+    </TouchableOpacity>
   );
 }
 
@@ -349,7 +443,12 @@ export default function DashboardScreen() {
     const tokenPrice = prices[t.symbol.toUpperCase()] ?? 0;
     return sum + tokenBal * tokenPrice;
   }, 0);
-  const totalUsdValue = (mcUsdValue + tokenUsdTotal).toFixed(2);
+  const defaultAssetUsdTotal = DEFAULT_ASSETS.reduce((sum, asset) => {
+    const bal = parseFloat((tokenBalancesMap[asset.id] ?? "0").replace(/,/g, "")) || 0;
+    const price = prices[asset.priceKey] ?? 0;
+    return sum + bal * price;
+  }, 0);
+  const totalUsdValue = (mcUsdValue + tokenUsdTotal + defaultAssetUsdTotal).toFixed(2);
 
   const s = StyleSheet.create({
     container: {
@@ -908,6 +1007,20 @@ export default function DashboardScreen() {
                 </View>
                 <Icon name="chevron-forward" size={14} color={colors.border} style={{ marginLeft: 4 }} />
               </TouchableOpacity>
+
+              {/* Default assets: MChain USDT, BNB, USDT on BNB */}
+              {DEFAULT_ASSETS.map((asset) => (
+                <DefaultAssetRow
+                  key={asset.id}
+                  asset={asset}
+                  userEthAddress={ethAddress ?? null}
+                  price={prices[asset.priceKey] ?? 0}
+                  onPress={() => {}}
+                  onBalanceChange={(bal) =>
+                    setTokenBalancesMap(prev => ({ ...prev, [asset.id]: bal }))
+                  }
+                />
+              ))}
 
               {/* Custom tokens */}
               {customTokens.map((token) => (

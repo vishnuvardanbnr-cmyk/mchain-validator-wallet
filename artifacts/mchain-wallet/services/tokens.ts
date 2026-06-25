@@ -41,13 +41,113 @@ export interface VerifiedToken {
 export const VERIFIED_TOKENS: VerifiedToken[] = [
   {
     symbol: "USDT",
-    name: "Tether USD",
-    decimals: 6,
+    name: "MChain USDT",
+    decimals: 18,
     logoUrl: "https://assets.coingecko.com/coins/images/325/small/Tether.png",
     coingeckoId: "tether",
-    contractAddress: "0x07daf7bda0aaea88e910879b2cd6ec9ecdc87238",
+    contractAddress: "0x7b2ed1be97fa240dbd0328dd307e35e588bcb917",
   },
 ];
+
+// ─── Default assets (always shown, non-removable) ─────────────────────────────
+export interface DefaultAsset {
+  id: string;
+  symbol: string;
+  name: string;
+  decimals: number;
+  logoUrl: string;
+  networkLabel: string;
+  chain: "mchain" | "bsc";
+  contractAddress?: string;
+  priceKey: string;
+}
+
+export const DEFAULT_ASSETS: DefaultAsset[] = [
+  {
+    id: "mchain-usdt",
+    symbol: "USDT",
+    name: "MChain USDT",
+    decimals: 18,
+    logoUrl: "https://assets.coingecko.com/coins/images/325/small/Tether.png",
+    networkLabel: "MChain",
+    chain: "mchain",
+    contractAddress: "0x7b2ed1be97fa240dbd0328dd307e35e588bcb917",
+    priceKey: "USDT",
+  },
+  {
+    id: "bnb-native",
+    symbol: "BNB",
+    name: "BNB",
+    decimals: 18,
+    logoUrl: "https://assets.coingecko.com/coins/images/825/small/bnb-icon2_2x.png",
+    networkLabel: "BNB Chain",
+    chain: "bsc",
+    contractAddress: undefined,
+    priceKey: "BNB",
+  },
+  {
+    id: "bsc-usdt",
+    symbol: "USDT",
+    name: "Tether USD",
+    decimals: 18,
+    logoUrl: "https://assets.coingecko.com/coins/images/325/small/Tether.png",
+    networkLabel: "BNB Chain",
+    chain: "bsc",
+    contractAddress: "0x55d398326f99059fF775485246999027B3197955",
+    priceKey: "USDT",
+  },
+];
+
+// ─── BSC RPC helpers ──────────────────────────────────────────────────────────
+const BSC_RPC = "https://bsc-dataseed.binance.org/";
+
+async function bscRpcCall(method: string, params: unknown[]): Promise<string> {
+  const res = await fetch(BSC_RPC, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", method, params, id: 1 }),
+  });
+  const json = (await res.json()) as { result: string };
+  return json.result ?? "0x0";
+}
+
+export async function fetchBscNativeBalance(ethAddress: string): Promise<string> {
+  const result = await bscRpcCall("eth_getBalance", [ethAddress, "latest"]);
+  const raw = BigInt(result);
+  if (raw === 0n) return "0";
+  return (Number(raw) / 1e18).toLocaleString("en-US", { maximumFractionDigits: 6 });
+}
+
+export async function fetchBscTokenBalance(
+  contractAddress: string,
+  ethAddress: string,
+  decimals: number
+): Promise<string> {
+  const result = await bscRpcCall("eth_call", [
+    { to: contractAddress, data: encodeBalanceOfCall(ethAddress) },
+    "latest",
+  ]);
+  const raw = decodeAbiUint256(result);
+  if (raw === 0n) return "0";
+  const divisor = decimals > 0 ? 10 ** decimals : 1;
+  return (Number(raw) / divisor).toLocaleString("en-US", { maximumFractionDigits: 6 });
+}
+
+export async function fetchDefaultAssetBalance(
+  asset: DefaultAsset,
+  ethAddress: string
+): Promise<string> {
+  if (asset.chain === "bsc") {
+    if (asset.contractAddress) {
+      return fetchBscTokenBalance(asset.contractAddress, ethAddress, asset.decimals);
+    }
+    return fetchBscNativeBalance(ethAddress);
+  }
+  if (asset.contractAddress) {
+    return fetchTokenBalance(asset.contractAddress, ethAddress, asset.decimals);
+  }
+  return "0";
+}
 
 // ─── ABI decode helpers ───────────────────────────────────────────────────────
 
