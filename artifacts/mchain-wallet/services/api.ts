@@ -441,8 +441,26 @@ export const api = {
     data?: string;
     txType?: string;
   }): Promise<{ txHash: string }> => {
-    const { privateKey, ...rest } = params;
+    const { privateKey, data, txType, ...rest } = params;
 
+    // ── Contract calls (ERC-20 transfers, etc.) ─────────────────────────────
+    // The chain's REST API hardcodes gasLimit=21000, which is insufficient for
+    // EVM contract execution (~30k+ gas needed). We bypass it by signing a
+    // proper EIP-1559 transaction and sending via eth_sendRawTransaction.
+    if (txType === "contract_call" && data) {
+      const { signEvmTransaction, hexToBytes } = await import("./crypto");
+      const dataBytes = hexToBytes(data.replace(/^0x/i, ""));
+      const signedTx = signEvmTransaction(
+        params.toAddress,
+        0n,
+        params.nonce,
+        privateKey,
+        { data: dataBytes, gasLimit: 300_000n },
+      );
+      return api.sendRawTransaction(signedTx);
+    }
+
+    // ── Native MC transfers ──────────────────────────────────────────────────
     // Build the canonical message the server expects
     const message = [
       "MChain Transfer",
@@ -458,7 +476,7 @@ export const api = {
 
     const r = await request<{ txHash?: string; hash?: string }>("/transactions", {
       method: "POST",
-      body: JSON.stringify({ ...rest, signature }),
+      body: JSON.stringify({ ...rest, data, txType, signature }),
     });
     return { txHash: (r.txHash ?? r.hash ?? "") as string };
   },
