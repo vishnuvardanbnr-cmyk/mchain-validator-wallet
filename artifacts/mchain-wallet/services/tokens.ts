@@ -149,6 +149,19 @@ export async function fetchDefaultAssetBalance(
   return "0";
 }
 
+export function defaultAssetToCustomToken(asset: DefaultAsset): CustomToken {
+  return {
+    id: asset.id,
+    contractAddress: asset.contractAddress ?? "",
+    symbol: asset.symbol,
+    name: asset.name,
+    decimals: asset.decimals,
+    logoUrl: asset.logoUrl,
+    verified: true,
+    addedAt: new Date(0).toISOString(),
+  };
+}
+
 // ─── ABI decode helpers ───────────────────────────────────────────────────────
 
 function decodeAbiString(hex: string): string {

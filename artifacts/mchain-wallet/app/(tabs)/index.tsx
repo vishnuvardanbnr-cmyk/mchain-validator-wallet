@@ -175,7 +175,7 @@ function DefaultAssetRow({
   asset: DefaultAsset;
   userEthAddress: string | null;
   price?: number;
-  onPress: () => void;
+  onPress: (balance: string) => void;
   onBalanceChange?: (bal: string) => void;
 }) {
   const colors = useColors();
@@ -232,7 +232,7 @@ function DefaultAssetRow({
   const usdValue = price && balance ? parseFloat(balance.replace(/,/g, "")) * price : 0;
 
   return (
-    <TouchableOpacity style={s.row} onPress={onPress} activeOpacity={0.8}>
+    <TouchableOpacity style={s.row} onPress={() => onPress(balance ?? "—")} activeOpacity={0.8}>
       <Image source={{ uri: asset.logoUrl }} style={s.logoImg} />
       <View style={s.info}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
@@ -1015,7 +1015,9 @@ export default function DashboardScreen() {
                   asset={asset}
                   userEthAddress={ethAddress ?? null}
                   price={prices[asset.priceKey] ?? 0}
-                  onPress={() => {}}
+                  onPress={(bal) =>
+                    setSelectedAsset({ kind: "default", asset, balance: bal, address: ethAddress ?? "" })
+                  }
                   onBalanceChange={(bal) =>
                     setTokenBalancesMap(prev => ({ ...prev, [asset.id]: bal }))
                   }

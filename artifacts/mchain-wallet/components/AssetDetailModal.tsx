@@ -3,7 +3,7 @@ import { TxRowSkeleton } from "@/components/Skeleton";
 import { useColors } from "@/hooks/useColors";
 import { api, type Transaction } from "@/services/api";
 import { ethAddressToMxc, mxcAddressToEthAddress, shortenAddress } from "@/services/crypto";
-import type { CustomToken } from "@/services/tokens";
+import type { CustomToken, DefaultAsset } from "@/services/tokens";
 import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
 import { router } from "expo-router";
@@ -25,7 +25,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 export type AssetItem =
   | { kind: "native"; balance: string; address: string }
-  | { kind: "token"; token: CustomToken; balance: string; address: string };
+  | { kind: "token"; token: CustomToken; balance: string; address: string }
+  | { kind: "default"; asset: DefaultAsset; balance: string; address: string };
 
 type TxFilter = "all" | "send" | "receive";
 
@@ -402,14 +403,27 @@ export function AssetDetailModal({
   const [selectedEntry, setSelectedEntry] = useState<NormalizedTx | null>(null);
 
   const isToken = asset?.kind === "token";
-  const mxcAddr = asset?.address ?? "";           // native: mxc address; token: user's eth address
-  const ethAddr = asset?.address ?? "";            // token: already eth address
-  const contractAddr = isToken ? (asset as Extract<AssetItem, { kind: "token" }>).token.contractAddress : "";
-  const tokenSymbol = isToken ? (asset as Extract<AssetItem, { kind: "token" }>).token.symbol : "MC";
-  const tokenDecimals = isToken ? (asset as Extract<AssetItem, { kind: "token" }>).token.decimals : 18;
+  const isDefault = asset?.kind === "default";
+  const defaultAsset = isDefault ? (asset as Extract<AssetItem, { kind: "default" }>).asset : null;
+  const isBscAsset = defaultAsset?.chain === "bsc";
+
+  const mxcAddr = asset?.address ?? "";
+  const ethAddr = asset?.address ?? "";
+
+  const contractAddr = isToken
+    ? (asset as Extract<AssetItem, { kind: "token" }>).token.contractAddress
+    : isDefault ? (defaultAsset!.contractAddress ?? "") : "";
+
+  const tokenSymbol = isToken
+    ? (asset as Extract<AssetItem, { kind: "token" }>).token.symbol
+    : isDefault ? defaultAsset!.symbol : "MC";
+
+  const tokenDecimals = isToken
+    ? (asset as Extract<AssetItem, { kind: "token" }>).token.decimals
+    : isDefault ? defaultAsset!.decimals : 18;
 
   // For token queries we need the user's MXC address (chain indexes by mxc address)
-  const tokenQueryMxcAddr = isToken && ethAddr ? ethToMxcSafe(ethAddr) : "";
+  const tokenQueryMxcAddr = (isToken || (isDefault && !isBscAsset)) && ethAddr ? ethToMxcSafe(ethAddr) : "";
 
   // Native MC transaction history
   const { data: nativeData, isLoading: nativeLoading } = useQuery({
@@ -423,6 +437,8 @@ export function AssetDetailModal({
   // Token transfer history: use getTransactions filtered by txType + tokenContract.
   // eth_getLogs is unreliable on this chain; the chain's transaction API includes
   // tokenContract and tokenAmount on decoded contract_call entries.
+  // Also used for MChain default assets. BSC default assets skip this query.
+  const isTokenLike = isToken || (isDefault && !isBscAsset);
   const { data: tokenData, isLoading: tokenLoading } = useQuery({
     queryKey: ["tokenTxHistory", contractAddr, tokenQueryMxcAddr],
     queryFn: async () => {
@@ -433,15 +449,15 @@ export function AssetDetailModal({
           tx.tokenContract?.toLowerCase() === contractAddr.toLowerCase(),
       );
     },
-    enabled: !!contractAddr && !!tokenQueryMxcAddr && visible && isToken,
+    enabled: !!contractAddr && !!tokenQueryMxcAddr && visible && isTokenLike,
     staleTime: 20_000,
     refetchInterval: 30_000,
   });
 
-  const isLoading = isToken ? tokenLoading : nativeLoading;
+  const isLoading = isTokenLike ? tokenLoading : nativeLoading;
 
   // Normalize all entries to the same display format
-  const allEntries: NormalizedTx[] = isToken
+  const allEntries: NormalizedTx[] = isTokenLike
     ? (tokenData ?? []).map((t) => normalizeTokenTx(t, tokenSymbol, tokenDecimals))
     : (nativeData?.transactions ?? []).map(normalizeNative);
 
@@ -496,9 +512,13 @@ export function AssetDetailModal({
 
   if (!asset) return null;
 
-  const displayName = isToken ? tokenSymbol : "MChain";
-  const displayBalance = `${asset.balance} ${isToken ? tokenSymbol : "MC"}`;
-  const logoUrl = isToken ? (asset as Extract<AssetItem, { kind: "token" }>).token.logoUrl : null;
+  const displayName = isToken ? tokenSymbol : isDefault ? defaultAsset!.name : "MChain";
+  const displaySymbol = isDefault ? defaultAsset!.symbol : isToken ? tokenSymbol : "MC";
+  const displayBalance = `${asset.balance} ${displaySymbol}`;
+  const displayNetworkLabel = isDefault ? defaultAsset!.networkLabel : isToken ? "MChain" : "MChain";
+  const logoUrl = isToken
+    ? (asset as Extract<AssetItem, { kind: "token" }>).token.logoUrl
+    : isDefault ? defaultAsset!.logoUrl : null;
 
   return (
     <>
@@ -522,7 +542,7 @@ export function AssetDetailModal({
                 </View>
               </View>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                {isToken && (
+                {(isToken || (isDefault && !isBscAsset)) && (
                   <TouchableOpacity
                     style={{
                       flexDirection: "row", alignItems: "center", gap: 6,
@@ -541,6 +561,21 @@ export function AssetDetailModal({
                   >
                     <Icon name="paper-plane-outline" size={13} color={colors.primary} />
                     <Text style={{ fontSize: 13, fontFamily: "Inter_600SemiBold", color: colors.primary }}>Send</Text>
+                  </TouchableOpacity>
+                )}
+                {isBscAsset && (
+                  <TouchableOpacity
+                    style={{
+                      flexDirection: "row", alignItems: "center", gap: 6,
+                      backgroundColor: "#F0B90B15", borderWidth: 1,
+                      borderColor: "#F0B90B40", borderRadius: 10,
+                      paddingHorizontal: 12, paddingVertical: 7,
+                    }}
+                    onPress={() => { onClose(); router.push("/(tabs)/dapp"); }}
+                    activeOpacity={0.75}
+                  >
+                    <Icon name="globe-outline" size={13} color="#F0B90B" />
+                    <Text style={{ fontSize: 13, fontFamily: "Inter_600SemiBold", color: "#F0B90B" }}>Bridge</Text>
                   </TouchableOpacity>
                 )}
                 <TouchableOpacity style={s.closeBtn} onPress={onClose}>

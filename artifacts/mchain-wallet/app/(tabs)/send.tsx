@@ -17,6 +17,8 @@ import {
   fetchTokenBalanceRaw,
   getCustomTokens,
   type CustomToken,
+  DEFAULT_ASSETS,
+  defaultAssetToCustomToken,
 } from "@/services/tokens";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Clipboard from "expo-clipboard";
@@ -54,12 +56,14 @@ function AssetPickerSheet({
   visible,
   onClose,
   tokens,
+  defaultTokens,
   selected,
   onSelect,
 }: {
   visible: boolean;
   onClose: () => void;
   tokens: CustomToken[];
+  defaultTokens: CustomToken[];
   selected: SelectedAsset;
   onSelect: (a: SelectedAsset) => void;
 }) {
@@ -120,7 +124,7 @@ function AssetPickerSheet({
               </View>
             )}
           </TouchableOpacity>
-          {tokens.map((token) => {
+          {[...defaultTokens, ...tokens].map((token) => {
             const isSelected = selected.kind === "token" && selected.token.contractAddress === token.contractAddress;
             return (
               <TouchableOpacity
@@ -206,6 +210,11 @@ export default function SendScreen() {
     staleTime: 30_000,
   });
 
+  // MChain-chain default assets (BNB/USDT-BNB are BSC display-only, not sendable)
+  const mchainDefaultTokens = DEFAULT_ASSETS
+    .filter((a) => a.chain === "mchain")
+    .map(defaultAssetToCustomToken);
+
   const isToken = selectedAsset.kind === "token";
   const selectedToken = isToken ? selectedAsset.token : null;
 
@@ -234,12 +243,17 @@ export default function SendScreen() {
     if (prefillAddress) { setRecipient(prefillAddress); setStep("input"); }
   }, [prefillAddress]);
 
-  // Pre-select token from params once tokens have loaded
+  // Pre-select token from params — check default assets first, then custom tokens
   useEffect(() => {
-    if (!tokenContract || customTokens.length === 0) return;
+    if (!tokenContract) return;
+    const defaultToken = mchainDefaultTokens.find(
+      (t) => t.contractAddress.toLowerCase() === tokenContract.toLowerCase()
+    );
+    if (defaultToken) { setSelectedAsset({ kind: "token", token: defaultToken }); return; }
+    if (customTokens.length === 0) return;
     const token = customTokens.find(t => t.contractAddress === tokenContract);
     if (token) setSelectedAsset({ kind: "token", token });
-  }, [tokenContract, customTokens]);
+  }, [tokenContract, customTokens]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     AsyncStorage.getItem(RECENT_KEY).then((raw) => {
@@ -804,6 +818,7 @@ export default function SendScreen() {
         visible={showAssetPicker}
         onClose={() => setShowAssetPicker(false)}
         tokens={customTokens}
+        defaultTokens={mchainDefaultTokens}
         selected={selectedAsset}
         onSelect={(a) => { setSelectedAsset(a); setAmount(""); setError(""); }}
       />
