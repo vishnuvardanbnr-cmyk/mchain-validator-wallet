@@ -425,11 +425,12 @@ export function AssetDetailModal({
   // For token queries we need the user's MXC address (chain indexes by mxc address)
   const tokenQueryMxcAddr = (isToken || (isDefault && !isBscAsset)) && ethAddr ? ethToMxcSafe(ethAddr) : "";
 
-  // Native MC transaction history
+  // Native MC transaction history — only for kind:"native", not for default or custom tokens
+  const isTokenLike = isToken || (isDefault && !isBscAsset);
   const { data: nativeData, isLoading: nativeLoading } = useQuery({
     queryKey: ["assetTxHistory", mxcAddr],
     queryFn: () => api.getTransactions(mxcAddr, 50),
-    enabled: !!mxcAddr && visible && !isToken,
+    enabled: !!mxcAddr && visible && !isTokenLike && !isBscAsset,
     staleTime: 20_000,
     refetchInterval: 30_000,
   });
@@ -438,7 +439,6 @@ export function AssetDetailModal({
   // eth_getLogs is unreliable on this chain; the chain's transaction API includes
   // tokenContract and tokenAmount on decoded contract_call entries.
   // Also used for MChain default assets. BSC default assets skip this query.
-  const isTokenLike = isToken || (isDefault && !isBscAsset);
   const { data: tokenData, isLoading: tokenLoading } = useQuery({
     queryKey: ["tokenTxHistory", contractAddr, tokenQueryMxcAddr],
     queryFn: async () => {
@@ -461,18 +461,19 @@ export function AssetDetailModal({
     ? (tokenData ?? []).map((t) => normalizeTokenTx(t, tokenSymbol, tokenDecimals))
     : (nativeData?.transactions ?? []).map(normalizeNative);
 
-  // For token txs we match by ETH address; for native we match by MXC address directly.
+  // Token-like assets (custom tokens + MChain default tokens): match by ETH address.
+  // Native MC: match by MXC address.
   const myEthAddress = ethAddr.toLowerCase();
 
   const filtered = allEntries.filter((e) => {
-    if (isToken) {
+    if (isTokenLike) {
       const from = e.fromEth.toLowerCase();
       const to   = e.toEth.toLowerCase();
       if (filter === "send")    return from === myEthAddress && to !== myEthAddress;
       if (filter === "receive") return to === myEthAddress && from !== myEthAddress;
       return from === myEthAddress || to === myEthAddress;
     } else {
-      // Native: always filter strictly by MXC address so a fresh wallet shows nothing
+      // Native MC: always filter strictly by MXC address so a fresh wallet shows nothing
       const isSender   = e.fromMxc === mxcAddr;
       const isReceiver = e.toMxc   === mxcAddr;
       if (filter === "send")    return isSender && !isReceiver;
