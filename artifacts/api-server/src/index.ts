@@ -8,6 +8,7 @@ import {
 } from "./routes";
 import { startOrderSweep } from "./lib/orderSweep";
 import { startTradeSweep } from "./lib/tradeSweep";
+import { startCardDepositWatcher } from "./lib/cardDepositWatcher";
 
 const rawPort = process.env["PORT"];
 
