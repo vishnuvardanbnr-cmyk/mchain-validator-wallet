@@ -2,17 +2,17 @@ import { Platform } from "react-native";
 import { getNodeUrl, isDefaultNode } from "./node";
 import { getWalletKey, initWalletKey } from "./walletKey";
 
-/** Returns the base URL for public API endpoints (tokens, prices, dapps, p2p).
- *  Priority: EXPO_PUBLIC_API_URL → EXPO_PUBLIC_DOMAIN (web dev) → fallback */
+/** Returns the base URL for wallet backend endpoints (cards, p2p, tokens, prices).
+ *  Native always uses wallet.mymchain.com directly; web uses env/relative. */
 export function getPublicApiBase(): string {
-  const apiUrl = typeof process !== "undefined" ? process.env.EXPO_PUBLIC_API_URL : undefined;
-  if (apiUrl) return `${apiUrl.replace(/\/$/, "")}/api`;
   if (Platform.OS === "web") {
+    const apiUrl = typeof process !== "undefined" ? process.env.EXPO_PUBLIC_API_URL : undefined;
+    if (apiUrl) return `${apiUrl.replace(/\/$/, "")}/api`;
     const domain = typeof process !== "undefined" ? process.env.EXPO_PUBLIC_DOMAIN : undefined;
     if (domain) return `https://${domain}/api`;
     return "/api";
   }
-  // Native fallback — should always be set via EXPO_PUBLIC_API_URL at build time
+  // Native: always hit the wallet backend directly — never the chain node
   return "https://wallet.mymchain.com/api";
 }
 
