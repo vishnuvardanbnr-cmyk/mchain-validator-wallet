@@ -19,6 +19,7 @@ import * as Haptics from "expo-haptics";
 import React, { useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Animated,
   Platform,
   ScrollView,
@@ -154,6 +155,21 @@ export default function KripicardModule({ ethAddress, mxcAddress, account, onAcc
       return;
     }
     if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
+    // Require explicit user confirmation before broadcasting
+    const confirmed = await new Promise<boolean>((resolve) => {
+      Alert.alert(
+        "Confirm Payment",
+        `20 MUSDT will be sent from your wallet to activate this card.\n\nFrom: ${mxcAddress}\nAmount: 20 MUSDT\n\nThis cannot be undone.`,
+        [
+          { text: "Cancel", style: "cancel", onPress: () => resolve(false) },
+          { text: "Confirm & Pay", style: "destructive", onPress: () => resolve(true) },
+        ],
+        { cancelable: true, onDismiss: () => resolve(false) }
+      );
+    });
+    if (!confirmed) return;
+
     setIssuing(true);
     try {
       const privateKey = await getPrivateKey();
@@ -252,6 +268,20 @@ export default function KripicardModule({ ethAddress, mxcAddress, account, onAcc
       return;
     }
     if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
+    const confirmed = await new Promise<boolean>((resolve) => {
+      Alert.alert(
+        "Confirm Top-Up",
+        `$${amt} MUSDT will be sent from your wallet to top up your card.\n\nFrom: ${mxcAddress}\nAmount: ${amt} MUSDT\n\nThis cannot be undone.`,
+        [
+          { text: "Cancel", style: "cancel", onPress: () => resolve(false) },
+          { text: "Confirm & Pay", style: "destructive", onPress: () => resolve(true) },
+        ],
+        { cancelable: true, onDismiss: () => resolve(false) }
+      );
+    });
+    if (!confirmed) return;
+
     setFunding(true);
     try {
       const privateKey = await getPrivateKey();
