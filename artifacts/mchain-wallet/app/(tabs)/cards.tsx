@@ -138,7 +138,7 @@ function DepositRow({ deposit, colors }: { deposit: CardDeposit; colors: ReturnT
 export default function CardsScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { ethAddress } = useWallet();
+  const { ethAddress, mxcAddress, getPrivateKey } = useWallet();
 
   const [account, setAccount] = useState<CardAccount | null>(null);
   const [deposits, setDeposits] = useState<CardDeposit[]>([]);
@@ -893,9 +893,11 @@ export default function CardsScreen() {
         {/* ── KripiCard USDT-to-USDT module ── */}
         <KripicardModule
           ethAddress={ethAddress!}
+          mxcAddress={mxcAddress!}
           account={account}
           onAccountUpdated={() => loadAccount(true)}
           showMsg={showMsg}
+          getPrivateKey={getPrivateKey}
         />
 
       </ScrollView>

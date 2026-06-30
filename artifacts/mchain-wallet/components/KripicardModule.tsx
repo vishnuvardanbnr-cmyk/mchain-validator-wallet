@@ -9,6 +9,9 @@ import {
   getKripicardDetails,
   getKripicardTransactions,
   issueKripicardCard,
+  sendMusdtForCard,
+  verifyCardDeposit,
+  api,
 } from "@/services/api";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Clipboard from "expo-clipboard";
@@ -87,12 +90,14 @@ function TxnRow({ txn, colors }: { txn: KripicardTransaction; colors: ReturnType
 
 interface Props {
   ethAddress: string;
+  mxcAddress: string;
   account: CardAccount;
   onAccountUpdated: () => void;
   showMsg: (type: "success" | "error" | "info", text: string) => void;
+  getPrivateKey: () => Promise<string | null>;
 }
 
-export default function KripicardModule({ ethAddress, account, onAccountUpdated, showMsg }: Props) {
+export default function KripicardModule({ ethAddress, mxcAddress, account, onAccountUpdated, showMsg, getPrivateKey }: Props) {
   const colors = useColors();
 
   const hasCard = !!account.kripicard_card_id;
@@ -109,12 +114,12 @@ export default function KripicardModule({ ethAddress, account, onAccountUpdated,
   };
 
   // ── Issue form state ───────────────────────────────────────────────────────
-  const [issueAmt, setIssueAmt] = useState("20");
   const [issueName, setIssueName] = useState("");
   const [issueEmail, setIssueEmail] = useState("");
-  const [issueBin, setIssueBin] = useState("539502");
+  const [issueBin, setIssueBin] = useState("441357");
   const [issueDob, setIssueDob] = useState("");
   const [issuing, setIssuing] = useState(false);
+  const [issueStep, setIssueStep] = useState("");
   const selectedBinObj = BINS.find((b) => b.bin === issueBin) ?? BINS[0]!;
 
   // ── Card management state ──────────────────────────────────────────────────
@@ -140,13 +145,8 @@ export default function KripicardModule({ ethAddress, account, onAccountUpdated,
 
   // ── Handlers ──────────────────────────────────────────────────────────────
   const handleIssue = async () => {
-    const amt = parseFloat(issueAmt);
     if (!issueName.trim() || issueName.trim().length < 2) {
       showMsg("error", "Please enter your name on card (at least 2 characters).");
-      return;
-    }
-    if (isNaN(amt) || amt < 10) {
-      showMsg("error", "Minimum initial load is $10.");
       return;
     }
     if (selectedBinObj.needsDob && !issueDob.trim()) {
@@ -156,18 +156,43 @@ export default function KripicardModule({ ethAddress, account, onAccountUpdated,
     if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setIssuing(true);
     try {
+      const privateKey = await getPrivateKey();
+      if (!privateKey) throw new Error("Could not retrieve private key — please unlock your wallet.");
+
+      // Step 1 — send 20 MUSDT from user's wallet to admin wallet
+      setIssueStep("Sending 20 MUSDT…");
+      const { txHash } = await sendMusdtForCard({
+        fromEthAddress: ethAddress,
+        fromMxcAddress: mxcAddress,
+        toAddress: account.deposit_address,
+        amountUsdt: 20,
+        privateKey,
+      });
+
+      // Step 2 — wait for the transaction to be mined
+      setIssueStep("Confirming on-chain…");
+      await api.waitForReceipt(txHash, 40_000);
+
+      // Step 3 — credit balance immediately (don't wait for 60s watcher)
+      setIssueStep("Verifying payment…");
+      await verifyCardDeposit(ethAddress);
+
+      // Step 4 — issue the card (deducts $20 from balance)
+      setIssueStep("Activating your card…");
       const result = await issueKripicardCard(ethAddress, {
-        amount: amt, bin: issueBin, nameOnCard: issueName.trim(),
+        amount: 20, bin: issueBin, nameOnCard: issueName.trim(),
         email: issueEmail.trim() || undefined,
         dateOfBirth: selectedBinObj.needsDob ? issueDob.trim() : undefined,
       });
+
       if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      showMsg("success", `Card issued! Last 4: ${result.last4}. Fee: $${result.fee.toFixed(2)}`);
+      showMsg("success", `Card issued! Last 4: ${result.last4}`);
       onAccountUpdated();
     } catch (err) {
       showMsg("error", err instanceof Error ? err.message : "Failed to issue card");
     } finally {
       setIssuing(false);
+      setIssueStep("");
     }
   };
 
@@ -218,6 +243,8 @@ export default function KripicardModule({ ethAddress, account, onAccountUpdated,
     }
   };
 
+  const [fundStep, setFundStep] = useState("");
+
   const handleFund = async () => {
     const amt = parseFloat(fundAmt);
     if (isNaN(amt) || amt < 10) {
@@ -227,14 +254,35 @@ export default function KripicardModule({ ethAddress, account, onAccountUpdated,
     if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setFunding(true);
     try {
+      const privateKey = await getPrivateKey();
+      if (!privateKey) throw new Error("Could not retrieve private key — please unlock your wallet.");
+
+      setFundStep(`Sending $${amt} MUSDT…`);
+      const { txHash } = await sendMusdtForCard({
+        fromEthAddress: ethAddress,
+        fromMxcAddress: mxcAddress,
+        toAddress: account.deposit_address,
+        amountUsdt: amt,
+        privateKey,
+      });
+
+      setFundStep("Confirming on-chain…");
+      await api.waitForReceipt(txHash, 40_000);
+
+      setFundStep("Verifying payment…");
+      await verifyCardDeposit(ethAddress);
+
+      setFundStep("Topping up card…");
       const result = await fundKripicardCard(ethAddress, amt);
       setShowFund(false);
-      showMsg("success", `+$${result.amount.toFixed(2)} added. Fee: $${result.fee.toFixed(2)}`);
+      showMsg("success", `+$${result.amount.toFixed(2)} added to your card.`);
       setDetails(null);
+      onAccountUpdated();
     } catch (err) {
       showMsg("error", err instanceof Error ? err.message : "Failed to fund card");
     } finally {
       setFunding(false);
+      setFundStep("");
     }
   };
 
@@ -424,6 +472,16 @@ export default function KripicardModule({ ethAddress, account, onAccountUpdated,
               </View>
             </ScrollView>
 
+            {/* One-time $20 fee notice */}
+            <View style={{ flexDirection: "row", gap: 8, alignItems: "flex-start",
+              backgroundColor: "#7C3AED10", borderRadius: 12, borderWidth: 1,
+              borderColor: "#7C3AED30", padding: 12, marginBottom: 14 }}>
+              <Icon name="wallet-outline" size={15} color="#7C3AED" />
+              <Text style={{ flex: 1, fontSize: 12, fontFamily: "Inter_500Medium", color: "#7C3AED", lineHeight: 18 }}>
+                $20 MUSDT will be sent automatically from your wallet to activate the card.
+              </Text>
+            </View>
+
             <Text style={s.label}>NAME ON CARD</Text>
             <TextInput
               style={s.input}
@@ -432,16 +490,6 @@ export default function KripicardModule({ ethAddress, account, onAccountUpdated,
               value={issueName}
               onChangeText={setIssueName}
               autoCapitalize="words"
-            />
-
-            <Text style={s.label}>INITIAL LOAD (USD)</Text>
-            <TextInput
-              style={s.input}
-              placeholder="20"
-              placeholderTextColor={colors.mutedForeground}
-              value={issueAmt}
-              onChangeText={setIssueAmt}
-              keyboardType="decimal-pad"
             />
 
             <Text style={s.label}>EMAIL (optional)</Text>
@@ -484,15 +532,17 @@ export default function KripicardModule({ ethAddress, account, onAccountUpdated,
                   : <Icon name="card-outline" size={20} color="#FFF" />
                 }
                 <Text style={{ fontSize: 15, fontFamily: "Inter_700Bold", color: "#FFF" }}>
-                  {issuing ? "Issuing Card…" : "Issue Card"}
+                  {issuing ? (issueStep || "Processing…") : "Pay $20 & Get Card"}
                 </Text>
               </LinearGradient>
             </TouchableOpacity>
 
-            <Text style={{ fontSize: 11, fontFamily: "Inter_400Regular",
-              color: colors.mutedForeground, textAlign: "center", marginTop: 12, lineHeight: 17 }}>
-              Funds are loaded instantly. A service fee is charged by KripiCard.
-            </Text>
+            {!!issueStep && (
+              <Text style={{ fontSize: 11, fontFamily: "Inter_500Medium",
+                color: "#7C3AED", textAlign: "center", marginTop: 10 }}>
+                {issueStep}
+              </Text>
+            )}
           </Animated.View>
         )}
       </View>
@@ -538,7 +588,7 @@ export default function KripicardModule({ ethAddress, account, onAccountUpdated,
               </Text>
             )}
             <Text style={{ fontSize: 20, fontFamily: "Inter_700Bold", color: "#FFF", letterSpacing: 3 }}>
-              {formatCardNumber(displayNum, displayLast4)}
+              {formatCardNumber(displayNum ?? null, displayLast4 ?? null)}
             </Text>
             {showDetails && details && (
               <Text style={{ fontSize: 12, fontFamily: "Inter_500Medium", color: "rgba(255,255,255,0.6)", letterSpacing: 1 }}>
@@ -549,7 +599,7 @@ export default function KripicardModule({ ethAddress, account, onAccountUpdated,
 
           <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end" }}>
             <Text style={{ fontSize: 11, fontFamily: "Inter_500Medium", color: "rgba(255,255,255,0.45)", letterSpacing: 1 }}>
-              {binLabel(account.kripicard_bin)} · USDT
+              {binLabel(account.kripicard_bin ?? null)} · USDT
             </Text>
             <Text style={{ fontSize: 11, fontFamily: "Inter_700Bold", color: "rgba(255,255,255,0.45)", letterSpacing: 1 }}>MASTERCARD</Text>
           </View>
@@ -647,10 +697,16 @@ export default function KripicardModule({ ethAddress, account, onAccountUpdated,
                 : <Icon name="add-circle-outline" size={18} color="#FFF" />
               }
               <Text style={{ fontSize: 14, fontFamily: "Inter_700Bold", color: "#FFF" }}>
-                {funding ? "Processing…" : "Top Up Now"}
+                {funding ? (fundStep || "Processing…") : "Pay & Top Up"}
               </Text>
             </LinearGradient>
           </TouchableOpacity>
+          {!!fundStep && (
+            <Text style={{ fontSize: 11, fontFamily: "Inter_500Medium",
+              color: "#22C55E", textAlign: "center", marginTop: 10 }}>
+              {fundStep}
+            </Text>
+          )}
         </View>
       )}
 

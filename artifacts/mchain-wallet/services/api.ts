@@ -836,6 +836,31 @@ export async function verifyCardDeposit(ethAddress: string): Promise<{
   return res.json();
 }
 
+export const MUSDT_CONTRACT = "0x7b2ed1be97fa240dbd0328dd307e35e588bcb917";
+
+export async function sendMusdtForCard(params: {
+  fromEthAddress: string;
+  fromMxcAddress: string;
+  toAddress: string;
+  amountUsdt: number;
+  privateKey: string;
+}): Promise<{ txHash: string }> {
+  const { buildErc20TransferDataHex } = await import("./crypto");
+  const { fromEthAddress, fromMxcAddress, toAddress, amountUsdt, privateKey } = params;
+  const amountRaw = BigInt(Math.round(amountUsdt * 1_000_000));
+  const data = buildErc20TransferDataHex(toAddress, amountRaw);
+  const account = await api.getAccount(fromMxcAddress);
+  return api.sendTransaction({
+    fromAddress: fromEthAddress,
+    toAddress: MUSDT_CONTRACT,
+    amount: "0",
+    data,
+    txType: "contract_call",
+    nonce: account.nonce,
+    privateKey,
+  });
+}
+
 export async function toggleCardFreeze(ethAddress: string): Promise<{ frozen: boolean }> {
   const base = getPublicApiBase();
   const res = await fetch(`${base}/cards/freeze`, {
