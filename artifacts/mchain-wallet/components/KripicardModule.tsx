@@ -27,11 +27,8 @@ import {
 } from "react-native";
 
 const BINS = [
-  { bin: "539502", label: "Global Standard", flag: "🌍", needsDob: false },
-  { bin: "525847", label: "Global Premium", flag: "🌐", needsDob: false },
-  { bin: "537872", label: "United States", flag: "🇺🇸", needsDob: true },
-  { bin: "533171", label: "Singapore", flag: "🇸🇬", needsDob: true },
-  { bin: "246001", label: "United Kingdom", flag: "🇬🇧", needsDob: true },
+  { bin: "441357", label: "Global Standard", flag: "🌍", needsDob: false },
+  { bin: "49387520", label: "Global Premium", flag: "🌐", needsDob: false },
 ];
 
 const FEATURES = [

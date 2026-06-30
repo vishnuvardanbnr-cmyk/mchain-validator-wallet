@@ -443,7 +443,7 @@ router.post("/cards/freeze", async (req, res): Promise<void> => {
 });
 
 // ── KripiCard helpers ─────────────────────────────────────────────────────────
-const KC_BASE = "https://kripicard.com/api/external";
+const KC_BASE = "https://appapi.kripicard.com/api/external";
 
 function getKcKey(): string {
   const key = process.env["KRIPICARD_API_KEY"];
