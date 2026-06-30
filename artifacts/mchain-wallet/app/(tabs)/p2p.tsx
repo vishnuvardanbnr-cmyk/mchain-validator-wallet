@@ -32,7 +32,7 @@ type Token = "MC" | "USDT";
 type Side = "buy" | "sell";
 const AD_LIMIT = 20;
 
-function AdRow({ ad, myAddress, onPress }: { ad: P2pAd; myAddress: string; onPress: () => void }) {
+function AdRow({ ad, myAddress, onPress, onDelete }: { ad: P2pAd; myAddress: string; onPress: () => void; onDelete?: () => void }) {
   const colors = useColors();
   const isOwn = ad.ownerAddress === myAddress;
   const rate = parseFloat(ad.completionRate ?? "0");
@@ -73,8 +73,10 @@ function AdRow({ ad, myAddress, onPress }: { ad: P2pAd; myAddress: string; onPre
     pmChip: { paddingHorizontal: 7, paddingVertical: 3, borderRadius: 6, backgroundColor: colors.background, borderWidth: 1, borderColor: colors.border },
     pmText: { fontSize: 10, fontFamily: "Inter_500Medium", color: colors.mutedForeground },
     buyBtn: { paddingHorizontal: 16, paddingVertical: 9, borderRadius: 10, overflow: "hidden" as const, marginTop: 10 },
-    ownTag: { paddingHorizontal: 10, paddingVertical: 9, borderRadius: 10, alignItems: "center" as const, borderWidth: 1, borderColor: colors.border, marginTop: 10 },
+    ownTag: { flexDirection: "row" as const, alignItems: "center" as const, justifyContent: "space-between" as const, borderWidth: 1, borderColor: colors.border, borderRadius: 10, paddingLeft: 14, paddingRight: 6, paddingVertical: 7, marginTop: 10 },
     ownTagText: { fontSize: 12, fontFamily: "Inter_500Medium", color: colors.mutedForeground },
+    deleteBtn: { flexDirection: "row" as const, alignItems: "center" as const, gap: 4, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: "#EF444412", borderWidth: 1, borderColor: "#EF444430" },
+    deleteBtnText: { fontSize: 11, fontFamily: "Inter_600SemiBold", color: "#EF4444" },
   });
 
   return (
@@ -136,7 +138,15 @@ function AdRow({ ad, myAddress, onPress }: { ad: P2pAd; myAddress: string; onPre
       </View>
 
       {isOwn ? (
-        <View style={s.ownTag}><Text style={s.ownTagText}>Your Ad</Text></View>
+        <View style={s.ownTag}>
+          <Text style={s.ownTagText}>Your Ad</Text>
+          {onDelete && (
+            <TouchableOpacity style={s.deleteBtn} onPress={onDelete} activeOpacity={0.75}>
+              <Icon name="trash-outline" size={12} color="#EF4444" />
+              <Text style={s.deleteBtnText}>Delete</Text>
+            </TouchableOpacity>
+          )}
+        </View>
       ) : (
         <TouchableOpacity onPress={onPress} activeOpacity={0.85} style={s.buyBtn}>
           <LinearGradient
@@ -248,6 +258,36 @@ export default function P2PScreen() {
       if (savedName && savedPhone) setSavedCredentials(true);
     }).catch(() => {});
   }, [mxcAddress]);
+
+  const [deletingAdId, setDeletingAdId] = useState<string | null>(null);
+
+  function handleDeleteAd(ad: P2pAd) {
+    Alert.alert(
+      "Delete Ad",
+      "Remove this ad from the market? You can post a new one any time.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            if (!mxcAddress) return;
+            setDeletingAdId(ad.id);
+            try {
+              await p2pApi.cancelAd(ad.id, mxcAddress);
+              if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+              queryClient.invalidateQueries({ queryKey: ["p2p_ads"] });
+            } catch (e) {
+              const msg = e instanceof Error ? e.message : "Failed to delete ad";
+              Alert.alert("Cannot Delete", msg);
+            } finally {
+              setDeletingAdId(null);
+            }
+          },
+        },
+      ]
+    );
+  }
 
   function handleDisconnect() {
     Alert.alert(
@@ -588,6 +628,7 @@ export default function P2PScreen() {
                 ad={ad}
                 myAddress={mxcAddress ?? ""}
                 onPress={() => { setSelectedAd(ad); if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
+                onDelete={ad.ownerAddress === mxcAddress ? () => handleDeleteAd(ad) : undefined}
               />
             ))}
             {totalPages > 1 && (
