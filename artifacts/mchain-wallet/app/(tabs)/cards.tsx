@@ -130,6 +130,7 @@ export default function CardsScreen() {
   const [deposits, setDeposits] = useState<CardDeposit[]>([]);
   const [loadingAccount, setLoadingAccount] = useState(true);
   const [activating, setActivating] = useState(false);
+  const [cardTab, setCardTab] = useState<"fiat" | "usdt">("fiat");
   const [fiatTab, setFiatTab] = useState<"deposit" | "history">("deposit");
   const [isVerifying, setIsVerifying] = useState(false);
   const [isToggling, setIsToggling] = useState(false);
@@ -476,6 +477,47 @@ export default function CardsScreen() {
         </Animated.View>
       )}
 
+      {/* ── Card tab switcher ─────────────────────────────────────────────── */}
+      <View style={{
+        flexDirection: "row", marginHorizontal: 20, marginBottom: 12,
+        backgroundColor: colors.card, borderRadius: 16,
+        padding: 4, borderWidth: 1, borderColor: colors.border,
+      }}>
+        {([
+          { key: "fiat", label: "Fiat Card", icon: "card-outline", color: "#0EA5E9" },
+          { key: "usdt", label: "USDT Card", icon: "flash-outline", color: "#7C3AED" },
+        ] as const).map(tab => {
+          const active = cardTab === tab.key;
+          return (
+            <TouchableOpacity
+              key={tab.key}
+              onPress={() => setCardTab(tab.key)}
+              activeOpacity={0.8}
+              style={{ flex: 1, borderRadius: 13, overflow: "hidden" }}
+            >
+              <LinearGradient
+                colors={active
+                  ? tab.key === "fiat"
+                    ? ["#0D2348", "#0A1628"]
+                    : ["#1e0a38", "#120820"]
+                  : ["transparent", "transparent"]}
+                style={{
+                  flexDirection: "row", alignItems: "center", justifyContent: "center",
+                  gap: 7, paddingVertical: 12, paddingHorizontal: 8,
+                }}
+              >
+                <Icon name={tab.icon} size={16}
+                  color={active ? tab.color : colors.mutedForeground} />
+                <Text style={{
+                  fontSize: 13, fontFamily: active ? "Inter_700Bold" : "Inter_500Medium",
+                  color: active ? tab.color : colors.mutedForeground,
+                }}>{tab.label}</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+
       <ScrollView
         contentContainerStyle={s.scroll}
         showsVerticalScrollIndicator={false}
@@ -491,6 +533,7 @@ export default function CardsScreen() {
         {/* ═══════════════════════════════════════════════════════════════════ */}
         {/* SECTION 1 — Mwallet Fiat Card                                      */}
         {/* ═══════════════════════════════════════════════════════════════════ */}
+        {cardTab === "fiat" && (<>
         <View style={s.sectionCard}>
           <LinearGradient
             colors={account?.frozen
@@ -754,9 +797,12 @@ export default function CardsScreen() {
           </LinearGradient>
         </View>
 
+        </>)}
+
         {/* ═══════════════════════════════════════════════════════════════════ */}
         {/* SECTION 2 — Mwallet USDT Spending Card                             */}
         {/* ═══════════════════════════════════════════════════════════════════ */}
+        {cardTab === "usdt" && (<>
         <View style={[s.sectionCard, { marginBottom: 0 }]}>
           <LinearGradient
             colors={["#120820", "#1e0a38", "#120820"]}
@@ -789,6 +835,8 @@ export default function CardsScreen() {
             )}
           </LinearGradient>
         </View>
+
+        </>)}
 
       </ScrollView>
     </View>
