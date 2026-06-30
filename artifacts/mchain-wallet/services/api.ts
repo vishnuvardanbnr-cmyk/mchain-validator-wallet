@@ -2,6 +2,13 @@ import { Platform } from "react-native";
 import { getNodeUrl, isDefaultNode } from "./node";
 import { getWalletKey, initWalletKey } from "./walletKey";
 
+/** Hermes-safe timeout signal — timeoutSignal() is not available in React Native */
+function timeoutSignal(ms: number): AbortSignal {
+  const controller = new AbortController();
+  setTimeout(() => controller.abort(), ms);
+  return controller.signal;
+}
+
 /** Returns the base URL for wallet backend endpoints (cards, p2p, tokens, prices).
  *  Native always uses wallet.mymchain.com directly; web uses env/relative. */
 export function getPublicApiBase(): string {
@@ -536,7 +543,7 @@ export const api = {
   getSubWallets: async (validatorAddress: string): Promise<{ subWallets: SubWallet[] }> => {
     const base = getPublicApiBase();
     const res = await fetch(`${base}/validators/${encodeURIComponent(validatorAddress)}/sub-wallets`, {
-      signal: AbortSignal.timeout(8_000),
+      signal: timeoutSignal(8_000),
     });
     if (!res.ok) return { subWallets: [] };
     return res.json();
@@ -546,7 +553,7 @@ export const api = {
     const base = getPublicApiBase();
     const res = await fetch(
       `${base}/validators/${encodeURIComponent(validatorAddress)}/balance`,
-      { signal: AbortSignal.timeout(8_000) }
+      { signal: timeoutSignal(8_000) }
     );
     if (!res.ok) {
       return {
@@ -568,7 +575,7 @@ export const api = {
         ...(adminKey ? { "x-admin-key": adminKey } : {}),
       },
       body: JSON.stringify({ subWalletAddress, ...(label ? { label } : {}) }),
-      signal: AbortSignal.timeout(12_000),
+      signal: timeoutSignal(12_000),
     });
     const data = await res.json();
     if (!res.ok) throw new Error((data as { error?: string }).error ?? "Failed to add sub wallet");
@@ -586,7 +593,7 @@ export const api = {
           ...(adminKey ? { "x-admin-key": adminKey } : {}),
         },
         body: JSON.stringify({ subWalletAddress }),
-        signal: AbortSignal.timeout(8_000),
+        signal: timeoutSignal(8_000),
       }
     );
     if (!res.ok) throw new Error("Failed to remove sub wallet");
@@ -796,7 +803,7 @@ export async function initCardAccount(ethAddress: string): Promise<{ account: Ca
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ walletAddress: ethAddress }),
-    signal: AbortSignal.timeout(10_000),
+    signal: timeoutSignal(10_000),
   });
   if (!res.ok) throw new Error("Failed to initialise card account");
   return res.json();
@@ -805,7 +812,7 @@ export async function initCardAccount(ethAddress: string): Promise<{ account: Ca
 export async function getCardAccount(ethAddress: string): Promise<{ account: CardAccount | null }> {
   const base = getPublicApiBase();
   const res = await fetch(`${base}/cards/account/${encodeURIComponent(ethAddress)}`, {
-    signal: AbortSignal.timeout(8_000),
+    signal: timeoutSignal(8_000),
   });
   if (!res.ok) return { account: null };
   return res.json();
@@ -814,7 +821,7 @@ export async function getCardAccount(ethAddress: string): Promise<{ account: Car
 export async function getCardDeposits(ethAddress: string): Promise<{ deposits: CardDeposit[] }> {
   const base = getPublicApiBase();
   const res = await fetch(`${base}/cards/deposits/${encodeURIComponent(ethAddress)}`, {
-    signal: AbortSignal.timeout(8_000),
+    signal: timeoutSignal(8_000),
   });
   if (!res.ok) return { deposits: [] };
   return res.json();
@@ -830,7 +837,7 @@ export async function verifyCardDeposit(ethAddress: string): Promise<{
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ walletAddress: ethAddress }),
-    signal: AbortSignal.timeout(15_000),
+    signal: timeoutSignal(15_000),
   });
   if (!res.ok) throw new Error("Verification failed");
   return res.json();
@@ -867,7 +874,7 @@ export async function toggleCardFreeze(ethAddress: string): Promise<{ frozen: bo
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ walletAddress: ethAddress }),
-    signal: AbortSignal.timeout(8_000),
+    signal: timeoutSignal(8_000),
   });
   if (!res.ok) throw new Error("Failed to toggle freeze");
   return res.json();
@@ -886,7 +893,7 @@ export interface StripeCardDetails {
 export async function getStripeCardDetails(ethAddress: string): Promise<StripeCardDetails> {
   const base = getPublicApiBase();
   const res = await fetch(`${base}/cards/stripe-details/${encodeURIComponent(ethAddress)}`, {
-    signal: AbortSignal.timeout(10_000),
+    signal: timeoutSignal(10_000),
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
@@ -925,7 +932,7 @@ export async function issueKripicardCard(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ walletAddress, ...params }),
-    signal: AbortSignal.timeout(30_000),
+    signal: timeoutSignal(30_000),
   });
   const data = await res.json() as { error?: string };
   if (!res.ok) throw new Error(data.error ?? "Failed to issue card");
@@ -941,7 +948,7 @@ export async function fundKripicardCard(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ walletAddress, amount }),
-    signal: AbortSignal.timeout(15_000),
+    signal: timeoutSignal(15_000),
   });
   const data = await res.json() as { error?: string };
   if (!res.ok) throw new Error(data.error ?? "Failed to fund card");
@@ -954,7 +961,7 @@ export async function getKripicardDetails(walletAddress: string): Promise<Kripic
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ walletAddress }),
-    signal: AbortSignal.timeout(15_000),
+    signal: timeoutSignal(15_000),
   });
   const data = await res.json() as { error?: string };
   if (!res.ok) throw new Error(data.error ?? "Failed to get card details");
@@ -970,7 +977,7 @@ export async function freezeKripicardCard(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ walletAddress, action }),
-    signal: AbortSignal.timeout(10_000),
+    signal: timeoutSignal(10_000),
   });
   const data = await res.json() as { error?: string };
   if (!res.ok) throw new Error(data.error ?? "Failed to freeze/unfreeze card");
@@ -986,7 +993,7 @@ export async function getKripicardTransactions(walletAddress: string): Promise<{
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ walletAddress }),
-    signal: AbortSignal.timeout(15_000),
+    signal: timeoutSignal(15_000),
   });
   const data = await res.json() as { error?: string };
   if (!res.ok) throw new Error(data.error ?? "Failed to get transactions");
