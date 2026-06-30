@@ -1,8 +1,8 @@
 import { Router } from "express";
 import { pool } from "@workspace/db";
 import { keccak_256 } from "@noble/hashes/sha3";
-import { privateKeyToAddress } from "viem/accounts";
-import { createPublicClient, http, parseAbiItem, type Hex } from "viem";
+import { privateKeyToAddress, privateKeyToAccount } from "viem/accounts";
+import { createPublicClient, createWalletClient, http, parseAbiItem, parseEther, type Hex } from "viem";
 import Stripe from "stripe";
 
 const router = Router();
@@ -51,15 +51,86 @@ async function getStripeClient(): Promise<Stripe | null> {
 }
 
 // ── Address derivation ───────────────────────────────────────────────────────
-function getUserDepositAddress(ethAddress: string): string {
+const CARD_CHARGE_USD = 20;
+
+function getUserDepositPrivKey(ethAddress: string): `0x${string}` {
   const escrowKey = process.env["P2P_ESCROW_PRIVATE_KEY"] ?? "mchain-cards-no-key";
   const masterInput = new TextEncoder().encode(escrowKey + ":mchain-cards-v1");
   const masterSeed = keccak_256(masterInput);
   const masterSeedHex = Buffer.from(masterSeed).toString("hex");
   const userInput = new TextEncoder().encode(masterSeedHex + ":" + ethAddress.toLowerCase());
   const userSeed = keccak_256(userInput);
-  const privKeyHex = ("0x" + Buffer.from(userSeed).toString("hex")) as `0x${string}`;
-  return privateKeyToAddress(privKeyHex);
+  return ("0x" + Buffer.from(userSeed).toString("hex")) as `0x${string}`;
+}
+
+function getUserDepositAddress(ethAddress: string): string {
+  return privateKeyToAddress(getUserDepositPrivKey(ethAddress));
+}
+
+function getMerchantAddress(): `0x${string}` {
+  const addr = process.env["CARD_MERCHANT_ADDRESS"] ?? process.env["P2P_ESCROW_ADDRESS"];
+  if (!addr) throw new Error("CARD_MERCHANT_ADDRESS is not configured");
+  return addr as `0x${string}`;
+}
+
+function getEscrowPrivKey(): `0x${string}` {
+  const k = process.env["P2P_ESCROW_PRIVATE_KEY"];
+  if (!k) throw new Error("P2P_ESCROW_PRIVATE_KEY not set");
+  return (k.startsWith("0x") ? k : `0x${k}`) as `0x${string}`;
+}
+
+const USDT_ABI = [
+  parseAbiItem("function balanceOf(address owner) view returns (uint256)"),
+  parseAbiItem("function transfer(address to, uint256 amount) returns (bool)"),
+] as const;
+
+async function sweepDepositToMerchant(userEthAddress: string, depositAddress: `0x${string}`): Promise<string | null> {
+  try {
+    const usdtContract = getUsdtContract();
+    const merchantAddr = getMerchantAddress();
+    const publicClient = getPublicClient();
+
+    const usdtBalance = await publicClient.readContract({
+      address: usdtContract,
+      abi: USDT_ABI,
+      functionName: "balanceOf",
+      args: [depositAddress],
+    });
+    if (!usdtBalance || usdtBalance === 0n) return null;
+
+    // Fund gas (MC) from escrow wallet if deposit address is low
+    const mcBalance = await publicClient.getBalance({ address: depositAddress });
+    if (mcBalance < parseEther("0.005")) {
+      const escrowClient = createWalletClient({
+        account: privateKeyToAccount(getEscrowPrivKey()),
+        chain: mchain as never,
+        transport: http(MCHAIN_RPC),
+      });
+      await escrowClient.sendTransaction({
+        to: depositAddress,
+        value: parseEther("0.01"),
+      });
+      await new Promise((r) => setTimeout(r, 4000));
+    }
+
+    // Sweep USDT from deposit address → merchant wallet
+    const depositClient = createWalletClient({
+      account: privateKeyToAccount(getUserDepositPrivKey(userEthAddress)),
+      chain: mchain as never,
+      transport: http(MCHAIN_RPC),
+    });
+    const txHash = await depositClient.writeContract({
+      address: usdtContract,
+      abi: USDT_ABI,
+      functionName: "transfer",
+      args: [merchantAddr, usdtBalance],
+    });
+    console.log(`[sweep] ${depositAddress} → merchant ${usdtBalance} uUSDT tx=${txHash}`);
+    return txHash;
+  } catch (err) {
+    console.error("[sweep] Failed to sweep deposit:", err instanceof Error ? err.message : err);
+    return null;
+  }
 }
 
 // ── Table setup ──────────────────────────────────────────────────────────────
@@ -385,13 +456,18 @@ router.post("/cards/verify-deposit", async (req, res): Promise<void> => {
           console.warn("Stripe limit sync failed:", stripeErr instanceof Error ? stripeErr.message : stripeErr);
         }
       }
+
+      // Sweep USDT from deposit address → merchant wallet (non-blocking)
+      sweepDepositToMerchant(addr, depositAddress).catch((e) =>
+        console.error("[sweep] background error:", e)
+      );
     }
 
     res.json({
       credited: totalCredited,
       newDeposits: newLogs.length,
       message: totalCredited > 0
-        ? `${totalCredited.toFixed(2)} USDT credited — card limit set to $${newBalance.toFixed(2)}`
+        ? `${totalCredited.toFixed(2)} USDT credited — sweeping to merchant wallet`
         : "All deposits already credited",
     });
   } catch (err) {
@@ -464,45 +540,65 @@ async function kcPost<T>(path: string, body: Record<string, unknown>): Promise<T
 
 // ── POST /cards/kc/issue ──────────────────────────────────────────────────────
 router.post("/cards/kc/issue", async (req, res): Promise<void> => {
-  const { walletAddress, amount, bin, nameOnCard, email, dateOfBirth } =
+  const { walletAddress, bin, nameOnCard, email, dateOfBirth } =
     req.body as {
-      walletAddress?: string; amount?: unknown; bin?: string;
+      walletAddress?: string; bin?: string;
       nameOnCard?: string; email?: string; dateOfBirth?: string;
     };
-  if (!walletAddress || !amount || !bin || !nameOnCard) {
-    res.status(400).json({ error: "walletAddress, amount, bin, nameOnCard required" });
-    return;
-  }
-  if (Number(amount) < 10) {
-    res.status(400).json({ error: "Minimum amount is $10" });
+  if (!walletAddress || !bin || !nameOnCard) {
+    res.status(400).json({ error: "walletAddress, bin, nameOnCard required" });
     return;
   }
   const addr = walletAddress.toLowerCase();
   try {
     const accountRes = await pool.query(
-      "SELECT id, kripicard_card_id FROM card_accounts WHERE wallet_address = $1",
+      "SELECT id, kripicard_card_id, balance_usdt FROM card_accounts WHERE wallet_address = $1",
       [addr]
     );
     if (accountRes.rows.length === 0) {
       res.status(404).json({ error: "Card account not found. Activate your card first." });
       return;
     }
-    if ((accountRes.rows[0] as { kripicard_card_id: string | null }).kripicard_card_id) {
+    const row = accountRes.rows[0] as {
+      id: string; kripicard_card_id: string | null; balance_usdt: string;
+    };
+    if (row.kripicard_card_id) {
       res.status(409).json({ error: "A KripiCard has already been issued for this wallet." });
       return;
     }
 
+    const balance = parseFloat(row.balance_usdt);
+    if (balance < CARD_CHARGE_USD) {
+      res.status(402).json({
+        error: `Insufficient balance. You need $${CARD_CHARGE_USD} USDT to get a card. Current balance: $${balance.toFixed(2)}.`,
+      });
+      return;
+    }
+
+    // Deduct $20 from user balance before calling KripiCard
+    await pool.query(
+      `UPDATE card_accounts SET balance_usdt = balance_usdt - $1, updated_at = NOW() WHERE wallet_address = $2`,
+      [CARD_CHARGE_USD.toFixed(6), addr]
+    );
+
     const apiKey = getKcKey();
     const payload: Record<string, unknown> = {
-      api_key: apiKey, bin, amount: Number(amount), name_on_card: nameOnCard,
+      api_key: apiKey, bin, amount: CARD_CHARGE_USD, name_on_card: nameOnCard,
     };
     if (email) payload["email"] = email;
     if (dateOfBirth) payload["dateOfBirth"] = dateOfBirth;
 
-    const data = await kcPost<{
-      success: boolean; message: string; card_id: string; last_4: string;
-      bin: string; amount: number; fee: number; total_charged: number;
-    }>("/cards/createcard", payload);
+    let data: { success: boolean; message: string; card_id: string; last_4: string; bin: string; amount: number; fee: number; total_charged: number };
+    try {
+      data = await kcPost<typeof data>("/cards/createcard", payload);
+    } catch (kcErr) {
+      // Refund balance if KripiCard fails
+      await pool.query(
+        `UPDATE card_accounts SET balance_usdt = balance_usdt + $1, updated_at = NOW() WHERE wallet_address = $2`,
+        [CARD_CHARGE_USD.toFixed(6), addr]
+      );
+      throw kcErr;
+    }
 
     await pool.query(
       `UPDATE card_accounts
@@ -514,7 +610,7 @@ router.post("/cards/kc/issue", async (req, res): Promise<void> => {
 
     res.json({
       cardId: data.card_id, last4: data.last_4, bin: data.bin,
-      amount: data.amount, fee: data.fee, totalCharged: data.total_charged,
+      chargedUsdt: CARD_CHARGE_USD, fee: data.fee, totalCharged: data.total_charged,
     });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : "Failed to issue card" });
@@ -528,26 +624,52 @@ router.post("/cards/kc/fund", async (req, res): Promise<void> => {
     res.status(400).json({ error: "walletAddress and amount required" });
     return;
   }
-  if (Number(amount) < 10) {
+  const topupAmt = Number(amount);
+  if (topupAmt < 10) {
     res.status(400).json({ error: "Minimum top-up is $10" });
     return;
   }
   const addr = walletAddress.toLowerCase();
   try {
     const accountRes = await pool.query(
-      "SELECT kripicard_card_id FROM card_accounts WHERE wallet_address = $1",
+      "SELECT kripicard_card_id, balance_usdt FROM card_accounts WHERE wallet_address = $1",
       [addr]
     );
-    const row = accountRes.rows[0] as { kripicard_card_id: string | null } | undefined;
+    const row = accountRes.rows[0] as {
+      kripicard_card_id: string | null; balance_usdt: string;
+    } | undefined;
     if (!row?.kripicard_card_id) {
       res.status(404).json({ error: "No KripiCard found for this wallet" });
       return;
     }
-    const apiKey = getKcKey();
-    const data = await kcPost<{
-      success: boolean; message: string;
-      data: { card_id: string; amount: number; fee: number; total_debited: number };
-    }>("/cards/fundcard", { api_key: apiKey, card_id: row.kripicard_card_id, amount: Number(amount) });
+
+    const balance = parseFloat(row.balance_usdt);
+    if (balance < topupAmt) {
+      res.status(402).json({
+        error: `Insufficient balance. Requested $${topupAmt}, available $${balance.toFixed(2)} USDT.`,
+      });
+      return;
+    }
+
+    // Deduct from user balance before calling KripiCard
+    await pool.query(
+      `UPDATE card_accounts SET balance_usdt = balance_usdt - $1, updated_at = NOW() WHERE wallet_address = $2`,
+      [topupAmt.toFixed(6), addr]
+    );
+
+    let data: { success: boolean; message: string; data: { card_id: string; amount: number; fee: number; total_debited: number } };
+    try {
+      data = await kcPost<typeof data>("/cards/fundcard", {
+        api_key: getKcKey(), card_id: row.kripicard_card_id, amount: topupAmt,
+      });
+    } catch (kcErr) {
+      // Refund if KripiCard fails
+      await pool.query(
+        `UPDATE card_accounts SET balance_usdt = balance_usdt + $1, updated_at = NOW() WHERE wallet_address = $2`,
+        [topupAmt.toFixed(6), addr]
+      );
+      throw kcErr;
+    }
 
     res.json({
       cardId: data.data.card_id, amount: data.data.amount,
