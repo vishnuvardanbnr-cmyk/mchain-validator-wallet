@@ -3,7 +3,7 @@ import { TxRowSkeleton } from "@/components/Skeleton";
 import { useColors } from "@/hooks/useColors";
 import { api, type Transaction } from "@/services/api";
 import { ethAddressToMxc, mxcAddressToEthAddress, shortenAddress } from "@/services/crypto";
-import type { CustomToken, DefaultAsset } from "@/services/tokens";
+import { fetchBscTxHistory, type BscApiTx, type CustomToken, type DefaultAsset } from "@/services/tokens";
 import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
 import { router } from "expo-router";
@@ -116,6 +116,25 @@ function normalizeTokenTx(tx: Transaction, symbol: string, decimals: number): No
     blockHeight: tx.blockHeight,
     nonce: tx.nonce,
     status: tx.status,
+  };
+}
+
+function normalizeBscTx(tx: BscApiTx, symbol: string, decimals: number): NormalizedTx {
+  return {
+    hash: tx.hash,
+    fromEth: tx.from.toLowerCase(),
+    toEth: tx.to.toLowerCase(),
+    fromMxc: "",
+    toMxc: "",
+    amountRaw: tx.value,
+    symbol,
+    decimals,
+    dateStr: new Date(Number(tx.timeStamp) * 1000).toLocaleDateString(undefined, {
+      month: "short", day: "numeric",
+      hour: "2-digit", minute: "2-digit",
+    }),
+    blockHeight: Number(tx.blockNumber),
+    status: tx.isError === "0" ? "confirmed" : "failed",
   };
 }
 
@@ -454,19 +473,30 @@ export function AssetDetailModal({
     refetchInterval: 30_000,
   });
 
-  const isLoading = isTokenLike ? tokenLoading : nativeLoading;
+  // BSC transaction history (BNB native or BEP-20 token)
+  const { data: bscData, isLoading: bscLoading } = useQuery({
+    queryKey: ["bscTxHistory", ethAddr, contractAddr],
+    queryFn: () => fetchBscTxHistory(ethAddr, contractAddr || undefined),
+    enabled: !!ethAddr && visible && isBscAsset,
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+  });
+
+  const isLoading = isTokenLike ? tokenLoading : isBscAsset ? bscLoading : nativeLoading;
 
   // Normalize all entries to the same display format
   const allEntries: NormalizedTx[] = isTokenLike
     ? (tokenData ?? []).map((t) => normalizeTokenTx(t, tokenSymbol, tokenDecimals))
-    : (nativeData?.transactions ?? []).map(normalizeNative);
+    : isBscAsset
+      ? (bscData ?? []).map((t) => normalizeBscTx(t, tokenSymbol, tokenDecimals))
+      : (nativeData?.transactions ?? []).map(normalizeNative);
 
-  // Token-like assets (custom tokens + MChain default tokens): match by ETH address.
-  // Native MC: match by MXC address.
+  // All EVM assets (tokens + MChain defaults + BSC assets) match by ETH address.
+  // Native MC matches by MXC address.
   const myEthAddress = ethAddr.toLowerCase();
 
   const filtered = allEntries.filter((e) => {
-    if (isTokenLike) {
+    if (isTokenLike || isBscAsset) {
       const from = e.fromEth.toLowerCase();
       const to   = e.toEth.toLowerCase();
       if (filter === "send")    return from === myEthAddress && to !== myEthAddress;
@@ -572,7 +602,13 @@ export function AssetDetailModal({
                       borderColor: "#F0B90B40", borderRadius: 10,
                       paddingHorizontal: 12, paddingVertical: 7,
                     }}
-                    onPress={() => { onClose(); router.push("/(tabs)/dapp"); }}
+                    onPress={() => {
+                      onClose();
+                      router.push({
+                        pathname: "/(tabs)/dapp",
+                        params: { url: "https://bridge.mymchain.com/" },
+                      });
+                    }}
                     activeOpacity={0.75}
                   >
                     <Icon name="globe-outline" size={13} color="#F0B90B" />

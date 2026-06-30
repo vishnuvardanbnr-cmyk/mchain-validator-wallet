@@ -98,6 +98,48 @@ export const DEFAULT_ASSETS: DefaultAsset[] = [
   },
 ];
 
+// ─── BSCScan API (tx history) ─────────────────────────────────────────────────
+const BSCSCAN_API = "https://api.bscscan.com/api";
+
+export interface BscApiTx {
+  hash: string;
+  from: string;
+  to: string;
+  value: string;
+  timeStamp: string;
+  isError: string;
+  blockNumber: string;
+}
+
+/**
+ * Fetch up to 50 most-recent transactions for an address on BSC.
+ * For BNB: pass no contractAddress.
+ * For BEP-20 tokens: pass the token contract address.
+ * Works without an API key (rate-limited to ~5 req/s).
+ */
+export async function fetchBscTxHistory(
+  ethAddress: string,
+  contractAddress?: string,
+): Promise<BscApiTx[]> {
+  const params = new URLSearchParams({
+    module: "account",
+    action: contractAddress ? "tokentx" : "txlist",
+    address: ethAddress,
+    sort: "desc",
+    page: "1",
+    offset: "50",
+  });
+  if (contractAddress) params.set("contractaddress", contractAddress);
+  try {
+    const res = await fetch(`${BSCSCAN_API}?${params}`);
+    const json = (await res.json()) as { status: string; result: BscApiTx[] | string };
+    if (json.status !== "1" || !Array.isArray(json.result)) return [];
+    return json.result;
+  } catch {
+    return [];
+  }
+}
+
 // ─── BSC RPC helpers ──────────────────────────────────────────────────────────
 const BSC_RPC = "https://bsc-dataseed.binance.org/";
 
