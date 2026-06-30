@@ -1,8 +1,6 @@
 import { Router } from "express";
 import { pool } from "@workspace/db";
-import { keccak_256 } from "@noble/hashes/sha3";
-import { privateKeyToAddress, privateKeyToAccount } from "viem/accounts";
-import { createPublicClient, createWalletClient, http, parseAbiItem, parseEther, type Hex } from "viem";
+import { createPublicClient, http, parseAbiItem, type Hex } from "viem";
 import Stripe from "stripe";
 
 const router = Router();
@@ -50,87 +48,13 @@ async function getStripeClient(): Promise<Stripe | null> {
   return new Stripe(key, { apiVersion: "2025-04-30.basil" });
 }
 
-// ── Address derivation ───────────────────────────────────────────────────────
+// ── Merchant / admin wallet ───────────────────────────────────────────────────
 const CARD_CHARGE_USD = 20;
-
-function getUserDepositPrivKey(ethAddress: string): `0x${string}` {
-  const escrowKey = process.env["P2P_ESCROW_PRIVATE_KEY"] ?? "mchain-cards-no-key";
-  const masterInput = new TextEncoder().encode(escrowKey + ":mchain-cards-v1");
-  const masterSeed = keccak_256(masterInput);
-  const masterSeedHex = Buffer.from(masterSeed).toString("hex");
-  const userInput = new TextEncoder().encode(masterSeedHex + ":" + ethAddress.toLowerCase());
-  const userSeed = keccak_256(userInput);
-  return ("0x" + Buffer.from(userSeed).toString("hex")) as `0x${string}`;
-}
-
-function getUserDepositAddress(ethAddress: string): string {
-  return privateKeyToAddress(getUserDepositPrivKey(ethAddress));
-}
 
 function getMerchantAddress(): `0x${string}` {
   const addr = process.env["CARD_MERCHANT_ADDRESS"] ?? process.env["P2P_ESCROW_ADDRESS"];
   if (!addr) throw new Error("CARD_MERCHANT_ADDRESS is not configured");
-  return addr as `0x${string}`;
-}
-
-function getEscrowPrivKey(): `0x${string}` {
-  const k = process.env["P2P_ESCROW_PRIVATE_KEY"];
-  if (!k) throw new Error("P2P_ESCROW_PRIVATE_KEY not set");
-  return (k.startsWith("0x") ? k : `0x${k}`) as `0x${string}`;
-}
-
-const USDT_ABI = [
-  parseAbiItem("function balanceOf(address owner) view returns (uint256)"),
-  parseAbiItem("function transfer(address to, uint256 amount) returns (bool)"),
-] as const;
-
-async function sweepDepositToMerchant(userEthAddress: string, depositAddress: `0x${string}`): Promise<string | null> {
-  try {
-    const usdtContract = getUsdtContract();
-    const merchantAddr = getMerchantAddress();
-    const publicClient = getPublicClient();
-
-    const usdtBalance = await publicClient.readContract({
-      address: usdtContract,
-      abi: USDT_ABI,
-      functionName: "balanceOf",
-      args: [depositAddress],
-    });
-    if (!usdtBalance || usdtBalance === 0n) return null;
-
-    // Fund gas (MC) from escrow wallet if deposit address is low
-    const mcBalance = await publicClient.getBalance({ address: depositAddress });
-    if (mcBalance < parseEther("0.005")) {
-      const escrowClient = createWalletClient({
-        account: privateKeyToAccount(getEscrowPrivKey()),
-        chain: mchain as never,
-        transport: http(MCHAIN_RPC),
-      });
-      await escrowClient.sendTransaction({
-        to: depositAddress,
-        value: parseEther("0.01"),
-      });
-      await new Promise((r) => setTimeout(r, 4000));
-    }
-
-    // Sweep USDT from deposit address → merchant wallet
-    const depositClient = createWalletClient({
-      account: privateKeyToAccount(getUserDepositPrivKey(userEthAddress)),
-      chain: mchain as never,
-      transport: http(MCHAIN_RPC),
-    });
-    const txHash = await depositClient.writeContract({
-      address: usdtContract,
-      abi: USDT_ABI,
-      functionName: "transfer",
-      args: [merchantAddr, usdtBalance],
-    });
-    console.log(`[sweep] ${depositAddress} → merchant ${usdtBalance} uUSDT tx=${txHash}`);
-    return txHash;
-  } catch (err) {
-    console.error("[sweep] Failed to sweep deposit:", err instanceof Error ? err.message : err);
-    return null;
-  }
+  return addr.toLowerCase() as `0x${string}`;
 }
 
 // ── Table setup ──────────────────────────────────────────────────────────────
@@ -242,7 +166,7 @@ router.post("/cards/init", async (req, res): Promise<void> => {
       return;
     }
 
-    const depositAddress = getUserDepositAddress(addr);
+    const depositAddress = getMerchantAddress();
     const displayName = name?.trim() || `MChain ${addr.slice(2, 8).toUpperCase()}`;
 
     // Provision Stripe cardholder + card if key is configured
@@ -368,17 +292,17 @@ router.post("/cards/verify-deposit", async (req, res): Promise<void> => {
       return;
     }
     const account = accountResult.rows[0] as {
-      deposit_address: string;
       stripe_card_id: string | null;
       balance_usdt: string;
     };
-    const depositAddress = account.deposit_address as Hex;
 
     let usdtContract: Hex;
+    let merchantAddr: Hex;
     try {
       usdtContract = getUsdtContract();
-    } catch {
-      res.status(503).json({ error: "USDT_CONTRACT_ADDRESS is not configured on the server" });
+      merchantAddr = getMerchantAddress();
+    } catch (e) {
+      res.status(503).json({ error: e instanceof Error ? e.message : "Server not configured" });
       return;
     }
 
@@ -386,10 +310,11 @@ router.post("/cards/verify-deposit", async (req, res): Promise<void> => {
     const latestBlock = await client.getBlockNumber();
     const fromBlock = latestBlock > 500_000n ? latestBlock - 500_000n : 0n;
 
+    // Look for USDT transfers FROM user's wallet TO the admin/merchant wallet
     const logs = await client.getLogs({
       address: usdtContract,
       event: TRANSFER_EVENT,
-      args: { to: depositAddress },
+      args: { from: addr as Hex, to: merchantAddr },
       fromBlock,
       toBlock: "latest",
     });
@@ -457,17 +382,13 @@ router.post("/cards/verify-deposit", async (req, res): Promise<void> => {
         }
       }
 
-      // Sweep USDT from deposit address → merchant wallet (non-blocking)
-      sweepDepositToMerchant(addr, depositAddress).catch((e) =>
-        console.error("[sweep] background error:", e)
-      );
     }
 
     res.json({
       credited: totalCredited,
       newDeposits: newLogs.length,
       message: totalCredited > 0
-        ? `${totalCredited.toFixed(2)} USDT credited — sweeping to merchant wallet`
+        ? `${totalCredited.toFixed(2)} USDT credited to your balance`
         : "All deposits already credited",
     });
   } catch (err) {
