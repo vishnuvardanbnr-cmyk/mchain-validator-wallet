@@ -28,13 +28,14 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 export default function ReceiveScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { mxcAddress, activeWallet } = useWallet();
+  const { mxcAddress, ethAddress, activeWallet } = useWallet();
 
   const [requestAmount, setRequestAmount] = useState("");
   const [showAmountInput, setShowAmountInput] = useState(false);
   const [copied, setCopied] = useState(false);
   const [toast, setToast] = useState("");
   const [amountFocused, setAmountFocused] = useState(false);
+  const [showEth, setShowEth] = useState(false);
   // null = native MC, otherwise a custom token
   const [selectedToken, setSelectedToken] = useState<CustomToken | null>(null);
 
@@ -93,21 +94,24 @@ export default function ReceiveScreen() {
   const tokenSymbol = selectedToken ? selectedToken.symbol : "MC";
   const hasAmount = !!requestAmount && parseFloat(requestAmount) > 0;
 
+  // Active address switches between mxc1 (default) and 0x (ETH)
+  const activeAddress = showEth ? (ethAddress ?? "") : (mxcAddress ?? "");
+
   // Build QR value: include amount and token info when set
   const qrValue = (() => {
-    if (!mxcAddress) return "";
+    if (!activeAddress) return "";
     const params: string[] = [];
     if (hasAmount) params.push(`amount=${requestAmount}`);
     if (selectedToken) {
       params.push(`token=${selectedToken.symbol}`);
       params.push(`contract=${selectedToken.contractAddress}`);
     }
-    return params.length > 0 ? `${mxcAddress}?${params.join("&")}` : mxcAddress;
+    return params.length > 0 ? `${activeAddress}?${params.join("&")}` : activeAddress;
   })();
 
   async function handleCopy() {
-    if (!mxcAddress) return;
-    await Clipboard.setStringAsync(mxcAddress);
+    if (!activeAddress) return;
+    await Clipboard.setStringAsync(activeAddress);
     if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setCopied(true);
     Animated.sequence([
@@ -118,10 +122,10 @@ export default function ReceiveScreen() {
   }
 
   async function handleShare() {
-    if (!mxcAddress) return;
+    if (!activeAddress) return;
     const msg = hasAmount
-      ? `Send ${requestAmount} ${tokenSymbol} to my MChain address:\n${mxcAddress}`
-      : `My MChain address:\n${mxcAddress}`;
+      ? `Send ${requestAmount} ${tokenSymbol} to my MChain address:\n${activeAddress}`
+      : `My MChain address:\n${activeAddress}`;
     try {
       await Share.share({ message: msg });
     } catch {
@@ -220,6 +224,15 @@ export default function ReceiveScreen() {
     },
     amountSetBtnText: { fontSize: 14, fontFamily: "Inter_600SemiBold", color: "#FFFFFF" },
     amountHint: { fontSize: 11, fontFamily: "Inter_400Regular", color: colors.mutedForeground, marginTop: 4 },
+    addrToggleRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 8 },
+    addrTogglePill: {
+      flexDirection: "row", borderRadius: 20, overflow: "hidden",
+      borderWidth: 1, borderColor: colors.border,
+    },
+    addrToggleBtn: { paddingHorizontal: 12, paddingVertical: 5 },
+    addrToggleBtnActive: { backgroundColor: colors.primary },
+    addrToggleBtnText: { fontSize: 11, fontFamily: "Inter_600SemiBold", color: colors.mutedForeground },
+    addrToggleBtnTextActive: { color: "#FFFFFF" },
     actionRow: { width: "100%", flexDirection: "row", gap: 10, paddingHorizontal: 0 },
     copyBtn: { flex: 1, borderRadius: colors.radius, overflow: "hidden" },
     shareBtn: {
@@ -333,9 +346,27 @@ export default function ReceiveScreen() {
           </Animated.View>
 
           <View style={s.addressCard}>
-            <Text style={s.addressLabel}>YOUR MXC ADDRESS</Text>
+            <View style={s.addrToggleRow}>
+              <Text style={s.addressLabel}>{showEth ? "YOUR 0x ADDRESS" : "YOUR MXC ADDRESS"}</Text>
+              <View style={s.addrTogglePill}>
+                <TouchableOpacity
+                  style={[s.addrToggleBtn, !showEth && s.addrToggleBtnActive]}
+                  onPress={() => setShowEth(false)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[s.addrToggleBtnText, !showEth && s.addrToggleBtnTextActive]}>mxc1</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[s.addrToggleBtn, showEth && s.addrToggleBtnActive]}
+                  onPress={() => setShowEth(true)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[s.addrToggleBtnText, showEth && s.addrToggleBtnTextActive]}>0x</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
             <Text style={s.addressText} selectable>
-              {mxcAddress ?? "Loading..."}
+              {activeAddress || "Loading..."}
             </Text>
           </View>
 
