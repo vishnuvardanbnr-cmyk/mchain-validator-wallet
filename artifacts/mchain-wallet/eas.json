@@ -14,7 +14,7 @@
       "channel": "development",
       "cache": { "key": "mchain-dev-v2" },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://node.mymchain.com",
+        "EXPO_PUBLIC_API_URL": "https://wallet.mymchain.com",
         "EXPO_PUBLIC_WALLET_KEY": "9009b20d0b76731aefd134431290f1d9f7c4a0bce2a56884168f97fc654ae6c1"
       }
     },
@@ -26,7 +26,7 @@
       "channel": "preview",
       "cache": { "key": "mchain-preview-v2" },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://node.mymchain.com",
+        "EXPO_PUBLIC_API_URL": "https://wallet.mymchain.com",
         "EXPO_PUBLIC_WALLET_KEY": "9009b20d0b76731aefd134431290f1d9f7c4a0bce2a56884168f97fc654ae6c1"
       }
     },
@@ -37,7 +37,7 @@
       "channel": "production",
       "cache": { "key": "mchain-prod-v2" },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://node.mymchain.com",
+        "EXPO_PUBLIC_API_URL": "https://wallet.mymchain.com",
         "EXPO_PUBLIC_WALLET_KEY": "9009b20d0b76731aefd134431290f1d9f7c4a0bce2a56884168f97fc654ae6c1"
       }
     }
