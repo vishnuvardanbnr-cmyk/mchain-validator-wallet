@@ -150,8 +150,12 @@ export default function KripicardModule({ ethAddress, mxcAddress, account, onAcc
       showMsg("error", "Please enter your name on card (at least 2 characters).");
       return;
     }
-    if (selectedBinObj.needsDob && !issueDob.trim()) {
-      showMsg("error", "Date of birth is required for this card type (YYYY-MM-DD).");
+    if (!issueEmail.trim() || !issueEmail.includes("@")) {
+      showMsg("error", "Please enter a valid email address.");
+      return;
+    }
+    if (!issueDob.trim() || !/^\d{4}-\d{2}-\d{2}$/.test(issueDob.trim())) {
+      showMsg("error", "Please enter your date of birth (YYYY-MM-DD).");
       return;
     }
     if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -197,8 +201,8 @@ export default function KripicardModule({ ethAddress, mxcAddress, account, onAcc
       setIssueStep("Activating your card…");
       const result = await issueKripicardCard(ethAddress, {
         amount: 20, bin: issueBin, nameOnCard: issueName.trim(),
-        email: issueEmail.trim() || undefined,
-        dateOfBirth: selectedBinObj.needsDob ? issueDob.trim() : undefined,
+        email: issueEmail.trim(),
+        dateOfBirth: issueDob.trim(),
       });
 
       if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -522,7 +526,7 @@ export default function KripicardModule({ ethAddress, mxcAddress, account, onAcc
               autoCapitalize="words"
             />
 
-            <Text style={s.label}>EMAIL (optional)</Text>
+            <Text style={s.label}>EMAIL</Text>
             <TextInput
               style={s.input}
               placeholder="your@email.com"
@@ -531,20 +535,18 @@ export default function KripicardModule({ ethAddress, mxcAddress, account, onAcc
               onChangeText={setIssueEmail}
               keyboardType="email-address"
               autoCapitalize="none"
+              autoCorrect={false}
             />
 
-            {selectedBinObj.needsDob && (
-              <>
-                <Text style={s.label}>DATE OF BIRTH (YYYY-MM-DD)</Text>
-                <TextInput
-                  style={s.input}
-                  placeholder="1990-01-15"
-                  placeholderTextColor={colors.mutedForeground}
-                  value={issueDob}
-                  onChangeText={setIssueDob}
-                />
-              </>
-            )}
+            <Text style={s.label}>DATE OF BIRTH (YYYY-MM-DD)</Text>
+            <TextInput
+              style={s.input}
+              placeholder="1990-01-15"
+              placeholderTextColor={colors.mutedForeground}
+              value={issueDob}
+              onChangeText={setIssueDob}
+              keyboardType="numbers-and-punctuation"
+            />
 
             <TouchableOpacity
               style={{ borderRadius: 14, overflow: "hidden", opacity: issuing ? 0.7 : 1 }}

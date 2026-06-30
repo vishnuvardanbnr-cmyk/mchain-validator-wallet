@@ -466,8 +466,8 @@ router.post("/cards/kc/issue", async (req, res): Promise<void> => {
       walletAddress?: string; bin?: string;
       nameOnCard?: string; email?: string; dateOfBirth?: string;
     };
-  if (!walletAddress || !bin || !nameOnCard) {
-    res.status(400).json({ error: "walletAddress, bin, nameOnCard required" });
+  if (!walletAddress || !bin || !nameOnCard || !email || !dateOfBirth) {
+    res.status(400).json({ error: "walletAddress, bin, nameOnCard, email, dateOfBirth are all required" });
     return;
   }
   const addr = walletAddress.toLowerCase();
@@ -505,9 +505,8 @@ router.post("/cards/kc/issue", async (req, res): Promise<void> => {
     const apiKey = getKcKey();
     const payload: Record<string, unknown> = {
       api_key: apiKey, bin, amount: CARD_CHARGE_USD, name_on_card: nameOnCard,
+      email, dateOfBirth,
     };
-    if (email) payload["email"] = email;
-    if (dateOfBirth) payload["dateOfBirth"] = dateOfBirth;
 
     let data: { success: boolean; message: string; card_id: string; last_4: string; bin: string; amount: number; fee: number; total_charged: number };
     try {
