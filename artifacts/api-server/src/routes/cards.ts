@@ -159,6 +159,9 @@ router.post("/cards/init", async (req, res): Promise<void> => {
   }
   const addr = walletAddress.toLowerCase();
   try {
+    // Self-heal: ensure the cards tables exist even if startup migration was skipped
+    await ensureCardsTables();
+
     const existing = await pool.query(
       "SELECT * FROM card_accounts WHERE wallet_address = $1",
       [addr]
@@ -192,7 +195,8 @@ router.post("/cards/init", async (req, res): Promise<void> => {
       [addr, depositAddress.toLowerCase(), cardholderId, cardId, displayName]
     );
     res.json({ account: result.rows[0] });
-  } catch {
+  } catch (err) {
+    console.error("POST /cards/init error:", err instanceof Error ? err.message : err);
     res.status(500).json({ error: "Failed to initialise card account" });
   }
 });
