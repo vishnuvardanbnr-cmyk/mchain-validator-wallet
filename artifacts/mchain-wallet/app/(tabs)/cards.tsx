@@ -129,7 +129,7 @@ export default function CardsScreen() {
   const [account, setAccount] = useState<CardAccount | null>(null);
   const [deposits, setDeposits] = useState<CardDeposit[]>([]);
   const [loadingAccount, setLoadingAccount] = useState(true);
-  const [initInProgress, setInitInProgress] = useState(false);
+  const [activating, setActivating] = useState(false);
   const [fiatTab, setFiatTab] = useState<"deposit" | "history">("deposit");
   const [isVerifying, setIsVerifying] = useState(false);
   const [isToggling, setIsToggling] = useState(false);
@@ -143,7 +143,7 @@ export default function CardsScreen() {
   const verifyAnim = useRef(new Animated.Value(0)).current;
   const msgAnim = useRef(new Animated.Value(0)).current;
 
-  // ── Load account (auto-creates if first visit) ────────────────────────────
+  // ── Load account ──────────────────────────────────────────────────────────
   const loadAccount = useCallback(async (silent = false) => {
     if (!ethAddress) return;
     if (!silent) setLoadingAccount(true);
@@ -152,31 +152,32 @@ export default function CardsScreen() {
         getCardAccount(ethAddress),
         getCardDeposits(ethAddress),
       ]);
+      setAccount(accRes.account);
       setDeposits(depRes.deposits);
-
-      if (accRes.account) {
-        setAccount(accRes.account);
-      } else if (!initInProgress) {
-        // First visit — silently create the account record
-        setInitInProgress(true);
-        try {
-          const res = await initCardAccount(ethAddress);
-          setAccount(res.account);
-        } catch {
-          // Non-fatal — user can pull-to-refresh
-        } finally {
-          setInitInProgress(false);
-        }
-      }
     } catch {
       // silent
     } finally {
       setLoadingAccount(false);
       setRefreshing(false);
     }
-  }, [ethAddress, initInProgress]);
+  }, [ethAddress]);
 
   useEffect(() => { loadAccount(); }, [loadAccount]);
+
+  // ── Activate (first-time setup) ───────────────────────────────────────────
+  const handleActivate = async () => {
+    if (!ethAddress || activating) return;
+    if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setActivating(true);
+    try {
+      const res = await initCardAccount(ethAddress);
+      setAccount(res.account);
+    } catch {
+      showMsg("error", "Failed to activate. Please try again.");
+    } finally {
+      setActivating(false);
+    }
+  };
 
   // ── Feedback banner ───────────────────────────────────────────────────────
   const showMsg = (type: "success" | "error" | "info", text: string) => {
@@ -334,6 +335,104 @@ export default function CardsScreen() {
           <Skeleton width="100%" height={360} borderRadius={24} />
           <Skeleton width="100%" height={360} borderRadius={24} />
         </View>
+      </View>
+    );
+  }
+
+  // ── Activate screen (new users) ───────────────────────────────────────────
+  if (!account) {
+    return (
+      <View style={s.container}>
+        <View style={s.header}>
+          <TouchableOpacity style={s.backBtn} onPress={() => router.back()} activeOpacity={0.7}>
+            <Icon name="arrow-back" size={18} color={colors.foreground} />
+          </TouchableOpacity>
+          <Text style={s.headerTitle}>My Cards</Text>
+        </View>
+
+        <ScrollView contentContainerStyle={{ flexGrow: 1 }} showsVerticalScrollIndicator={false}>
+          <View style={{ flex: 1, alignItems: "center", justifyContent: "center",
+            paddingHorizontal: 32, paddingBottom: 80, paddingTop: 20 }}>
+
+            {/* Icon */}
+            <View style={{ width: 90, height: 90, borderRadius: 45,
+              backgroundColor: colors.primary + "15", borderWidth: 1,
+              borderColor: colors.primary + "30", alignItems: "center",
+              justifyContent: "center", marginBottom: 28 }}>
+              <Icon name="card-outline" size={40} color={colors.primary} />
+            </View>
+
+            <Text style={{ fontSize: 26, fontFamily: "Inter_700Bold",
+              color: colors.foreground, textAlign: "center", marginBottom: 12 }}>
+              Your MWallet Cards
+            </Text>
+            <Text style={{ fontSize: 14, fontFamily: "Inter_400Regular",
+              color: colors.mutedForeground, textAlign: "center", lineHeight: 22, marginBottom: 32 }}>
+              Activate to access your Fiat Card and USDT Spending Card — spend anywhere Mastercard is accepted.
+            </Text>
+
+            {/* Feature list */}
+            {[
+              { icon: "card-outline",          text: "Mwallet Fiat Card — spend fiat globally" },
+              { icon: "flash-outline",          text: "Mwallet USDT Spending Card — instant USDT spending" },
+              { icon: "lock-closed-outline",    text: "Freeze & unfreeze anytime" },
+              { icon: "swap-horizontal-outline", text: "USDT automatically converted at checkout" },
+            ].map((f, i) => (
+              <View key={i} style={{ flexDirection: "row", gap: 12, alignItems: "center",
+                alignSelf: "stretch", marginBottom: 16 }}>
+                <View style={{ width: 36, height: 36, borderRadius: 12,
+                  backgroundColor: colors.primary + "15", alignItems: "center", justifyContent: "center" }}>
+                  <Icon name={f.icon} size={18} color={colors.primary} />
+                </View>
+                <Text style={{ fontSize: 13, fontFamily: "Inter_400Regular",
+                  color: colors.foreground, flex: 1, lineHeight: 20 }}>{f.text}</Text>
+              </View>
+            ))}
+
+            {/* Error banner */}
+            {verifyMsg && (
+              <Animated.View style={[s.msgBanner, {
+                backgroundColor: msgColor + "18", borderColor: msgColor + "40",
+                opacity: msgAnim, alignSelf: "stretch", marginTop: 8,
+              }]}>
+                <Icon name="alert-circle-outline" size={18} color={msgColor} />
+                <Text style={{ flex: 1, fontSize: 13, fontFamily: "Inter_500Medium", color: msgColor }}>
+                  {verifyMsg.text}
+                </Text>
+              </Animated.View>
+            )}
+
+            {/* Activate button */}
+            <TouchableOpacity
+              style={{ width: "100%", borderRadius: 18, overflow: "hidden", marginTop: 12,
+                opacity: activating ? 0.7 : 1,
+                shadowColor: colors.primary, shadowOpacity: 0.4,
+                shadowRadius: 14, shadowOffset: { width: 0, height: 5 }, elevation: 10 }}
+              activeOpacity={0.85}
+              onPress={handleActivate}
+              disabled={activating || !ethAddress}
+            >
+              <LinearGradient colors={["#0EA5E9", "#0284C7"]}
+                style={{ paddingVertical: 19, alignItems: "center",
+                  flexDirection: "row", justifyContent: "center", gap: 10 }}>
+                {activating
+                  ? <ActivityIndicator color="#FFF" size="small" />
+                  : <Icon name="card-outline" size={22} color="#FFF" />
+                }
+                <Text style={{ fontSize: 17, fontFamily: "Inter_700Bold", color: "#FFF" }}>
+                  {activating ? "Activating…" : "Activate My Cards"}
+                </Text>
+              </LinearGradient>
+            </TouchableOpacity>
+
+            {!ethAddress && (
+              <Text style={{ fontSize: 12, color: colors.mutedForeground,
+                textAlign: "center", marginTop: 12 }}>
+                Connect a wallet first to activate your cards.
+              </Text>
+            )}
+          </View>
+        </ScrollView>
       </View>
     );
   }
