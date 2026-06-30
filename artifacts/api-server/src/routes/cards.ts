@@ -308,7 +308,7 @@ router.post("/cards/verify-deposit", async (req, res): Promise<void> => {
 
     const client = getPublicClient();
     const latestBlock = await client.getBlockNumber();
-    const fromBlock = latestBlock > 500_000n ? latestBlock - 500_000n : 0n;
+    const fromBlock = latestBlock > 9_000n ? latestBlock - 9_000n : 0n;
 
     // Look for USDT transfers FROM user's wallet TO the admin/merchant wallet
     const logs = await client.getLogs({
