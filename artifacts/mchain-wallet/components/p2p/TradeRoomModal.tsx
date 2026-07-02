@@ -135,13 +135,20 @@ export function TradeRoomModal({ visible, orderId, onClose }: Props) {
     }
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      quality: 0.5,
+      quality: 0.6,
       base64: true,
       allowsEditing: true,
+      exif: false,
     });
     if (!result.canceled && result.assets[0]) {
       const asset = result.assets[0];
       if (asset.base64) {
+        // Guard: reject if base64 > 1.5 MB (≈ 2 MB encoded)
+        const MAX_BASE64_BYTES = 1.5 * 1024 * 1024;
+        if (asset.base64.length > MAX_BASE64_BYTES) {
+          setToast("Image is too large. Please choose a smaller photo (max ~1.5 MB).");
+          return;
+        }
         const mime = asset.mimeType ?? "image/jpeg";
         setPendingImage(`data:${mime};base64,${asset.base64}`);
       }
