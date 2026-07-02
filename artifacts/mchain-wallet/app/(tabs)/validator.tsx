@@ -356,7 +356,11 @@ export default function ValidatorScreen() {
       void refetchValidatorBalance();
       void refetchSubWallets();
       qc.invalidateQueries({ queryKey: ["account", mxcAddress] });
-      setToast(`Claimed ${totalClaimed.toFixed(4)} MC — check your balance`);
+      const autoReleased = parseFloat(result.autoReleased ?? "0");
+      const toastMsg = autoReleased > 0
+        ? `Claimed ${totalClaimed.toFixed(4)} MC · ${autoReleased.toFixed(4)} MC auto-released from frozen`
+        : `Claimed ${totalClaimed.toFixed(4)} MC — check your balance`;
+      setToast(toastMsg);
     } catch (err) {
       setClaimError(err instanceof Error ? err.message : "Claim failed");
     } finally {

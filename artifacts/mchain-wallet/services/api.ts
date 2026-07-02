@@ -636,13 +636,13 @@ export const api = {
   healthCheck: () => request<{ status: string }>("/healthz"),
 
   claimRewards: (address: string) =>
-    request<{ ok: boolean; txHash?: string; claimed: string; claimedWei: string; message?: string }>(
+    request<{ ok: boolean; txHash?: string; claimed: string; claimedWei: string; autoReleased?: string; autoReleasedWei?: string; message?: string }>(
       `/validators/${encodeURIComponent(address)}/claim-rewards`,
       { method: "POST" }
     ),
 
   claimSubWalletRewards: (validatorAddress: string, subWalletAddress: string) =>
-    request<{ ok: boolean; txHash?: string; claimed: string; claimedWei: string; message?: string }>(
+    request<{ ok: boolean; txHash?: string; claimed: string; claimedWei: string; autoReleased?: string; autoReleasedWei?: string; message?: string }>(
       `/validators/${encodeURIComponent(validatorAddress)}/sub-wallets/${encodeURIComponent(subWalletAddress)}/claim-rewards`,
       { method: "POST" }
     ),
