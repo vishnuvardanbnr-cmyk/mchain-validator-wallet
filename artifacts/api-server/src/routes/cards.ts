@@ -51,7 +51,8 @@ async function getStripeClient(): Promise<Stripe | null> {
 }
 
 // ── Merchant / admin wallet ───────────────────────────────────────────────────
-const CARD_CHARGE_USD = 20;
+const CARD_CHARGE_USD = 20;   // collected from user in MUSDT
+const KC_ISSUE_AMOUNT = 10;   // amount sent to KripiCard when issuing the card
 
 function getMerchantAddress(): `0x${string}` {
   const addr = process.env["CARD_MERCHANT_ADDRESS"] ?? process.env["P2P_ESCROW_ADDRESS"];
@@ -506,7 +507,7 @@ router.post("/cards/kc/issue", async (req, res): Promise<void> => {
 
     const apiKey = getKcKey();
     const payload: Record<string, unknown> = {
-      api_key: apiKey, bin, amount: CARD_CHARGE_USD, name_on_card: nameOnCard,
+      api_key: apiKey, bin, amount: KC_ISSUE_AMOUNT, name_on_card: nameOnCard,
       email, dateOfBirth,
     };
 
