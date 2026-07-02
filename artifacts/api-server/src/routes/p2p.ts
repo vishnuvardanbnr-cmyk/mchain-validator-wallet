@@ -450,6 +450,7 @@ router.post("/p2p/orders/:id/release", async (req, res) => {
   if (!["paid", "disputed"].includes(order.status)) { res.status(400).json({ error: "Cannot release at this stage" }); return; }
 
   let releaseTxHash: string | null = null;
+  let broadcastWarning: string | null = null;
 
   // ── On-chain release for orders with locked escrow ────────────────────────
   if (order.escrowStatus === "locked" && isEscrowConfigured()) {
@@ -459,12 +460,23 @@ router.post("/p2p/orders/:id/release", async (req, res) => {
       if (order.token === "MC") {
         releaseTxHash = await broadcastMcTransaction(escrowAddr, order.buyerAddress, mcToWei(String(order.cryptoAmount)), escrowPk);
       } else {
-        // USDT: ERC-20 transfer via eth_sendRawTransaction
         releaseTxHash = await broadcastUsdtTransaction(escrowPk, order.buyerAddress, String(order.cryptoAmount));
       }
     } catch (e) {
-      res.status(502).json({ error: `Escrow release failed: ${e instanceof Error ? e.message : "Unknown error"}` });
-      return;
+      const errMsg = e instanceof Error ? e.message : "Unknown error";
+
+      // ── Definite failures: transaction was rejected before broadcast ──────
+      // These mean the tx never reached the chain — safe to abort.
+      const isDefiniteFailure = /insufficient funds|nonce too low|already known|replacement transaction|invalid signature|execution reverted|gas required exceeds/i.test(errMsg);
+      if (isDefiniteFailure) {
+        res.status(502).json({ error: `Escrow release failed: ${errMsg}` });
+        return;
+      }
+
+      // ── Ambiguous failures: network/timeout after broadcast ───────────────
+      // The transaction may have been submitted and the buyer already received
+      // funds. Mark the order as released anyway and flag for admin review.
+      broadcastWarning = `Broadcast error (tx may have gone through): ${errMsg}`;
     }
   }
 
@@ -487,10 +499,12 @@ router.post("/p2p/orders/:id/release", async (req, res) => {
 
   const releaseMsg = releaseTxHash
     ? `Trade completed. ${order.cryptoAmount} ${order.token} released to buyer on-chain (tx: ${releaseTxHash.slice(0, 12)}…).`
+    : broadcastWarning
+    ? `Trade marked complete. Broadcast may have succeeded — buyer should check their balance. Admin note: ${broadcastWarning}`
     : "Trade completed. Crypto has been released to the buyer.";
 
   await db.insert(p2pMessages).values({ orderId: id, senderAddress: "system", content: releaseMsg, isSystem: true });
-  res.json(updated);
+  res.json({ ...updated, broadcastWarning });
 });
 
 // ── Escrow ─────────────────────────────────────────────────────────────────────
