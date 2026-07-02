@@ -12,7 +12,9 @@ import {
   sendMusdtForCard,
   verifyCardDeposit,
   api,
+  MUSDT_CONTRACT,
 } from "@/services/api";
+import { weiToMc } from "@/services/crypto";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
@@ -44,6 +46,12 @@ const FEATURES = [
 
 function binLabel(bin: string | null): string {
   return BINS.find((b) => b.bin === bin)?.label ?? bin ?? "";
+}
+
+// ABI-encodes a balanceOf(address) eth_call payload for an ERC-20 contract
+function buildBalanceOfCalldata(address: string | null | undefined): string {
+  const addr = (address ?? "").replace(/^0x/i, "").toLowerCase().padStart(64, "0");
+  return "0x70a08231" + addr;
 }
 
 function formatCardNumber(num: string | null | undefined, last4: string | null): string {
@@ -158,6 +166,40 @@ export default function KripicardModule({ ethAddress, mxcAddress, account, onAcc
       showMsg("error", "Please enter your date of birth (YYYY-MM-DD).");
       return;
     }
+
+    // ── Pre-flight balance checks ────────────────────────────────────────────
+    try {
+      setIssuing(true);
+      setIssueStep("Checking balances…");
+
+      const [mcAccount, musdtHex] = await Promise.all([
+        // MC balance (for gas)
+        api.getAccount(mxcAddress!),
+        // MUSDT balance via eth_call balanceOf(userAddress)
+        api.rpcCall(MUSDT_CONTRACT, buildBalanceOfCalldata(ethAddress)).catch(() => null),
+      ]);
+
+      const mcBalance = parseFloat(weiToMc(mcAccount.balance ?? "0").replace(/,/g, ""));
+      if (mcBalance < 0.001) {
+        showMsg("error", `Insufficient MC for gas. You have ${mcBalance.toFixed(4)} MC — top up at least 0.001 MC to pay the network fee.`);
+        setIssuing(false); setIssueStep("");
+        return;
+      }
+
+      const musdtRaw = musdtHex?.result ? BigInt(musdtHex.result) : 0n;
+      const musdtBalance = Number(musdtRaw) / 1_000_000;
+      if (musdtBalance < 20) {
+        showMsg("error", `Insufficient MUSDT. You have ${musdtBalance.toFixed(2)} MUSDT — need 20 MUSDT to activate.`);
+        setIssuing(false); setIssueStep("");
+        return;
+      }
+
+      setIssuing(false); setIssueStep("");
+    } catch {
+      setIssuing(false); setIssueStep("");
+      // Non-fatal — proceed even if balance checks fail (chain may be slow)
+    }
+
     if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
     // Require explicit user confirmation before broadcasting

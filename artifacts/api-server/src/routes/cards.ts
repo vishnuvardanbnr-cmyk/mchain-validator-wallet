@@ -16,9 +16,11 @@ const mchain = {
   rpcUrls: { default: { http: [MCHAIN_RPC] } },
 } as const;
 
+// Fallback to the known MChain MUSDT contract if the env var is not set
+const DEFAULT_MUSDT_CONTRACT = "0x7b2ed1be97fa240dbd0328dd307e35e588bcb917";
+
 function getUsdtContract(): `0x${string}` {
-  const addr = process.env["USDT_CONTRACT_ADDRESS"];
-  if (!addr) throw new Error("USDT_CONTRACT_ADDRESS is not configured");
+  const addr = process.env["USDT_CONTRACT_ADDRESS"] ?? DEFAULT_MUSDT_CONTRACT;
   return addr.toLowerCase() as `0x${string}`;
 }
 
