@@ -509,11 +509,27 @@ export default function KripicardModule({ ethAddress, mxcAddress, account, onAcc
             {/* One-time $20 fee notice */}
             <View style={{ flexDirection: "row", gap: 8, alignItems: "flex-start",
               backgroundColor: "#7C3AED10", borderRadius: 12, borderWidth: 1,
-              borderColor: "#7C3AED30", padding: 12, marginBottom: 14 }}>
+              borderColor: "#7C3AED30", padding: 12, marginBottom: 10 }}>
               <Icon name="wallet-outline" size={15} color="#7C3AED" />
               <Text style={{ flex: 1, fontSize: 12, fontFamily: "Inter_500Medium", color: "#7C3AED", lineHeight: 18 }}>
                 $20 MUSDT will be sent automatically from your wallet to activate the card.
               </Text>
+            </View>
+
+            {/* MUSDT contract info */}
+            <View style={{ flexDirection: "row", gap: 8, alignItems: "flex-start",
+              backgroundColor: "#0EA5E908", borderRadius: 12, borderWidth: 1,
+              borderColor: "#0EA5E920", padding: 12, marginBottom: 14 }}>
+              <Icon name="information-circle-outline" size={15} color="#0EA5E9" />
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 11, fontFamily: "Inter_500Medium", color: "#0EA5E9", lineHeight: 16 }}>
+                  MUSDT contract (MChain network)
+                </Text>
+                <Text style={{ fontSize: 10, fontFamily: "Inter_400Regular",
+                  color: "rgba(14,165,233,0.7)", letterSpacing: 0.3, marginTop: 2 }}>
+                  0x7b2ed1be97fa240dbd0328dd307e35e588bcb917
+                </Text>
+              </View>
             </View>
 
             <Text style={s.label}>NAME ON CARD</Text>

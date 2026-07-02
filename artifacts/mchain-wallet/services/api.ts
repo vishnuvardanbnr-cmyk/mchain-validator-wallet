@@ -780,6 +780,8 @@ export interface CardAccount {
   status: string;
   created_at: string;
   updated_at: string;
+  stripe_card_id?: string | null;
+  stripe_cardholder_id?: string | null;
   kripicard_card_id?: string | null;
   kripicard_last4?: string | null;
   kripicard_bin?: string | null;
@@ -853,17 +855,19 @@ export async function sendMusdtForCard(params: {
   privateKey: string;
 }): Promise<{ txHash: string }> {
   const { buildErc20TransferDataHex } = await import("./crypto");
-  const { fromEthAddress, fromMxcAddress, toAddress, amountUsdt, privateKey } = params;
+  const { fromEthAddress, toAddress, amountUsdt, privateKey } = params;
   const amountRaw = BigInt(Math.round(amountUsdt * 1_000_000));
   const data = buildErc20TransferDataHex(toAddress, amountRaw);
-  const account = await api.getAccount(fromMxcAddress);
+  // Use the EVM nonce (eth_getTransactionCount) — NOT the MChain REST nonce,
+  // which can differ when the user has made contract-call transactions.
+  const evmNonce = await api.getEvmNonce(fromEthAddress);
   return api.sendTransaction({
     fromAddress: fromEthAddress,
     toAddress: MUSDT_CONTRACT,
     amount: "0",
     data,
     txType: "contract_call",
-    nonce: account.nonce,
+    nonce: evmNonce,
     privateKey,
   });
 }

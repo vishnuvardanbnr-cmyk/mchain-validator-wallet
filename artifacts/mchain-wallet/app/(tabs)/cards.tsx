@@ -594,28 +594,46 @@ export default function CardsScreen() {
                     <View>
                       <Text style={{ fontSize: 9, fontFamily: "Inter_500Medium",
                         color: "rgba(255,255,255,0.4)", letterSpacing: 1 }}>CARD NUMBER</Text>
-                      <Text style={{ fontSize: 14, fontFamily: "Inter_600SemiBold",
-                        color: "rgba(255,255,255,0.85)", letterSpacing: 2.5, marginTop: 4 }}>
-                        {showCardDetails && stripeDetails?.number
-                          ? stripeDetails.number.replace(/(\d{4})/g, "$1 ").trim()
-                          : showCardDetails && stripeDetails?.last4
-                          ? `•••• •••• •••• ${stripeDetails.last4}`
-                          : "•••• •••• •••• ••••"}
-                      </Text>
-                      <Text style={{ fontSize: 9, fontFamily: "Inter_400Regular",
-                        color: "rgba(255,255,255,0.35)", marginTop: 4 }}>
-                        {showCardDetails && stripeDetails
-                          ? `VALID THRU  ${String(stripeDetails.exp_month).padStart(2, "0")}/${String(stripeDetails.exp_year).slice(-2)}  CVV ${stripeDetails.cvc ?? "•••"}`
-                          : "VALID THRU  ••/••  CVV •••"}
-                      </Text>
+                      {account.stripe_card_id ? (
+                        <>
+                          <Text style={{ fontSize: 14, fontFamily: "Inter_600SemiBold",
+                            color: "rgba(255,255,255,0.85)", letterSpacing: 2.5, marginTop: 4 }}>
+                            {showCardDetails && stripeDetails?.number
+                              ? stripeDetails.number.replace(/(\d{4})/g, "$1 ").trim()
+                              : showCardDetails && stripeDetails?.last4
+                              ? `•••• •••• •••• ${stripeDetails.last4}`
+                              : "•••• •••• •••• ••••"}
+                          </Text>
+                          <Text style={{ fontSize: 9, fontFamily: "Inter_400Regular",
+                            color: "rgba(255,255,255,0.35)", marginTop: 4 }}>
+                            {showCardDetails && stripeDetails
+                              ? `VALID THRU  ${String(stripeDetails.exp_month).padStart(2, "0")}/${String(stripeDetails.exp_year).slice(-2)}  CVV ${stripeDetails.cvc ?? "•••"}`
+                              : "VALID THRU  ••/••  CVV •••"}
+                          </Text>
+                        </>
+                      ) : (
+                        <>
+                          <Text style={{ fontSize: 12, fontFamily: "Inter_600SemiBold",
+                            color: "rgba(255,255,255,0.45)", letterSpacing: 1.5, marginTop: 5 }}>
+                            NOT ISSUED
+                          </Text>
+                          <Text style={{ fontSize: 9, fontFamily: "Inter_400Regular",
+                            color: "rgba(255,255,255,0.3)", marginTop: 3 }}>
+                            Contact support to activate
+                          </Text>
+                        </>
+                      )}
                     </View>
                     <View style={{ alignItems: "center", gap: 3 }}>
                       <View style={{ flexDirection: "row" }}>
-                        <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: "#EB001B", opacity: 0.9 }} />
-                        <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: "#F79E1B", opacity: 0.9, marginLeft: -8 }} />
+                        <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: "#EB001B",
+                          opacity: account.stripe_card_id ? 0.9 : 0.3 }} />
+                        <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: "#F79E1B",
+                          opacity: account.stripe_card_id ? 0.9 : 0.3, marginLeft: -8 }} />
                       </View>
                       <Text style={{ fontSize: 7, fontFamily: "Inter_700Bold",
-                        color: "rgba(255,255,255,0.4)", letterSpacing: 1 }}>MASTERCARD</Text>
+                        color: account.stripe_card_id ? "rgba(255,255,255,0.4)" : "rgba(255,255,255,0.2)",
+                        letterSpacing: 1 }}>MASTERCARD</Text>
                     </View>
                   </View>
                 </LinearGradient>
@@ -631,31 +649,47 @@ export default function CardsScreen() {
 
             {account && (
               <>
+                {/* Not-issued banner — shown when no Stripe card has been provisioned */}
+                {!account.stripe_card_id && (
+                  <View style={{ flexDirection: "row", gap: 10, alignItems: "center",
+                    backgroundColor: "#F59E0B10", borderWidth: 1, borderColor: "#F59E0B30",
+                    borderRadius: 12, padding: 12, marginBottom: 16 }}>
+                    <Icon name="information-circle-outline" size={18} color="#F59E0B" />
+                    <Text style={{ flex: 1, fontSize: 12, fontFamily: "Inter_500Medium",
+                      color: "#F59E0B", lineHeight: 17 }}>
+                      Your fiat card has not been issued yet. You can still deposit USDT to your card balance. Contact support to get your card issued.
+                    </Text>
+                  </View>
+                )}
+
                 {/* Action buttons */}
                 <View style={s.actionRow}>
                   {[
                     { icon: "arrow-down-circle-outline", label: "Deposit", onPress: () => setFiatTab("deposit"),
-                      active: fiatTab === "deposit", color: "#0EA5E9" },
+                      active: fiatTab === "deposit", color: "#0EA5E9", disabled: false },
                     { icon: showCardDetails ? "eye-off-outline" : "eye-outline", label: showCardDetails ? "Hide" : "Details",
                       onPress: handleToggleCardDetails, loading: loadingCardDetails,
-                      active: showCardDetails, color: "#0EA5E9" },
+                      active: showCardDetails, color: "#0EA5E9", disabled: !account.stripe_card_id },
                     { icon: account.frozen ? "lock-open-outline" : "lock-closed-outline",
                       label: account.frozen ? "Unfreeze" : "Freeze",
                       onPress: handleFreeze, loading: isToggling,
-                      active: account.frozen, color: "#EF4444" },
+                      active: account.frozen, color: "#EF4444", disabled: !account.stripe_card_id },
                     { icon: "time-outline", label: "History",
                       onPress: () => setFiatTab("history"),
-                      active: fiatTab === "history", color: "#0EA5E9" },
+                      active: fiatTab === "history", color: "#0EA5E9", disabled: false },
                   ].map((btn, i) => (
                     <TouchableOpacity
                       key={i}
                       style={[s.actionBtn, {
-                        borderColor: btn.active ? btn.color + "55" : "rgba(255,255,255,0.12)",
-                        backgroundColor: btn.active ? btn.color + "18" : "rgba(255,255,255,0.06)",
+                        borderColor: btn.disabled ? "rgba(255,255,255,0.06)"
+                          : btn.active ? btn.color + "55" : "rgba(255,255,255,0.12)",
+                        backgroundColor: btn.disabled ? "rgba(255,255,255,0.03)"
+                          : btn.active ? btn.color + "18" : "rgba(255,255,255,0.06)",
+                        opacity: btn.disabled ? 0.4 : 1,
                       }]}
                       activeOpacity={0.7}
-                      onPress={btn.onPress}
-                      disabled={btn.loading}
+                      onPress={btn.disabled ? undefined : btn.onPress}
+                      disabled={btn.loading || btn.disabled}
                     >
                       {btn.loading
                         ? <ActivityIndicator size="small" color={btn.color} />
