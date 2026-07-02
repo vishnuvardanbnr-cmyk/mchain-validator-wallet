@@ -72,6 +72,7 @@ export interface P2pOrder {
   paidAt?: string;
   releasedAt?: string;
   cancelledAt?: string;
+  disputeResolvedFor?: "buyer" | "seller" | null;
   ad?: P2pAd;
   buyerProfile?: P2pProfile;
   sellerProfile?: P2pProfile;

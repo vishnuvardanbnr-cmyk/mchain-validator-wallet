@@ -103,6 +103,7 @@ export const p2pOrders = pgTable("p2p_orders", {
   releasedAt: timestamp("released_at"),
   cancelledAt: timestamp("cancelled_at"),
   cancelReason: text("cancel_reason"),
+  disputeResolvedFor: text("dispute_resolved_for"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (t) => [

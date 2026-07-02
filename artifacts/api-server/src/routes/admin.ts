@@ -224,8 +224,23 @@ router.post("/admin/disputes/:id/resolve", async (req, res) => {
   }
 
   await db.update(p2pOrders)
-    .set({ status: "resolved", updatedAt: new Date() })
+    .set({ status: "resolved", disputeResolvedFor: resolvedFor, updatedAt: new Date() })
     .where(eq(p2pOrders.id, updated.orderId));
+
+  // Fetch order to get buyer/seller addresses for personalised messages
+  const [order] = await db.select().from(p2pOrders).where(eq(p2pOrders.id, updated.orderId)).limit(1);
+  if (order) {
+    const winnerAddr = resolvedFor === "buyer" ? order.buyerAddress : order.sellerAddress;
+    const loserAddr  = resolvedFor === "buyer" ? order.sellerAddress : order.buyerAddress;
+    const winnerRole = resolvedFor === "buyer" ? "buyer" : "seller";
+    const loserRole  = resolvedFor === "buyer" ? "seller" : "buyer";
+    await db.insert(p2pMessages).values({
+      orderId: order.id,
+      senderAddress: "system",
+      isSystem: true,
+      content: `Dispute resolved. Decision: in favour of the ${winnerRole} (${winnerAddr.slice(0, 10)}…). The ${loserRole} (${loserAddr.slice(0, 10)}…) did not prevail. Admin note: ${resolution}`,
+    });
+  }
 
   res.json(updated);
 });

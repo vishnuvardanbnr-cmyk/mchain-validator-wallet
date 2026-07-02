@@ -539,6 +539,32 @@ export function TradeRoomModal({ visible, orderId, onClose }: Props) {
                 </View>
               )}
 
+              {/* Dispute outcome banner — shown when resolved */}
+              {isTerminal && order?.status === "resolved" && order.disputeResolvedFor && (() => {
+                const won = (isBuyer && order.disputeResolvedFor === "buyer") ||
+                            (isSeller && order.disputeResolvedFor === "seller");
+                const colour = won ? "#10B981" : "#EF4444";
+                const icon   = won ? "checkmark-circle-outline" : "close-circle-outline";
+                const msg    = won
+                  ? "Dispute resolved in your favour ✅"
+                  : "Dispute was not resolved in your favour ❌";
+                return (
+                  <View style={[s.actionBar, { borderTopWidth: 1, borderTopColor: colors.border }]}>
+                    <View style={{
+                      flexDirection: "row", alignItems: "center", gap: 10,
+                      backgroundColor: colour + "12", borderRadius: 12,
+                      borderWidth: 1, borderColor: colour + "30",
+                      paddingHorizontal: 14, paddingVertical: 12, width: "100%",
+                    }}>
+                      <Icon name={icon} size={20} color={colour} />
+                      <Text style={{ fontSize: 14, fontFamily: "Inter_600SemiBold", color: colour, flex: 1 }}>
+                        {msg}
+                      </Text>
+                    </View>
+                  </View>
+                );
+              })()}
+
               {/* Rate Trade — shown on completed orders */}
               {isTerminal && order?.status === "released" && !ratingDone && (
                 <View style={[s.actionBar, { borderTopWidth: 1, borderTopColor: colors.border }]}>
